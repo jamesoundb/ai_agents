@@ -1,0 +1,14 @@
+{
+  "_note": "Approximate on-demand list prices per hour (us-central1, 2026) used only to rank waste in dollars. Override per machine family; spot_discount applies to spot/preemptible node pools.",
+  "default": {"vcpu_hour": 0.0218, "gb_hour": 0.0029},
+  "families": {
+    "e2": {"vcpu_hour": 0.0218, "gb_hour": 0.0029},
+    "n2": {"vcpu_hour": 0.0316, "gb_hour": 0.0042},
+    "n2d": {"vcpu_hour": 0.0275, "gb_hour": 0.0037},
+    "n1": {"vcpu_hour": 0.0316, "gb_hour": 0.0042},
+    "c2": {"vcpu_hour": 0.0335, "gb_hour": 0.0045},
+    "t2d": {"vcpu_hour": 0.0270, "gb_hour": 0.0036}
+  },
+  "spot_discount": 0.7,
+  "hours_per_month": 730
+}
