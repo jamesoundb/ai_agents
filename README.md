@@ -52,7 +52,7 @@ User-scope locations: `~/.claude/{agents,skills}`, `~/.agents/skills` (Codex),
 
 | agent | purpose |
 |---|---|
-| [ast-treesitter](agents/ast-treesitter/README.md) | Deterministic code map: tree-sitter skeletons and a relationship graph for architecture, callers/callees, blast radius, Terraform and Kubernetes dependencies. Read-only. |
+| [ast-treesitter](agents/ast-treesitter/README.md) | Deterministic code map: tree-sitter skeletons and a relationship graph for architecture, callers/callees, blast radius, Terraform and Kubernetes dependencies. Read-only. Developer guide: [GETTING-STARTED.md](agents/ast-treesitter/GETTING-STARTED.md). |
 | [terraform](agents/terraform/README.md) | Terraform engineer for Google Cloud: rule-based review (Google best practices, GCP security, company policy), risk-ranked plan review, compliant scaffolding, blast radius of variable/module changes. Never applies. |
 | [kubernetes](agents/kubernetes/README.md) | GKE engineer with a cost-efficiency mandate: measures unused vs unallocated capacity, reviews and right-sizes build/test-environment manifests, generates tier-based guardrails and a janitor, tunes node pools. Read-only against clusters. |
 | [helm](agents/helm/README.md) | Helm and GitOps (ArgoCD/Flux) engineer: chart, values layering and delivery-object review, rendered manifests checked against build tiers, promotion by version bump. Never installs releases. |

@@ -29,6 +29,8 @@ limits explicitly.
 
 ## Definition and install
 
+- Developer guide: [`GETTING-STARTED.md`](GETTING-STARTED.md) (setup, how to ask, how to read an
+  answer, the limits met first).
 - Canonical definition: [`AGENT.md`](AGENT.md) (harness-neutral frontmatter + system prompt).
   `install.sh` at the repo root renders it into each harness's format (Claude Code subagent,
   Copilot custom agent, Antigravity custom agent, and an "agent-as-skill" wrapper for Codex and
