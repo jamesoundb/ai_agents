@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/util"]
+
+[package]
+name = "fixture"
+version = "0.1.0"
+
+[dependencies]
+fixture-util = { path = "crates/util" }

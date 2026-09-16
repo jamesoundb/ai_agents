@@ -39,14 +39,23 @@ The engine is the `run.sh` script inside the installed `code-graph` skill folder
 `.gemini/skills/code-graph/scripts/run.sh` or `.github/skills/code-graph/scripts/run.sh`,
 depending on the harness). Locate it once, then:
 
-1. Confirm you are at the repo root and refresh the graph (incremental, seconds):
-   `run.sh build --root .`
+1. Confirm you are at the repo root and refresh the graph: `run.sh build --root .`
+   (instant when the git working tree is unchanged since the last build; otherwise seconds on
+   small repos, tens of seconds on repos above a million lines).
    If the graph reports 0 files or the target language is missing, check `run.sh query stats`
    and the exclude list before continuing.
-2. Orient: `run.sh query overview` (hub symbols, hub files, directories, externals, entry points).
-3. Locate: `run.sh query find NAME`, then `run.sh query symbol NAME` for the architecture card.
-4. Traverse: `run.sh query callers|callees|path|file ...`.
-5. Impact: `run.sh query trace-deps TARGET --depth 3` (the `blast-radius` skill formats the matrix).
+2. Orient: `run.sh query overview --no-tests` (hub symbols, hub files, directories, externals,
+   entry points); add `--lang <language>` in mixed repos so one language's hubs do not hide
+   another's.
+3. Locate: `run.sh query find NAME` (exact-name matches come first; add `--lang` and `--kind`
+   in mixed repos), then `run.sh query symbol NAME` for the architecture card
+   (capped at 40 rows per section with a per-file summary of the rest; `--all` only when you need
+   every edge).
+4. Traverse: `run.sh query callers|callees|path|file ...`; on a hub, `callers --summary`
+   (directories, most frequent callers) or `--files-only` instead of the row listing.
+5. Impact: `run.sh query trace-deps TARGET --depth 3` (the `blast-radius` skill formats the
+   matrix). On a hub target use `--summary` and `--files-only` first; never paste a per-edge
+   table with hundreds of rows into your answer.
 6. Verify the two or three riskiest edges by reading only their line ranges.
 7. Answer.
 

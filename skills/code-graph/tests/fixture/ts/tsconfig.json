@@ -1,0 +1,7 @@
+{
+  // paths and baseUrl are inherited from the base config through `extends`
+  "extends": "./tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+  },
+}

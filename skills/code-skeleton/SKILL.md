@@ -4,7 +4,7 @@ description: >
   Show a token-light tree-sitter skeleton of one or more source files (classes, functions,
   fields, signatures, decorators, calls, exact line ranges) before reading any raw code. Use
   proactively instead of cat/Read on any file longer than ~80 lines, and whenever asked "what is in
-  this file/directory". Works for Python, JS/TS, Go, Java, Rust, Terraform and Kubernetes YAML.
+  this file/directory". Works for Python, JS/TS, Go, Java, Kotlin, Rust, Terraform and Kubernetes YAML.
 allowed-tools: Bash(*/code-graph/scripts/run.sh *), Bash(*/code-skeleton/../code-graph/scripts/run.sh *), Read
 ---
 

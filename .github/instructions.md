@@ -123,12 +123,25 @@ different one rather than adding vendor-neutral fallbacks.
 - Dependencies: `tree-sitter`, `tree-sitter-language-pack` (`scripts/requirements.txt`).
   `run.sh` finds a Python that has them or creates `~/.cache/astgraph/venv` on first use.
   Override with `ASTGRAPH_PYTHON=/path/to/python` or `ASTGRAPH_VENV=/path/to/venv`.
-- Languages: Python, JavaScript, TypeScript/TSX, Go, Java, Rust, HCL (Terraform), YAML
+- Languages: Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, HCL (Terraform), YAML
   (Kubernetes manifests, Kustomization, Helm values). Coverage and limits:
   `skills/code-graph/reference/languages.md`. Schema:
   `skills/code-graph/reference/graph-schema.md`.
-- Graph artifact `.ast-graph/graph.json` is per-repo and incremental by file hash; add
-  `.ast-graph/` to each consuming repo's `.gitignore`.
+- Graph artifact `.ast-graph/graph.json` is per-repo and incremental by file hash; the
+  `graph.json.stamp` sidecar (git HEAD + status + dirty-file content) lets `build` return without
+  linking when the working tree is unchanged. Add `.ast-graph/` to each consuming repo's
+  `.gitignore`.
+- `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes
+  the harness folders, the managed AGENTS.md block (and an AGENTS.md that only held our header),
+  and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo
+  with a pre-existing AGENTS.md and .github/.
+- Cost model: parsing is hash-incremental (cached parses are discarded when `astgraph.py`
+  changes); linking is always full but linear (~4s per 3.6k
+  files); graph load/dump is proportional to graph size (~1-3s per 100-300 MB). A git-unchanged
+  tree returns in ~0.1s. Query output is capped (`symbol --limit`, `trace-deps --max-rows`).
+- Engine regression tests: `skills/code-graph/tests/run_tests.sh` builds the 8-language fixture in
+  `skills/code-graph/tests/fixture/` in a temp dir and asserts resolution confidence, test-file
+  detection, incremental == full and the git fast path. Run it after any change to `astgraph.py`.
 - Adding a language: map the extension in `EXT_LANG`, add a handler dict keyed by tree-sitter node
   type, register it in `HANDLERS`, and extend `resolve_import` if the language has imports.
 

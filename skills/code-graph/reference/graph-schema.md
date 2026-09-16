@@ -47,9 +47,41 @@ Terraform: `resource`, `data`, `module_call`, `variable` (`var.x`), `output`, `p
 | `selects` | K8s Service/PDB/NetworkPolicy selector -> workload with matching pod-template labels |
 
 Confidence: `exact`, `typed`, `same_file`, `package`, `import`, `unique`, `ambiguous`, `external`.
+`typed` means the member was matched by the identity of the resolved receiver type node (or one
+of its resolved ancestors, up to three levels), never by the bare type name. `import` covers both
+"target lives in an imported file" and "the call/type is qualified by an import binding and the
+target was found in the bound files or through their re-exports". Calls whose receiver is
+external (external import binding, external or builtin declared type, or a field chain that
+leaves the repo) produce no edge and count as unresolved; calls on a receiver of unknown type are
+`same_file` when a same-file definition exists, else up to three `ambiguous` same-language leads.
+`unique` survives only for types in Rust and for free calls nowhere: a name that is not imported
+and not in scope is not guessed.
+
+`stats` also carries `asset_imports`: JS/TS imports of non-code files, counted, never linked.
+
+## Build artifacts
+
+`graph.json` (`version` = `GRAPH_VERSION`, currently 4, and `engine` = SHA-1 of `astgraph.py`; a
+mismatch of either forces a full re-parse) and, in
+git checkouts, `graph.json.stamp`: `{"version", "stamp", "stats", "built_at"}` where `stamp` is a
+SHA-1 over HEAD, the porcelain status of indexed source files under the root, their content, and
+the include/exclude filters. A matching stamp makes `build` return without loading the graph.
 
 ## Refs (per file, pre-link)
 
 Raw, unresolved observations kept so that incremental builds can re-link without re-parsing:
 `{"kind": "call|import|extends|implements|instantiates|references|depends_on|uses_module|uses_type",
-"name", "src", "line", "hint", "hint_type", "chain", "names", "attr", "via", "namespace"}`.
+"name", "src", "line", "hint", "hint_full", "hint_type", "chain", "names", "alias", "alias_map", "reexport",
+"argc", "arg_types", "attr", "via", "namespace"}`.
+`argc` is the number of call arguments (absent when a spread/splat is present) and `arg_types`
+their declared or literal types where known, used to choose among overloads; `hint_full` is the
+full qualifier text of a type reference; `reexport` marks `export ... from` / `pub use`.
+`hint_type` may be `<call>expr|roottype` or `<call?>expr|roottype` (a local bound to a call
+result, `?` = unwrapped/awaited); the linker types it from the callee's return type at link
+time.
+`hint` is the receiver text of a call (`self.repo`), the qualifier of a type reference
+(`schema` in `schema.Resource{}`, `base_a` in `class T(base_a.TestCase)`) or None; `hint_type` is
+the receiver's declared type with its qualifier kept (`schema.ResourceData`); `alias` is the local
+name a whole-module import binds (`import json as js`, `import * as util`,
+`transport_tpg "…/transport"`, `const fs = require("fs")`); `names` are the imported names as
+written and `alias_map` maps them to their local aliases (`from a import B as C`).

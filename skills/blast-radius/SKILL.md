@@ -19,7 +19,8 @@ ENGINE=`../code-graph/scripts/run.sh`
 
 ## Procedure
 
-1. Make sure the graph is current (incremental, cheap):
+1. Make sure the graph is current (a git-stamped unchanged tree returns instantly; otherwise
+   changed files are re-parsed and everything is re-linked):
    ```bash
    ../code-graph/scripts/run.sh build --root .
    ```
@@ -32,7 +33,10 @@ ENGINE=`../code-graph/scripts/run.sh`
    ```
    `TARGET` may be a file path, a symbol, a Terraform address (`module.vpc`, `aws_vpc.this`) or a
    Kubernetes object (`ConfigMap/web-config`). Add `--include-ambiguous` when the target's name
-   is common and you want the leads too; add `--json` when you will post-process.
+   is common and you want the leads too; add `--json` when you will post-process. For a hub
+   (hundreds of callers) start with `--summary` (directories, most-connected dependents,
+   relationship mix) and `--files-only`; the per-edge table is only useful below a few hundred
+   rows and degrades to the summary on its own above `--max-rows` (200).
 4. Report, in this shape (one block per modified component):
 
    | Component modified | Immediate impact | Dependent files and blast radius |
@@ -40,8 +44,11 @@ ENGINE=`../code-graph/scripts/run.sh`
    | `DataDTO` (app/dto.py) | field additions/renames | 1. api/controller.py (API contract, `references`, exact) 2. services/data_service.py (`convert_to_entity`, typed) 3. tests/test_data_service.py |
 
    Then: files affected (direct / transitive), tests likely to exercise the change (the tool lists
-   files whose path contains `test`, `spec` or `__tests__`), and anything reported as unresolved or
-   ambiguous that a human should double-check.
+   dependents that are test files by language convention: `_test.go`, `test_*.py`/`*_test.py`,
+   `*.test.ts`/`*.spec.js`, `*Test.java`, or anything under a `test`, `tests`, `__tests__`, `spec`
+   or `testing` directory), and anything reported as unresolved or ambiguous that a human should
+   double-check. Tests that reach the target only through a framework (acceptance tests, DI)
+   are not in the graph; name them from the package convention instead.
 5. Only after the matrix, open specific line ranges to confirm the riskiest edges. Do not read
    whole files.
 

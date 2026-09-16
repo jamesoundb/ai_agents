@@ -93,13 +93,39 @@ remove_agents_md_block() {
   local f="$TARGET/AGENTS.md" tmp
   [ -f "$f" ] && grep -q 'BEGIN managed by install.sh' "$f" || return 0
   tmp="$(mktemp)"
-  awk '/BEGIN managed by install.sh/ {skip=1; next} /END managed by install.sh/ {skip=0; next} !skip {print}' "$f" > "$tmp"
-  mv "$tmp" "$f"; log "removed managed block from $f"
+  # drop the block and the blank line the install put in front of it; keep everything else byte-for-byte
+  awk '
+    /BEGIN managed by install.sh/ {skip=1; pending=0; next}
+    /END managed by install.sh/ {skip=0; next}
+    skip {next}
+    /^$/ {pending++; next}
+    {while (pending > 0) {print ""; pending--}; print}
+    END {while (pending > 0) {print ""; pending--}}' "$f" > "$tmp"
+  # an AGENTS.md that only ever held our boilerplate header goes away entirely
+  if [ "$(tr -d '\n' < "$tmp")" = "# AGENTS.mdInstructions for AI coding agents working in this repository." ] || [ ! -s "$tmp" ]; then
+    rm -f "$tmp" "$f"; log "removed $f (nothing left but the installer's header)"
+  else
+    mv "$tmp" "$f"; log "removed managed block from $f"
+  fi
 }
 
 ensure_import() {  # ensure_import <file> <line>  (create file or append the import line once)
   if [ ! -f "$1" ]; then printf '%s\n' "$2" > "$1"; log "wrote  $1"
   elif ! grep -qF "$2" "$1"; then printf '\n%s\n' "$2" >> "$1"; log "added '$2' to $1"; fi
+}
+
+remove_import() {  # remove_import <file> <line>  (undo ensure_import: delete the file if that is all it holds)
+  [ -f "$1" ] || return 0
+  if [ "$(tr -d '\n' < "$1")" = "$2" ]; then rm -f "$1"; log "removed $1"
+  elif grep -qxF "$2" "$1"; then
+    local tmp; tmp="$(mktemp)"
+    awk -v line="$2" '$0 == line {if (prev_blank) {blank_dropped=1}; next} {if (prev_blank && !blank_dropped) print ""; blank_dropped=0; prev_blank=($0 == ""); if (!prev_blank) print} END {}' "$1" > "$tmp"
+    mv "$tmp" "$1"; log "removed '$2' from $1"
+  fi
+}
+
+remove_empty_dirs() {  # remove_empty_dirs <dir>...  (leave no empty harness folders behind)
+  for d in "$@"; do [ -d "$d" ] && [ -z "$(ls -A "$d" 2>/dev/null)" ] && rmdir "$d" 2>/dev/null && log "removed empty $d"; done; return 0
 }
 
 for h in ${HARNESSES//,/ }; do
@@ -109,6 +135,8 @@ for h in ${HARNESSES//,/ }; do
       if [ "$SCOPE" = user ]; then SK="$HOME/.claude/skills"; AG="$HOME/.claude/agents"; else SK="$TARGET/.claude/skills"; AG="$TARGET/.claude/agents"; fi
       if [ $UNINSTALL = 1 ]; then
         for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$AG/$a.md"; done
+        [ "$SCOPE" = project ] && remove_import "$TARGET/CLAUDE.md" "@AGENTS.md"
+        remove_empty_dirs "$SK" "$AG" "$(dirname "$SK")"
       else
         for s in $SKILLS; do place_skill "$s" "$SK"; done
         for a in $AGENTS; do write_rendered claude "$a" "$AG/$a.md"; done
@@ -118,6 +146,7 @@ for h in ${HARNESSES//,/ }; do
       if [ "$SCOPE" = user ]; then SK="$HOME/.agents/skills"; else SK="$TARGET/.agents/skills"; fi
       if [ $UNINSTALL = 1 ]; then
         for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$SK/$a"; done
+        remove_empty_dirs ${AG:+"$AG"} "$SK" "$(dirname "$SK")"
       else
         for s in $SKILLS; do place_skill "$s" "$SK"; done
         for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
@@ -129,6 +158,7 @@ for h in ${HARNESSES//,/ }; do
       else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi
       if [ $UNINSTALL = 1 ]; then
         for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$AG/$a"; done
+        remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
       else
         for s in $SKILLS; do place_skill "$s" "$SK"; done
         for a in $AGENTS; do write_rendered antigravity "$a" "$AG/$a/agent.md" "$PREFIX"; done
@@ -137,6 +167,8 @@ for h in ${HARNESSES//,/ }; do
       if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi
       if [ $UNINSTALL = 1 ]; then
         for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$SK/$a"; done
+        [ "$SCOPE" = project ] && remove_import "$TARGET/GEMINI.md" "@AGENTS.md"
+        remove_empty_dirs "$SK" "$(dirname "$SK")"
       else
         for s in $SKILLS; do place_skill "$s" "$SK"; done
         for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
@@ -146,6 +178,7 @@ for h in ${HARNESSES//,/ }; do
       if [ "$SCOPE" = user ]; then SK="$HOME/.copilot/skills"; AG="$HOME/.copilot/agents"; else SK="$TARGET/.github/skills"; AG="$TARGET/.github/agents"; fi
       if [ $UNINSTALL = 1 ]; then
         for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$AG/$a.agent.md"; done
+        remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
       else
         for s in $SKILLS; do place_skill "$s" "$SK"; done
         for a in $AGENTS; do write_rendered copilot "$a" "$AG/$a.agent.md"; done
