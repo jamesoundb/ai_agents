@@ -21,7 +21,8 @@ Not for: installing or upgrading releases, cluster operations, platform infrastr
 | [`k8s-manifest-review`](../../skills/k8s-manifest-review/SKILL.md) | tier/lifecycle/hygiene rules on rendered manifests |
 | `code-graph`, `blast-radius`, `code-skeleton` | find charts, values and GitOps objects; Kubernetes object references |
 
-Requirements: Python 3.9+ (PyYAML optional; tree-sitter fallback), Helm 3 for lint/render.
+Requirements: Python 3.10+ (PyYAML optional; the tree-sitter fallback and `code-graph` share one
+venv), Helm 3 for lint/render.
 
 ## Verified (2026-09-07)
 

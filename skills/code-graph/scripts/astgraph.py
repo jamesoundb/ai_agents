@@ -4438,16 +4438,23 @@ def q_path(g, args):
                     found = y
                     break
                 dq.append(y)
-    if found is None:
-        print(f"no dependency path from {a['qname']} to {b['qname']}")
-        return
     chain = []
     cur = found
-    while prev.get(cur):
+    while cur is not None and prev.get(cur):
         x, e = prev[cur]
         chain.append((x, e, cur))
         cur = x
-    for x, e, y in reversed(chain):
+    chain.reverse()
+    if getattr(args, "json", False):
+        # Same shape as the text rows: one hop per edge, src -> dst, with the dst location.
+        print(json.dumps({"src": a["id"], "dst": b["id"], "found": found is not None,
+                          "hops": [{"src": x, "type": e["type"], "confidence": e["confidence"], "dst": y,
+                                    "file": g.nodes[y]["file"], "line": g.nodes[y]["line"]} for x, e, y in chain]}))
+        return
+    if found is None:
+        print(f"no dependency path from {a['qname']} to {b['qname']}")
+        return
+    for x, e, y in chain:
         print(f"{g.nodes[x]['qname']} --{e['type']} ({e['confidence']})--> {g.nodes[y]['qname']}  ({g.nodes[y]['file']}:{g.nodes[y]['line']})")
 
 
@@ -4533,7 +4540,7 @@ def main(argv=None):
     x.add_argument("path"); x.add_argument("--no-calls", action="store_true"); x.add_argument("--json", action="store_true")
     x.set_defaults(qfn=q_file)
     x = qs.add_parser("path", help="shortest dependency path from one symbol/file to another")
-    x.add_argument("src"); x.add_argument("dst")
+    x.add_argument("src"); x.add_argument("dst"); x.add_argument("--json", action="store_true")
     x.set_defaults(qfn=q_path)
     x = qs.add_parser("stats", help="graph statistics")
     x.set_defaults(qfn=q_stats)

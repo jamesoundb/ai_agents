@@ -28,7 +28,7 @@ Canonical: [`AGENT.md`](AGENT.md). Installed by `install.sh` like every agent.
 | [`terraform-module-scaffold`](../../skills/terraform-module-scaffold/SKILL.md) | templates for modules and environment roots |
 | `code-graph`, `blast-radius`, `code-skeleton` | HCL relationship graph: `var.`, `local.`, `module.x.output`, nested modules from `.terraform/modules/modules.json` |
 
-Requirements: Python 3.9+ (`terraform-review` uses the same tree-sitter venv as `code-graph`);
+Requirements: Python 3.10+ (`terraform-review` uses the same tree-sitter venv as `code-graph`);
 Terraform CLI optional (enables fmt/validate); `tflint`/`trivy` optional.
 
 ## Company tailoring points

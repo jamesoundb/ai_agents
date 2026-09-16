@@ -17,8 +17,9 @@ language model should navigate that graph and only open raw source for the exact
 needs. Parsing is deterministic and cheap; do not ask the model to infer relationships that the
 graph already contains.
 
-Engine: `scripts/run.sh` (wraps `astgraph.py`, installs tree-sitter into a
-private venv on first use, never modifies the repo).
+Engine: `scripts/run.sh` (wraps `astgraph.py`, installs tree-sitter into a private venv under
+`~/.cache/astgraph` on first use and refuses to start on a Python older than 3.10; the only thing
+it writes into the repo is the graph under `.ast-graph/`).
 
 ## Workflow
 
@@ -28,7 +29,7 @@ private venv on first use, never modifies the repo).
    (by content hash) but every file is re-linked, which takes seconds on small repos and tens of
    seconds on 1M+ line repos:
    ```bash
-   scripts/run.sh build --root . 
+   scripts/run.sh build --root .
    ```
    Options: `--include 'src/**'` / `--exclude '*_test.go'` (repeatable globs), `--full` to
    ignore the cache and the stamp (needed after editing git-ignored source files), `--out PATH`
@@ -75,8 +76,8 @@ private venv on first use, never modifies the repo).
 5. **Only then read source**, and only the line range the graph reported
    (`Read` with offset/limit, or `sed -n 'START,ENDp' FILE`).
 
-All query subcommands accept `--json` for machine-readable output. Run `query --graph PATH ...`
-if the graph is not at the default location.
+Every query subcommand accepts `--json` for machine-readable output (`stats` always prints
+JSON). Run `query --graph PATH ...` if the graph is not at the default location.
 
 ## Naming symbols in queries
 

@@ -160,6 +160,14 @@ def test_resolution(root):
     check(fr and fr[0]["line"] == 8, f"find lists the implementation before its @overload stubs (first at line {fr[0]['line'] if fr else None})")
     ctor = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "trace-deps", "service.py:Service.__init__", "--depth", "1")
     check("is a constructor" in ctor and "python/tests/test_service.py" in ctor, "trace-deps on __init__ includes the class's instantiations")
+    pth = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentOrchestratorTest", "PaymentGatewayClient")
+    check("--calls (typed)--> PaymentGatewayClient.validate" in pth, f"path: text rows end at the target's member: {pth.strip().splitlines()[-1][:80] if pth.strip() else pth!r}")
+    pj = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentOrchestratorTest", "PaymentGatewayClient", "--json"))
+    check(pj["found"] and len(pj["hops"]) == len(pth.strip().splitlines()) and pj["hops"][-1]["dst"].endswith("PaymentGatewayClient.validate@4")
+          and all(set(h) == {"src", "type", "confidence", "dst", "file", "line"} for h in pj["hops"]),
+          f"path --json: one hop per text row with src/type/confidence/dst/file/line ({len(pj['hops'])} hops)")
+    pn = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentGatewayClient", "PaymentOrchestratorTest", "--json"))
+    check(pn["found"] is False and pn["hops"] == [], "path --json: no path -> found=false, empty hops")
 
     # --- JavaScript
     jrun = G.node("js/src/service.js", "Service.run")

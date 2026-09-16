@@ -119,10 +119,14 @@ different one rather than adding vendor-neutral fallbacks.
   cost efficiency there.
 
 ## Engine: astgraph.py
-- Location: `skills/code-graph/scripts/astgraph.py` (single file, Python 3.9+).
-- Dependencies: `tree-sitter`, `tree-sitter-language-pack` (`scripts/requirements.txt`).
-  `run.sh` finds a Python that has them or creates `~/.cache/astgraph/venv` on first use.
-  Override with `ASTGRAPH_PYTHON=/path/to/python` or `ASTGRAPH_VENV=/path/to/venv`.
+- Location: `skills/code-graph/scripts/astgraph.py` (single file, Python 3.10+; developed and
+  tested on 3.12).
+- Dependencies: `tree-sitter>=0.24`, `tree-sitter-language-pack>=1.0`
+  (`scripts/requirements.txt`); those floors are the first releases that require Python 3.10,
+  so pip refuses to install on 3.9 rather than resolving old untested versions. `run.sh` finds a
+  Python that has them or creates `~/.cache/astgraph/venv` on first use from `python3` (or
+  `ASTGRAPH_PYTHON`), after checking that interpreter is 3.10+ (exit 2 with a message
+  otherwise). Override with `ASTGRAPH_PYTHON=/path/to/python` or `ASTGRAPH_VENV=/path/to/venv`.
 - Languages: Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, HCL (Terraform), YAML
   (Kubernetes manifests, Kustomization, Helm values). Coverage and limits:
   `skills/code-graph/reference/languages.md`. Schema:
@@ -142,8 +146,9 @@ different one rather than adding vendor-neutral fallbacks.
 - Engine regression tests: `skills/code-graph/tests/run_tests.sh` copies the nine-language fixture
   (Python, JavaScript, TypeScript, Go, Java, Kotlin, Rust, HCL, Kubernetes YAML) from
   `skills/code-graph/tests/fixture/` to a temp dir, builds it there and asserts resolution
-  confidence per language, overload and return-type choices, test-file detection, incremental ==
-  full, determinism across hash seeds, the git fast path and the engine-hash cache key. Run it
+  confidence per language, overload and return-type choices, test-file detection, query output
+  shapes (`path` text and `--json`), incremental == full, determinism across hash seeds, the git
+  fast path and the engine-hash cache key. Run it
   after any change to `astgraph.py` and add a regression case for every linker fix.
 - Adding a language: map the extension in `EXT_LANG`, add a handler dict keyed by tree-sitter node
   type, register it in `HANDLERS`, and extend `resolve_import` if the language has imports.

@@ -61,7 +61,8 @@ Finish with the exact install command you ran so the developer can repeat it wit
 
 ## Notes
 
-- If `python3` is missing the installer stops; tell the developer to install Python 3.9+.
+- If `python3` is missing the installer stops; tell the developer to install Python 3.10+ (the
+  installer itself is standard-library only, but the skills' tree-sitter engine needs 3.10).
 - Installing both Codex and Antigravity into one project creates a persona skill and a native
   agent with the same name; harmless, but say so.
 - Harness folder layouts are listed in the repository README; if a harness has moved its folders

@@ -78,7 +78,7 @@ User-scope locations: `~/.claude/{agents,skills}`, `~/.agents/skills` (Codex),
 | [teamcity-build-triage](skills/teamcity-build-triage/SKILL.md) | Failure classification with evidence from the REST API or saved logs; recent-failures histogram |
 
 The three skills install together; `code-skeleton` and `blast-radius` call the engine in
-`../code-graph/scripts/run.sh`. The engine needs Python 3.9+; `run.sh` creates a private venv
+`../code-graph/scripts/run.sh`. The engine needs Python 3.10+; `run.sh` creates a private venv
 with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
 
 ## Adding an agent or skill

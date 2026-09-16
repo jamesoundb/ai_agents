@@ -10,10 +10,12 @@ allowed-tools: Bash(*/code-graph/scripts/run.sh *), Bash(*/code-skeleton/../code
 
 # code-skeleton: index before you read
 
-A skeleton costs roughly 5-15% of the tokens of the raw file and gives exact start/end lines
-for every item, so subsequent reads can target a range instead of the whole file. (Maki, the
-tree-sitter agent discussed on Hacker News, measured ~165 net tokens saved per turn from this
-pattern; the article's Java example drops from thousands of tokens per class to a few hundred.)
+A skeleton costs roughly 5-15% of the tokens of a raw file of a few hundred lines or more (a
+20,000-line module drops to 4%; a 40-line class still saves about two thirds) and gives exact
+start/end lines for every item, so subsequent reads can target a range instead of the whole
+file. (Maki, the tree-sitter agent discussed on Hacker News, measured ~165 net tokens saved per
+turn from this pattern; the article's Java example drops from thousands of tokens per class to a
+few hundred.)
 
 ```bash
 ../code-graph/scripts/run.sh skeleton $ARGUMENTS

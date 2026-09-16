@@ -42,8 +42,10 @@ limits explicitly.
 | `code-skeleton` | read-before-cat: signatures, members, calls, exact line ranges for a file or directory | `run.sh skeleton PATH...` |
 | `blast-radius` | impact matrix for a file, symbol, Terraform address or Kubernetes object | `run.sh query trace-deps TARGET` |
 
-Engine: `astgraph.py` (Python 3.9+, `tree-sitter`, `tree-sitter-language-pack`). `run.sh` installs
-those into `~/.cache/astgraph/venv` on first use; override with `ASTGRAPH_PYTHON` or
+Engine: `astgraph.py` (Python 3.10+, `tree-sitter`, `tree-sitter-language-pack`; developed and
+tested on 3.12, and the pinned releases of both libraries require 3.10). `run.sh` installs
+those into `~/.cache/astgraph/venv` on first use and stops with a clear message on an older
+interpreter; override with `ASTGRAPH_PYTHON` (also used as the base for the venv) or
 `ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.json` plus a `graph.json.stamp` sidecar
 (gitignore both). A build is skipped outright when the git working tree is unchanged; otherwise
 files are re-parsed by content hash and the whole graph is re-linked.
@@ -143,8 +145,10 @@ build metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json
   and class API contracts, the gateway client, the audit logger and the test.
 - Skeleton of a 2,000-line Python file: ~26.9k raw tokens vs ~3.9k skeleton tokens (86% saved).
 
-## Related agents (planned)
+## Related agents
 
-`terraform`, `helm`, `kubernetes` and `build-pipeline` agents should call this agent (or its
-skills) for structural questions instead of re-implementing parsing; the HCL/YAML extractors live
-here so that all platform agents share one map.
+The `terraform`, `helm` and `kubernetes` agents declare `code-graph`, `blast-radius` and
+`code-skeleton` in their `skills:` list and `build-pipeline` declares `code-graph` and
+`code-skeleton`, so they answer structural questions through the same engine instead of
+re-implementing parsing; the HCL/YAML extractors live here so that all platform agents share one
+map. For a full architecture or impact question, delegate to this agent.

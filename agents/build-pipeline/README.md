@@ -21,7 +21,8 @@ Not for: triggering or editing builds on the server, deploying, cluster changes.
 | [`k8s-manifest-review`](../../skills/k8s-manifest-review/SKILL.md), [`gke-cost-discovery`](../../skills/gke-cost-discovery/SKILL.md) | tiers and demand/capacity evidence |
 | `code-graph`, `code-skeleton` | navigate build scripts and repositories |
 
-Requirements: Python 3.9+; a read-only TeamCity access token for live triage (offline mode
+Requirements: Python 3.10+ (shared tree-sitter venv with `code-graph`); a read-only TeamCity
+access token for live triage (offline mode
 works from a saved build log and build JSON).
 
 ## Inputs to configure
