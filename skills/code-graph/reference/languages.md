@@ -10,9 +10,9 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
 | JavaScript / TypeScript / TSX | classes (extends/implements, decorators), interfaces, type aliases, enums, namespaces, functions, arrow-function consts, methods, fields, TS parameter properties | ESM imports, `require()`, calls, `new X()`, interface extends | typed parameters, `const x: T`, `const x = new T()`, field types |
 | Go | structs (fields, embedded types), interfaces (method set), funcs, methods (attached to receiver struct in the same package), package vars/consts | imports (module path from `go.mod`), calls, composite literals | receiver, typed parameters, `x := T{}` / `&T{}`, `var x T`, field chains (`h.S.Get`) |
 | Java | classes/interfaces/enums/records/annotations (extends, implements, annotations), methods, constructors, fields | imports (single, wildcard, static), method invocations, `new X()`; same package resolved without import | fields, parameters, local declarations, enhanced-for variables, `this.field` chains |
-| Kotlin | classes/interfaces/enums/data/sealed/objects/companion objects (supertypes, annotations, generics with bounds), primary-constructor `val`/`var` properties, class properties, functions/methods (params incl. `vararg`, return type, extension receiver), top-level functions | `import` (single, wildcard, `as` alias) resolved through the declared package and the top-level definitions of each file (shared JVM package index with Java, so Kotlin and Java in one package see each other), calls (`f()`, `a.b()`, `a?.b()`, `Outer.member()` incl. companions, `(x as T).m()`), supertypes | typed parameters and `vararg` (as arrays), `val x: T`, `val x = T(...)`, `val x = f()` (return type), properties incl. inherited ones used without `this.`, generic bounds on constructor properties, `Registry.lookup()` on `object`s |
+| Kotlin | classes/interfaces/enums/data/sealed/objects/companion objects (supertypes, annotations, generics with bounds), primary-constructor `val`/`var` properties, class properties, functions/methods (params incl. `vararg`, return type, extension receiver), top-level functions and top-level `val`/`var` properties (typed variables) | `import` (single, wildcard, `as` alias) resolved through the declared package and the top-level definitions of each file (shared JVM package index with Java, so Kotlin and Java in one package see each other), calls (`f()`, `a.b()`, `a?.b()`, `Outer.member()` incl. companions, `(x as T).m()`), supertypes | typed parameters and `vararg` (as arrays), `val x: T`, `val x = T(...)`, `val x = f()` (return type), properties incl. inherited ones used without `this.`, generic bounds on constructor properties, `Registry.lookup()` on `object`s |
 | Rust | structs (fields), enums, traits, impl blocks (methods attached to the type), functions, mods, type aliases, attributes | `use`, calls (plain, `Type::fn`, `x.method()`), macros (`name!`), struct literals, trait impls | typed parameters, `let x: T`, `let x = T { .. }`, `let x = T::new()`, `self` |
-| Terraform (HCL) | `resource`, `data`, `module`, `variable`, `output`, `provider`, `locals`, `terraform` (required providers, backend) | `var.`, `local.`, `module.x(.output)`, `data.t.n`, `type.name` references across all `.tf` files of the same directory; `depends_on`; local module sources and `.terraform/modules/modules.json` for registry/git modules | n/a |
+| Terraform (HCL) | `resource`, `data`, `module`, `variable`, `output`, `provider`, `locals`, `terraform` (required providers, backend), `moved` and `import` blocks | `var.`, `local.`, `module.x(.output)`, `data.t.n`, `type.name` references across all `.tf` files of the same directory, each recorded at the line of the reference (not of the enclosing attribute); `depends_on`; `moved`/`import` -> their `to` address; local module sources and `.terraform/modules/modules.json` for registry/git modules; a registry source with a `//subdir` that exists in the repo is an `ambiguous` lead to that directory. Iterators of `dynamic` blocks (`node_config.value`, or the `iterator =` name) are not references | n/a |
 | Kubernetes YAML | every document with `apiVersion` + `kind` (name, namespace, labels, images, selectors, pod-template labels), `List` items, Kustomization resources, Helm `values*.yaml` keys | ConfigMap/Secret/PVC/ServiceAccount/StorageClass/Ingress backend/HPA target/RoleBinding refs, Service->workload label selection, kustomization imports | n/a |
 
 ## Known limits (state them when relevant)
@@ -41,6 +41,12 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
 - Generic bounds: `struct Holder<S: Sinker>`, `impl<S: Sink> Core<S>`, `where S: Sink`,
   `class Box<T extends Shape>` make a field of type `S`/`T` resolve through its first bound;
   without a bound the field's type is treated as external.
+- Kotlin: `this` and `this@label` inside an extension function `fun T.f()` are the receiver `T`;
+  top-level properties are `variable` nodes with their declared type, so a chain through an
+  imported `val` (`currentDialect.functionProvider.charLength()`) is typed. A method card lists
+  `Overrides` / `Overridden by` (same-named methods across `extends`/`implements`, three levels),
+  which is how dialect-specific overrides are found; `callers` of the base method still lists only
+  direct callers of that definition.
 - Kotlin: `object` declarations, companions and anonymous `object : Base() { ... }` initialisers
   are classes (the anonymous one is named `<property>$object` and types the property); extension
   functions, including member extensions declared inside another class, are methods with a
@@ -84,6 +90,11 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
   (dashes become underscores). `impl` blocks roll up to their struct/enum in `overview`, and
   `--no-tests` also ignores inline `#[cfg(test)] mod tests` usage.
 - Python namespace packages without `__init__.py` resolve only when the module file exists.
+- Terraform: `*.tf.tmpl` / Jinja templates (the `autogen/` source of generated module copies) are
+  not indexed; only the rendered `.tf` files are. Go/Terratest fixtures are not linked to the
+  resources they exercise, so `trace-deps` on Terraform reports test files by convention only.
+  Directories named `build`, `dist`, `target`, `vendor` (and the rest of `DEFAULT_EXCLUDE_DIRS`)
+  are skipped unless `--keep-dir NAME` re-includes them.
 - Helm templates are not parsed as YAML (Go template syntax); only their `kind:` lines are noted.
-- Files with syntax errors produce partial skeletons flagged `parse errors`.
+- Files with syntax errors produce partial skeletons flagged `parse errors (first at LN)`.
 - Extensions not in `EXT_LANG` (astgraph.py) are skipped; add a mapping and, if needed, a handler.

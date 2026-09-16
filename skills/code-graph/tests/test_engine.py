@@ -276,10 +276,44 @@ def test_resolution(root):
     check(fields == ["id", "side", "sq"], f"kotlin: primary-constructor val/var parameters are fields {fields}")
     card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Order")
     check("create" in card and "Members" in card, "kotlin: class card lists companion members")
+    dt = G.confs(G.edges_from(G.node("Order.kt", "Sq.describeTwice")))
+    check(("Sq.double", "typed") in dt, f"kotlin: `this`/`this@label` inside an extension function is the receiver type {dt}")
+    kc = G.confs(G.edges_from(kp))
+    check(("FunctionProvider.charLength", "typed") in kc, f"kotlin: imported top-level `val currentDialect: Dialect` types a property chain {kc}")
+    cd = G.node("Base.kt", "currentDialect")
+    check(cd["kind"] == "variable" and cd["extra"].get("type") == "Dialect", f"kotlin: top-level property is a typed variable node {cd['kind']} {cd['extra']}")
+    oc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Base.kt:FunctionProvider.charLength")
+    check("Overridden by (1): SqliteProvider.charLength" in oc, f"kotlin: method card lists overriding methods: {[l for l in oc.splitlines() if 'Overrid' in l]}")
+    ja = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Shape.java:Shape.area")
+    check("Overridden by" in ja and "Circle.area" in ja and "Square.area" in ja, f"java: interface method card lists implementers' methods: {[l for l in ja.splitlines() if 'Overrid' in l]}")
+    jc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Circle.java:Circle.area")
+    check("Overrides: Shape.area" in jc, f"java: implementing method card names the interface method: {[l for l in jc.splitlines() if 'Overrid' in l]}")
 
     # --- Terraform / Kubernetes
     types = {(e["type"], e["confidence"]) for e in G.g["edges"]}
     check(("uses_module", "exact") in types, "hcl: module call resolved")
+    sg_refs = [r["name"] for r in G.g["files"]["infra/main.tf"]["refs"]]
+    check(not any(r.startswith(("node_config.", "log_cfg.")) for r in sg_refs), f"hcl: dynamic-block iterators (label and `iterator =`) are not references {sg_refs}")
+    mv = [n for n in G.g["nodes"] if n["kind"] == "moved"]
+    mv_edges = [(G.nodes[e["dst"]]["qname"], e["type"], e["confidence"]) for e in G.g["edges"] if mv and e["src"] == mv[0]["id"]]
+    check(len(mv) == 1 and mv[0]["signature"] == "moved aws_instance.old -> aws_instance.app" and mv_edges == [("aws_instance.app", "references", "exact")],
+          f"hcl: `moved` block is a node referencing its `to` address {mv_edges}")
+    td = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "trace-deps", "infra/main.tf:aws_instance.app", "--depth", "1")
+    check("moved.aws_instance.app" in td and "references -> aws_instance.app | exact" in td, f"hcl: blast radius of a resource lists the moved block: {[l for l in td.splitlines() if 'moved' in l]}")
+    reg = [(G.nodes[e["dst"]]["id"], e["confidence"]) for e in G.edges_from(G.node("main.tf", "module.vpc_from_registry"), typ="uses_module")]
+    check(("terraform_module:infra/modules/vpc", "ambiguous") in reg and any(c == "external" for _, c in reg),
+          f"hcl: registry source with a local //subdir gets an ambiguous lead next to the external edge {reg}")
+    src_lines = open(os.path.join(root, "infra/main.tf")).read().splitlines()
+    vpc_line = next(i + 1 for i, l in enumerate(src_lines) if "module.vpc.vpc_id" in l and "reference on a later line" in l)
+    sg = G.node("infra/main.tf", "aws_security_group.app")
+    ref_lines = sorted(e["line"] for e in G.g["edges"] if e["src"] == sg["id"] and e["type"] == "references" and G.nodes[e["dst"]]["qname"] == "module.vpc")
+    check(vpc_line in ref_lines, f"hcl: a reference inside a multi-line expression is recorded at its own line ({ref_lines}, expected {vpc_line})")
+    tfq = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "main.tf:terraform")
+    check(tfq.splitlines()[0].endswith("(main.tf:1)"), f"query: `file:name` prefers the exact root path over suffix matches: {tfq.splitlines()[0]}")
+    ovh = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--lang", "hcl", "--top", "20")
+    check('variable "cidr"' in ovh and "(+1 same-named copy in other directories)" in ovh, "overview: same-named symbols in several directories collapse to one row")
+    st = json.loads(run("query", "--root", root, "stats"))
+    check(st.get("files", 0) > 0, "query --root reads <root>/.ast-graph/graph.json")
     check(("selects", "exact") in types, "k8s: Service selects Deployment")
     svc = [n for n in G.g["nodes"] if n["kind"] == "k8s_object" and n["name"] == "Service/web"][0]
     check(any(G.nodes[e["dst"]]["name"] == "Deployment/web" for e in G.g["edges"] if e["src"] == svc["id"] and e["type"] == "selects"), "k8s: Service/web -> Deployment/web")
@@ -348,6 +382,23 @@ def test_tests_detection(root, G):
     out = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "trace-deps", "PaymentRequest")
     line = next((l for l in out.splitlines() if l.startswith("Tests reached")), "")
     check("PaymentOrchestratorTest.java" in line and "LatestAttestor" not in line, f"trace-deps PaymentRequest tests: {line}")
+
+
+def test_keep_dir_and_parse_errors(tmp):
+    root = os.path.join(tmp, "fixture-keep")
+    shutil.copytree(FIXTURE, root)
+    os.makedirs(os.path.join(root, "build"))
+    with open(os.path.join(root, "build", "extra.tf"), "w") as f:
+        f.write('variable "from_build_dir" {\n  type = string\n}\n')
+    build(root)
+    check("build/extra.tf" not in load(root)["files"], "build/ is excluded by default")
+    build(root, "--keep-dir", "build")
+    check("build/extra.tf" in load(root)["files"], "--keep-dir build indexes the directory")
+    broken = os.path.join(tmp, "broken.py")
+    with open(broken, "w") as f:
+        f.write("def ok():\n    return 1\ndef broken(:\n    pass\n")
+    head = run("skeleton", broken).splitlines()[0]
+    check("parse errors (first at L3)" in head, f"skeleton reports the first parse-error line: {head}")
 
 
 def test_empty_root(tmp):
@@ -452,6 +503,7 @@ def main():
         test_tests_detection(root, G)
         test_determinism(root)
         test_empty_root(tmp)
+        test_keep_dir_and_parse_errors(tmp)
         test_incremental(root)
         # fresh copy for the git test
         root2 = os.path.join(tmp, "fixture-git")

@@ -25,8 +25,10 @@ Examples:
 ```bash
 # one file
 ../code-graph/scripts/run.sh skeleton src/payments/orchestrator.py
-# a directory (respects the default excludes: node_modules, .git, vendor, .terraform, ...)
+# a directory (respects the default excludes: node_modules, .git, vendor, build, dist, .terraform, ...)
 ../code-graph/scripts/run.sh skeleton src/payments --include '*.py'
+# ... unless a default-excluded name is re-included
+../code-graph/scripts/run.sh skeleton . --keep-dir build --include '*.yaml'
 # quieter output for very large files
 ../code-graph/scripts/run.sh skeleton big.ts --no-calls
 ```
@@ -49,8 +51,8 @@ whole file unless the skeleton shows it is small or you must edit most of it.
 
 ## Notes
 
-- A file with `parse errors` in its header still yields a partial skeleton; the model should
-  treat the ranges near the error as approximate.
+- A file with `parse errors (first at LN)` in its header still yields a partial skeleton; the
+  model should treat the ranges near that line as approximate.
 - Helm templates (files containing `{{`) are not valid YAML; the skeleton lists their `kind:`
   values only.
 - For relationships across files (who calls this, what breaks if I change it) use the

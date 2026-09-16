@@ -65,5 +65,8 @@ Finish with the exact install command you ran so the developer can repeat it wit
   installer itself is standard-library only, but the skills' tree-sitter engine needs 3.10).
 - Installing both Codex and Antigravity into one project creates a persona skill and a native
   agent with the same name; harmless, but say so.
+- Claude Code prompts for each `run.sh` call the `ast-treesitter` subagent makes unless the
+  project's `.claude/settings.json` allows `Bash(*/code-graph/scripts/run.sh *)`; mention this
+  after a Claude install (do not edit the developer's settings yourself).
 - Harness folder layouts are listed in the repository README; if a harness has moved its folders
   since 2026-09-07, update `install.sh` rather than working around it.

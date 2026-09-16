@@ -18,3 +18,5 @@ infix fun Sq.plus2(o: Sq): Sq = Sq(side + o.side)   // infix extension
 object Registry {
     fun lookup(id: String): Order? = null
 }
+
+fun Sq.describeTwice(): Int = this@describeTwice.double().side + this.double().side   // `this` / `this@label` = the receiver Sq

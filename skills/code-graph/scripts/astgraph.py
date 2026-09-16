@@ -90,7 +90,7 @@ def is_test_file(path):
     return any(r.search(parts[-1]) for r in TEST_FILE_RES)
 
 
-GRAPH_VERSION = 4  # 4: call argument counts (overloads), JS export-from and Rust use names (re-exports), asset imports
+GRAPH_VERSION = 5  # 5: HCL moved/import blocks, dynamic iterators, exact reference lines; Kotlin top-level variables; first parse-error line (4: argc, re-exports, asset imports)
 
 # Unqualified calls to these names are language builtins; never linked to a repo symbol of the same name.
 BUILTIN_CALLS = {
@@ -307,7 +307,7 @@ class Ctx:
         if not name:
             return
         ref = {"kind": kind, "name": name, "src": self.top()["id"],
-               "line": tsnode.start_point[0] + 1, "hint": hint}
+               "line": extra.pop("line", None) or tsnode.start_point[0] + 1, "hint": hint}
         if kind == "call" and "argc" not in extra:
             # argument count and, where knowable, argument types for overload resolution
             args = tsnode.child_by_field_name("arguments") if hasattr(tsnode, "child_by_field_name") else None
@@ -1475,6 +1475,11 @@ def kt_property(ctx, n):
         ctx.add_node("field", name, n, signature=f"{name}: {ttxt}" if ttxt else name, type_text=ttxt,
                      extra={"type": ftype, "inferred": typ is None} if ftype else {"type": None})
     elif name:
+        if ctx.top()["kind"] == "file":
+            # top-level property: a node, so `import pkg.currentDialect` resolves and
+            # `currentDialect.functionProvider.f()` can be typed from its declared type
+            ctx.add_node("variable", name, n, signature=f"val {name}: {ttxt}" if ttxt else f"val {name}",
+                         extra={"type": ttxt or (("<call>" + callee.replace("?.", ".") + "|") if callee else None), "inferred": typ is None})
         if ttxt:
             ctx.declare(name, ttxt)
         elif callee:
@@ -1508,7 +1513,7 @@ def kt_call(ctx, n):
         recv, suf = head.named_children[0], head.named_children[-1]
         member = next((ctx.text(c) for c in suf.named_children if c.type == "simple_identifier"), None) if suf.type == "navigation_suffix" else None
         if member:
-            hint = ctx.text(recv).replace("?.", ".").replace("!!", "")
+            hint = re.sub(r"\bthis@\w+", "this", ctx.text(recv).replace("?.", ".").replace("!!", ""))   # `this@label.f()` is `this.f()`
             ref = ctx.add_ref("call", member, n, hint=hint, **extra)
             # `(x as Foo).bar()`: the cast tells us the receiver type
             if recv.type == "parenthesized_expression" and recv.named_children and recv.named_children[0].type == "as_expression":
@@ -1636,7 +1641,11 @@ HCL_REF_RE = re.compile(
 HCL_SKIP_PREFIX = {"path", "terraform", "each", "count", "self"}
 
 
-def hcl_refs_from_text(ctx, txt, tsnode, kind="references"):
+def hcl_refs_from_text(ctx, txt, tsnode, kind="references", skip=frozenset()):
+    """Record every `var.x` / `local.x` / `module.x` / `data.t.n` / `type.name` reference in an
+    expression. `tsnode` is the node whose text is `txt`, so the recorded line is the line of the
+    reference itself even inside a multi-line expression. `skip` holds names that are not
+    addresses in this scope: the iterators of enclosing `dynamic` blocks (`node_config.value`)."""
     seen = set()
     for m in HCL_REF_RE.finditer(txt):
         if m.group(1):
@@ -1645,11 +1654,13 @@ def hcl_refs_from_text(ctx, txt, tsnode, kind="references"):
             attr = None if p == "data" else b
         else:
             name, attr = f"{m.group(4)}.{m.group(5)}", None
+            if m.group(4) in skip:
+                continue
         key = (name, attr)
         if key in seen:
             continue
         seen.add(key)
-        ctx.add_ref(kind, name, tsnode, attr=attr)
+        ctx.add_ref(kind, name, tsnode, attr=attr, line=tsnode.start_point[0] + 1 + txt[:m.start()].count("\n"))
 
 
 def hcl_attrs(ctx, body):
@@ -1661,24 +1672,8 @@ def hcl_attrs(ctx, body):
             yield key, expr
 
 
-def hcl_walk_body_refs(ctx, body):
-    for c in (body.named_children if body is not None else []):
-        if c.type == "attribute":
-            key = ctx.text(c.named_children[0]) if c.named_children else ""
-            expr_txt = ctx.text(c.named_children[1]) if len(c.named_children) > 1 else ""
-            if key == "depends_on":
-                hcl_refs_from_text(ctx, expr_txt, c, kind="depends_on")
-            else:
-                hcl_refs_from_text(ctx, expr_txt, c)
-        elif c.type == "block":
-            for b in c.named_children:
-                if b.type == "body":
-                    hcl_walk_body_refs(ctx, b)
-
-
-def hcl_block(ctx, n):
-    if ctx.top()["kind"] != "file":
-        return False
+def hcl_block_parts(ctx, n):
+    """(block type, labels, body node) of a `block` node."""
     btype, labels, body = None, [], None
     for c in n.named_children:
         if c.type == "identifier" and btype is None:
@@ -1687,6 +1682,39 @@ def hcl_block(ctx, n):
             labels.append(strip_quotes(ctx.text(c)))
         elif c.type == "body":
             body = c
+    return btype, labels, body
+
+
+def hcl_walk_body_refs(ctx, body, skip=frozenset()):
+    for c in (body.named_children if body is not None else []):
+        if c.type == "attribute":
+            key = ctx.text(c.named_children[0]) if c.named_children else ""
+            expr = c.named_children[1] if len(c.named_children) > 1 else None
+            if expr is None:
+                continue
+            hcl_refs_from_text(ctx, ctx.text(expr), expr, kind="depends_on" if key == "depends_on" else "references", skip=skip)
+        elif c.type == "block":
+            btype, labels, b = hcl_block_parts(ctx, c)
+            inner = skip
+            if btype == "dynamic":
+                # `dynamic "node_config" { for_each = ...; iterator = nc; content { ... nc.value.x } }`:
+                # the iterator (default: the block label) is a loop variable, not a resource address
+                it = strip_quotes(dict(hcl_attrs_text(ctx, b)).get("iterator", "")).strip() or (labels[0] if labels else "")
+                if it:
+                    inner = skip | {it}
+            if b is not None:
+                hcl_walk_body_refs(ctx, b, inner)
+
+
+def hcl_attrs_text(ctx, body):
+    for k, e in hcl_attrs(ctx, body):
+        yield k, (ctx.text(e) if e is not None else "")
+
+
+def hcl_block(ctx, n):
+    if ctx.top()["kind"] != "file":
+        return False
+    btype, labels, body = hcl_block_parts(ctx, n)
     attrs = {k: ctx.text(e) for k, e in hcl_attrs(ctx, body)}
     sig = " ".join([btype] + [f'"{l}"' for l in labels])
     if btype == "resource" and len(labels) >= 2:
@@ -1723,6 +1751,19 @@ def hcl_block(ctx, n):
             if c.type == "block" and c.named_children and ctx.text(c.named_children[0]) == "backend":
                 ctx.file_extra["backend"] = strip_quotes(ctx.text(c.named_children[1])) if len(c.named_children) > 1 else ""
         ctx.add_node("terraform", "terraform", n, signature="terraform", extra={"required_providers": rp, "required_version": strip_quotes(attrs.get("required_version", ""))})
+        return True
+    elif btype in ("moved", "import") and "to" in attrs:
+        # `moved { from = a.b  to = c.d }` / `import { to = c.d  id = "..." }`: the `to` address is a
+        # dependent of the resource (renaming it breaks the block); `from` no longer exists in code.
+        to = attrs["to"].strip()
+        frm = attrs.get("from", "").strip()
+        kind = "moved" if btype == "moved" else "import_block"
+        node = ctx.add_node(kind, f"{btype}.{to}", n, signature=f"moved {frm} -> {to}" if btype == "moved" else f"import {to}",
+                            extra={"from": frm, "to": to, "id": strip_quotes(attrs.get("id", ""))} if btype == "import" else {"from": frm, "to": to})
+        ctx.push(node)
+        e = next((e for k, e in hcl_attrs(ctx, body) if k == "to"), None)
+        hcl_refs_from_text(ctx, to, e if e is not None else n)
+        ctx.pop()
         return True
     else:
         return False
@@ -1916,7 +1957,23 @@ def extract_file(path, root_dir, src=None):
     else:
         ctx.walk(tree.root_node)
     ctx.file_node["extra"] = dict(ctx.file_extra, language=lang, has_errors=tree.root_node.has_error)
+    if tree.root_node.has_error:
+        ctx.file_node["extra"]["first_error_line"] = first_error_line(tree.root_node)
     return ctx.file_node, ctx.nodes, ctx.refs
+
+
+def first_error_line(root):
+    """1-based line of the first ERROR/MISSING node, descending only into subtrees that contain one."""
+    best, stack = None, [root]
+    while stack:
+        n = stack.pop()
+        if n.is_error or n.is_missing:
+            line = n.start_point[0] + 1
+            best = line if best is None or line < best else best
+            continue
+        if n.has_error:
+            stack.extend(n.children)
+    return best
 
 
 # ----------------------------------------------------------------------------------------------
@@ -1963,7 +2020,7 @@ def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=8, show_l
     if extra.get("package"):
         head += f", package {extra['package']}"
     if extra.get("has_errors"):
-        head += ", parse errors"
+        head += ", parse errors" + (f" (first at L{extra['first_error_line']})" if extra.get("first_error_line") else "")
     lines.append(head + ")")
     if imports:
         lines.append("  imports: " + ", ".join(imports[:12]) + (f" (+{len(imports) - 12} more)" if len(imports) > 12 else ""))
@@ -1991,9 +2048,11 @@ def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=8, show_l
     return "\n".join(lines)
 
 
-def iter_source_files(root_dir, includes=None, excludes=None, extra_dirs=None):
-    """Yield repo-relative paths of supported files, honoring exclude dirs and glob filters."""
-    excl_dirs = set(DEFAULT_EXCLUDE_DIRS)
+def iter_source_files(root_dir, includes=None, excludes=None, extra_dirs=None, keep_dirs=None):
+    """Yield repo-relative paths of supported files, honoring exclude dirs and glob filters.
+    `keep_dirs` removes names from the default exclude set (a Terraform repo whose `build/` holds
+    Cloud Build configs, a Go repo with a `vendor/` it wants indexed)."""
+    excl_dirs = set(DEFAULT_EXCLUDE_DIRS) - set(keep_dirs or [])
     excl_globs = list(excludes or [])
     seen = set()
     roots = [root_dir] + [os.path.join(root_dir, d) for d in (extra_dirs or [])]
@@ -2020,7 +2079,7 @@ def cmd_skeleton(args):
     for p in args.paths:
         ap = os.path.abspath(p)
         if os.path.isdir(ap):
-            for rel in iter_source_files(ap, args.include, args.exclude):
+            for rel in iter_source_files(ap, args.include, args.exclude, keep_dirs=args.keep_dir):
                 paths.append(os.path.join(ap, rel))
         else:
             paths.append(ap)
@@ -2472,7 +2531,7 @@ def resolve_import(ref, file_path, lang, files, root_dir, go_module=None, ctx=No
     return None
 
 
-def git_stamp(root_dir, includes, excludes, out_path=None):
+def git_stamp(root_dir, includes, excludes, out_path=None, keep_dirs=None):
     """Fingerprint of the git working tree under root_dir: HEAD, porcelain status (tracked changes and
     untracked files) and the content of every listed source file. None when root_dir is not in a git
     repo. The graph's own directory and files the graph does not index (unsupported extensions) are
@@ -2493,7 +2552,7 @@ def git_stamp(root_dir, includes, excludes, out_path=None):
             engine = hashlib.sha1(f.read()).hexdigest()   # a changed engine must re-link even at the same GRAPH_VERSION
     except OSError:
         engine = ""
-    h.update(f"{GRAPH_VERSION}|{engine}|{head}|{sorted(includes or [])}|{sorted(excludes or [])}|{root_dir}\n".encode())
+    h.update(f"{GRAPH_VERSION}|{engine}|{head}|{sorted(includes or [])}|{sorted(excludes or [])}|{sorted(keep_dirs or [])}|{root_dir}\n".encode())
     for line in status.splitlines():
         path = line[3:]
         if path.startswith('"') and path.endswith('"'):
@@ -2512,12 +2571,12 @@ def git_stamp(root_dir, includes, excludes, out_path=None):
     return h.hexdigest()
 
 
-def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False):
+def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False, keep_dirs=None):
     t0 = time.time()
     root_dir = os.path.abspath(root_dir)
     # Fast path: if the git working tree is byte-identical to the one the graph was built from, the
     # graph is current and even the (always full) link pass can be skipped.
-    stamp = git_stamp(root_dir, includes, excludes, out_path)
+    stamp = git_stamp(root_dir, includes, excludes, out_path, keep_dirs)
     stamp_path = out_path + ".stamp"
     if stamp and not full and os.path.exists(out_path) and os.path.exists(stamp_path):
         try:
@@ -2550,7 +2609,7 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False)
     extra_dirs = sorted({v["dir"] for v in tf_modules.values() if os.path.isdir(os.path.join(root_dir, v["dir"]))})
     files = {}
     changed, reused = 0, 0
-    for rel in iter_source_files(root_dir, includes, excludes, extra_dirs=extra_dirs):
+    for rel in iter_source_files(root_dir, includes, excludes, extra_dirs=extra_dirs, keep_dirs=keep_dirs):
         try:
             with open(os.path.join(root_dir, rel), "rb") as f:
                 src = f.read()
@@ -2612,6 +2671,7 @@ def link_graph(root_dir, files, tf_modules):
     nodes, edges = [], []
     node_by_id = {}
     by_name = defaultdict(list)        # simple name -> nodes (definitions only)
+    var_by_name = defaultdict(list)    # file-level variables with a declared type (typed receiver roots), kept apart
     by_file = defaultdict(list)
     go_module = None
     gm = os.path.join(root_dir, "go.mod")
@@ -2636,6 +2696,8 @@ def link_graph(root_dir, files, tf_modules):
                 by_name[n["name"]].append(n)
                 if n["qname"] != n["name"]:
                     by_name[n["qname"]].append(n)
+            elif n["kind"] == "variable" and n["parent"] == rel and n.get("extra", {}).get("type"):
+                var_by_name[n["name"]].append(n)
             edges.append({"src": n["parent"], "dst": n["id"], "type": "contains", "line": n["line"], "confidence": "exact"})
 
     # Go receiver methods belong to their struct/interface, not to the file. Do this before any
@@ -2849,6 +2911,12 @@ def link_graph(root_dir, files, tf_modules):
                     add_edge(r["src"], dir_nodes[key]["id"], "uses_module", r["line"], "exact")
                 else:
                     add_edge(r["src"], external(src_str, "external_module")["id"], "uses_module", r["line"], "external")
+                    # `registry/name/provider//modules/x` in a repo that contains `modules/x`: the example
+                    # most likely exercises this repo's own copy of the module. Recorded as a lead.
+                    if "//" in src_str:
+                        sub = src_str.split("//", 1)[1].split("?", 1)[0].strip("/")
+                        if sub and ("terraform_module", sub) in dir_nodes:
+                            add_edge(r["src"], dir_nodes[("terraform_module", sub)]["id"], "uses_module", r["line"], "ambiguous")
 
     # Names defined at the top level of each file (for re-export following)
     top_defs = defaultdict(dict)   # file -> {name: [nodes]}
@@ -3705,10 +3773,28 @@ def link_graph(root_dir, files, tf_modules):
             if tn is None:
                 return "unknown", None
             return from_node(tn, chain[1:], flags[1:])
+        if first == "this" and lang == "kotlin":
+            # inside `fun T.f()` (including `this@f`), `this` is the extension receiver T, not the enclosing class
+            rtype = (node_by_id.get(r["src"]) or {}).get("extra", {}).get("receiver_type")
+            if rtype:
+                tn = type_node(rtype.split("<")[0].rstrip("?").split(".")[-1], rel)
+                if tn is not None:
+                    return from_node(tn, chain[1:], flags[1:])
         if first in ("self", "this", "cls", "Self") and cont is not None:
             return from_node(cont, chain[1:], flags[1:])
         if cont is not None and any(first in field_types.get(oid, {}) for oid in owner_ids(cont)):
             return from_node(cont, chain, flags)
+        if first and not first[0].isupper() and not flags[0]:
+            # `currentDialect.functionProvider.f()`: a top-level typed variable declared in this file, in
+            # the same package, or in a file an import (explicit or wildcard) binds
+            tv = toplevel_var(first, rel, repo)
+            if tv is not None:
+                kind, tn = resolve_type_ref(tv["extra"]["type"], tv["file"], None)
+                if kind == "ext":
+                    return "external", None
+                if tn is not None:
+                    return from_node(tn, chain[1:], flags[1:])
+                return "unknown", None
         if cont is not None and not flags[0]:
             # a property inherited from an ancestor, used without `this.` (Kotlin/Java/Python)
             anc, seen_anc, frontier = None, set(), list(parents_of.get(cont["id"], []))
@@ -3753,6 +3839,16 @@ def link_graph(root_dir, files, tf_modules):
         if first in ext:
             return "external", None
         return "unknown", None
+
+    def toplevel_var(name, rel, repo):
+        """The unique file-level variable `name` with a declared type that is visible from `rel`."""
+        cands = var_by_name.get(name, [])
+        if not cands:
+            return None
+        star = ns_repo.get(rel, {}).get("*", set())
+        vis = [c for c in cands if c["file"] == rel or (name in repo and c["file"] in repo[name]) or c["file"] in star
+               or (lang_of(rel) in ("java", "kotlin", "go") and lang_of(c["file"]) in ("java", "kotlin", "go") and same_package(c["file"], rel))]
+        return vis[0] if len(vis) == 1 else None
 
     def resolve_call(r, rel, lang, cont):
         """Resolve one call ref -> (targets, confidence, mode); mode 'external'/'builtin' mean no edge.
@@ -3919,8 +4015,10 @@ class G:
             if "@" in npart and npart.rsplit("@", 1)[1].isdigit():   # `readers.py:read_csv@1283`
                 npart, line = npart.rsplit("@", 1)
                 line = int(line)
-            return list({n["id"]: n for n in self.by_name.get(npart.lower(), [])
-                         if (n["file"] == fpart or n["file"].endswith("/" + fpart)) and (line is None or n["line"] == line)}.values())
+            hits = [n for n in self.by_name.get(npart.lower(), [])
+                    if (n["file"] == fpart or n["file"].endswith("/" + fpart)) and (line is None or n["line"] == line)]
+            exact_path = [n for n in hits if n["file"] == fpart]   # `variables.tf:var.x` means the root file when it exists
+            return list({n["id"]: n for n in (exact_path or hits)}.values())
         exact = self.by_name.get(q.lower(), [])
         if kinds:
             exact = [n for n in exact if n["kind"] in kinds]
@@ -4024,6 +4122,29 @@ def q_symbol(g, args):
         if ex:
             print("  extra: " + json.dumps(ex)[:400])
     cap = None if getattr(args, "all", False) else getattr(args, "limit", 40)
+    par = g.nodes.get(n.get("parent"))
+    if n["kind"] in ("method", "function") and par is not None and par["kind"] in CONTAINER_KINDS:
+        # same-named members of ancestors (Overrides) and descendants (Overridden by), 3 levels each way
+        def related(start, down):
+            seen, out, frontier = {start["id"]}, [], [(start, 0)]
+            while frontier:
+                cls, depth = frontier.pop(0)
+                if depth >= 3:
+                    continue
+                edges = g.in_edges(cls["id"], {"extends", "implements"}) if down else g.out_edges(cls["id"], {"extends", "implements"})
+                for e in edges:
+                    nxt = g.nodes.get(e["src"] if down else e["dst"])
+                    if nxt is None or nxt["id"] in seen or nxt["kind"] not in CONTAINER_KINDS:
+                        continue
+                    seen.add(nxt["id"])
+                    out.extend(k for k in g.children(nxt["id"]) if k["name"] == n["name"] and k["kind"] in ("method", "function"))
+                    frontier.append((nxt, depth + 1))
+            return out
+        ups, downs = related(par, False), related(par, True)
+        if ups:
+            print("├── Overrides: " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in ups[:8]))
+        if downs:
+            print(f"├── Overridden by ({len(downs)}): " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in downs[:12]) + (" ..." if len(downs) > 12 else ""))
 
     def collapse(edge_list, key_node):
         """Identical (type, target, confidence) rows from several lines become one row with a count."""
@@ -4382,15 +4503,22 @@ def q_overview(g, args):
         if n["kind"] == "file":
             dirs[os.path.dirname(n["file"]) or "."][n["extra"].get("language", "?")] += 1
     print("\nDirectories (files by language):")
-    shown_dirs = sorted(dirs.items())[: args.top * 2]
+    shown_dirs = sorted(dirs.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))[: args.top * 2]   # largest first
     for d, langs in shown_dirs:
         print(f"  {d}: " + ", ".join(f"{k}={v}" for k, v in sorted(langs.items())))
     if len(dirs) > len(shown_dirs):
         print(f"  ... {len(dirs) - len(shown_dirs)} more directories (query stats / query file for any of them)")
     print(f"\nMost depended-upon symbols (incoming calls/extends/implements/references, top {args.top}):")
-    for nid, c in sorted(sym_in.items(), key=lambda kv: -kv[1])[: args.top]:
+    groups = {}   # same kind + qualified name in several directories (generated module copies) -> one row
+    for nid, c in sorted(sym_in.items(), key=lambda kv: -kv[1]):
         n = g.nodes[nid]
-        print(f"  {c:4d}  {fmt_node(n)}")
+        k = (n["kind"], n["qname"])
+        if k in groups:
+            groups[k][2] += 1
+        else:
+            groups[k] = [n, c, 0]
+    for n, c, copies in list(groups.values())[: args.top]:
+        print(f"  {c:4d}  {fmt_node(n)}" + (f"  (+{copies} same-named cop{'y' if copies == 1 else 'ies'} in other directories)" if copies else ""))
     print(f"\nMost depended-upon files (top {args.top}):")
     for f, c in sorted(file_in.items(), key=lambda kv: -kv[1])[: args.top]:
         print(f"  {c:4d}  {f}")
@@ -4485,6 +4613,7 @@ def main(argv=None):
     sk.add_argument("--root", default=".", help="repo root used for relative paths")
     sk.add_argument("--include", action="append", help="glob(s) to include when a directory is given")
     sk.add_argument("--exclude", action="append", help="glob(s) to exclude")
+    sk.add_argument("--keep-dir", action="append", help="directory name to index although it is excluded by default (build, dist, target, vendor ...)")
     sk.add_argument("--no-calls", action="store_true", help="omit the 'calls:' lines")
     sk.add_argument("--no-lines", action="store_true", help="omit line ranges")
     sk.add_argument("--no-stats", action="store_true")
@@ -4496,12 +4625,14 @@ def main(argv=None):
     b.add_argument("--out", default=None, help=f"graph file (default <root>/{DEFAULT_GRAPH})")
     b.add_argument("--include", action="append")
     b.add_argument("--exclude", action="append")
+    b.add_argument("--keep-dir", action="append", help="directory name to index although it is excluded by default (build, dist, target, vendor ...)")
     b.add_argument("--full", action="store_true", help="ignore the cached graph and re-parse everything")
     b.add_argument("--quiet", action="store_true")
-    b.set_defaults(fn=lambda a: build_graph(a.root, a.out or os.path.join(a.root, DEFAULT_GRAPH), a.include, a.exclude, a.full, a.quiet))
+    b.set_defaults(fn=lambda a: build_graph(a.root, a.out or os.path.join(a.root, DEFAULT_GRAPH), a.include, a.exclude, a.full, a.quiet, a.keep_dir))
 
     q = sub.add_parser("query", help="query a built graph")
     q.add_argument("--graph", default=DEFAULT_GRAPH)
+    q.add_argument("--root", default=None, help=f"repo root; the graph is read from <root>/{DEFAULT_GRAPH} unless --graph is given")
     qs = q.add_subparsers(dest="qcmd", required=True)
 
     x = qs.add_parser("find", help="search symbols/files by name (exact-name matches first)")
@@ -4546,6 +4677,8 @@ def main(argv=None):
     x.set_defaults(qfn=q_stats)
 
     def run_query(a):
+        if a.root and a.graph == DEFAULT_GRAPH:
+            a.graph = os.path.join(a.root, DEFAULT_GRAPH)
         if not os.path.exists(a.graph):
             sys.exit(f"graph not found at {a.graph}. Build it first: astgraph.py build --root <repo>")
         g = G(load_graph(a.graph))

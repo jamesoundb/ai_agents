@@ -39,6 +39,7 @@ class OrderService(val repo: OrderRepo) : Base<Sq>(Sq(2)) {
         reg.lookup("3")                           // local bound to an object reference -> typed
         take(saved.sq)                            // subtype-aware overload: take(Shape), not take(Any)
         take2(saved.sq)                           // take2(Shape) beats the generic take2(T)
+        currentDialect.functionProvider.charLength()   // imported top-level val -> property chain -> typed
         return saved
     }
 }

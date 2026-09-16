@@ -16,3 +16,21 @@ fun take(x: Any): Int = 0
 fun take(x: Shape): Int = 1          // a Sq argument is a Shape: this overload wins over Any and over a generic
 fun <T> take2(x: T): Int = 0
 fun take2(x: Shape): Int = 1
+
+interface Dialect {
+    val functionProvider: FunctionProvider
+}
+
+open class FunctionProvider {
+    open fun charLength(): String = "CHAR_LENGTH"
+}
+
+class SqliteProvider : FunctionProvider() {
+    override fun charLength(): String = "LENGTH"      // "Overridden by" on FunctionProvider.charLength's card
+}
+
+class H2Dialect : Dialect {
+    override val functionProvider: FunctionProvider = FunctionProvider()
+}
+
+val currentDialect: Dialect = H2Dialect()             // top-level typed property: a variable node

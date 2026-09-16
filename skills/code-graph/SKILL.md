@@ -31,9 +31,11 @@ it writes into the repo is the graph under `.ast-graph/`).
    ```bash
    scripts/run.sh build --root .
    ```
-   Options: `--include 'src/**'` / `--exclude '*_test.go'` (repeatable globs), `--full` to
-   ignore the cache and the stamp (needed after editing git-ignored source files), `--out PATH`
-   for a custom graph path. Cached parses are discarded automatically when the engine file
+   Options: `--include 'src/**'` / `--exclude '*_test.go'` (repeatable globs), `--keep-dir build`
+   to index a directory name that is excluded by default (`build`, `dist`, `target`, `vendor`,
+   `node_modules`, `.terraform` ...; a Terraform repo's `build/` often holds Cloud Build configs),
+   `--full` to ignore the cache and the stamp (needed after editing git-ignored source files),
+   `--out PATH` for a custom graph path. Cached parses are discarded automatically when the engine file
    changes (updating the skill never leaves a stale graph behind). Terraform nested modules found in
    `.terraform/modules/modules.json` are indexed automatically. JavaScript/TypeScript: path
    aliases come from the nearest `tsconfig.json`/`jsconfig.json` (`compilerOptions.paths`,
@@ -56,6 +58,9 @@ it writes into the repo is the graph under `.ast-graph/`).
    scripts/run.sh query find PaymentOrch                  # exact-name matches first; --lang python, --kind class to narrow
    scripts/run.sh query symbol PaymentOrchestrator
    ```
+   A method card also lists `Overrides` (the same-named method in an ancestor) and `Overridden by`
+   (in descendants, three levels each way), which is how "which dialects render this differently"
+   or "who implements this interface method" is answered.
 
 4. **Traverse** instead of grepping:
    ```bash
@@ -77,13 +82,17 @@ it writes into the repo is the graph under `.ast-graph/`).
    (`Read` with offset/limit, or `sed -n 'START,ENDp' FILE`).
 
 Every query subcommand accepts `--json` for machine-readable output (`stats` always prints
-JSON). Run `query --graph PATH ...` if the graph is not at the default location.
+JSON). Run `query --root DIR ...` from outside the repo (the graph is read from
+`DIR/.ast-graph/graph.json`) or `query --graph PATH ...` for a graph at a custom path.
 
 ## Naming symbols in queries
 
 Accept, in order: a node id (`file::qname@line`), a qualified name (`DataService.save`), a plain
 name, a file path, `file-suffix:name` (`store.go:MemStore`) or `file-suffix:name@line`
-(`readers.py:read_csv@1283`) to disambiguate, or a substring. A constructor (`__init__`,
+(`readers.py:read_csv@1283`) to disambiguate, or a substring. When the suffix is also an exact
+relative path it wins: `variables.tf:var.node_pools` means the root `variables.tf` even if
+`modules/*/variables.tf` declare the same variable (the ambiguity message lists the ids
+otherwise). A constructor (`__init__`,
 `constructor`, `new`) as a `callers`/`trace-deps` target automatically includes its class, since
 instantiations are recorded against the class. Overloads: calls attach to the implementation,
 never to Python `@overload` stubs; among same-named Java/Kotlin/TS/Go/Rust definitions the linker picks
@@ -93,8 +102,9 @@ type); when several same-arity overloads remain undecided, the call is recorded 
 across that overload set rather than guessed, so `--include-ambiguous` shows the candidates and
 the trace note counts them.
 Terraform addresses use their native form (`aws_instance.app`, `module.vpc`, `var.region`,
-`output.vpc_id`, `local.tags`, `data.aws_ami.app`). Kubernetes objects are `Kind/name`
-(`Deployment/web`, `ConfigMap/web-config`).
+`output.vpc_id`, `local.tags`, `data.aws_ami.app`); `moved`/`import` blocks are `moved.<to>` /
+`import.<to>` and appear as dependents of the address they target. Kubernetes objects are
+`Kind/name` (`Deployment/web`, `ConfigMap/web-config`).
 
 ## Reading confidence labels
 
@@ -137,6 +147,15 @@ The linker is receiver-aware and import-aware:
 - Re-exports are followed everywhere they occur: Python `from x import y` in `__init__.py`,
   JS/TS `export { a as b } from` / `export * from` barrels, Rust `pub use` (grouped paths
   expanded).
+- Kotlin: inside `fun T.f()` the receiver `this` (and `this@f`) is `T`; a top-level
+  `val currentDialect: Dialect` is a typed variable node, so `currentDialect.functionProvider.f()`
+  resolves through the property chain from any file that imports it (explicitly or by wildcard)
+  or shares its package.
+- Terraform: references are resolved within a directory (root module or one module), `module.x.y`
+  reaches `output.y` in the called module's directory, and a registry source whose `//subdir`
+  exists in the repo (`ns/name/google//modules/x` with a local `modules/x`) gets an `ambiguous`
+  lead to that directory next to the `external` edge, so `trace-deps modules/x
+  --include-ambiguous` finds the examples that exercise it.
 
 Anything the graph could not resolve appears under "Unresolved" in a symbol card and is usually
 an external library, a builtin, or generated/unindexed code.

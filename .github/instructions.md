@@ -147,8 +147,10 @@ different one rather than adding vendor-neutral fallbacks.
   (Python, JavaScript, TypeScript, Go, Java, Kotlin, Rust, HCL, Kubernetes YAML) from
   `skills/code-graph/tests/fixture/` to a temp dir, builds it there and asserts resolution
   confidence per language, overload and return-type choices, test-file detection, query output
-  shapes (`path` text and `--json`), incremental == full, determinism across hash seeds, the git
-  fast path and the engine-hash cache key. Run it
+  shapes (`path` text and `--json`, method-card overrides, `file:name` root preference, overview
+  de-duplication, `--root`), Terraform `dynamic`/`moved`/registry-lead handling, `--keep-dir`,
+  the parse-error line, incremental == full, determinism across hash seeds, the git fast path and
+  the engine-hash cache key. Run it
   after any change to `astgraph.py` and add a regression case for every linker fix.
 - Adding a language: map the extension in `EXT_LANG`, add a handler dict keyed by tree-sitter node
   type, register it in `HANDLERS`, and extend `resolve_import` if the language has imports.
@@ -176,7 +178,9 @@ fixtures are described in the skills' READMEs.
 Engine changes are verified against the committed fixture in `skills/code-graph/tests/fixture/`
 (Java example from the source article, Python with re-exporting packages, TS/JS with a workspace
 package and tsconfig `extends`, Go with `go.mod`, Kotlin in a Gradle `src/main` + `src/test`
-layout, a Rust Cargo workspace, Terraform with a local module, Kubernetes manifests with
+layout with extension functions, overrides and an imported top-level property, a Rust Cargo
+workspace, Terraform with a root calling a local module, a registry source mirroring a local
+directory, `dynamic` blocks and a `moved` block, Kubernetes manifests with
 Service/Deployment/ConfigMap/HPA/Ingress, a Helm template and values file). The runner copies it
 to a temp dir and never writes into the repo. The fixture contents and measured behaviour are
 described in `agents/ast-treesitter/README.md`; the Terraform and Kubernetes skills describe

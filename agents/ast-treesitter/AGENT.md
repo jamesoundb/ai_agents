@@ -43,14 +43,17 @@ depending on the harness). Locate it once, then:
    (instant when the git working tree is unchanged since the last build; otherwise seconds on
    small repos, tens of seconds on repos above a million lines).
    If the graph reports 0 files or the target language is missing, check `run.sh query stats`
-   and the exclude list before continuing.
+   and the exclude list (`--keep-dir NAME` re-includes `build`, `dist`, `target`, `vendor` ...)
+   before continuing. When your working directory is not the repo, pass `--root DIR` to `build`
+   and to every `query` (the graph is read from `DIR/.ast-graph/graph.json`).
 2. Orient: `run.sh query overview --no-tests` (hub symbols, hub files, directories, externals,
    entry points); add `--lang <language>` in mixed repos so one language's hubs do not hide
    another's.
 3. Locate: `run.sh query find NAME` (exact-name matches come first; add `--lang` and `--kind`
    in mixed repos), then `run.sh query symbol NAME` for the architecture card
    (capped at 40 rows per section with a per-file summary of the rest; `--all` only when you need
-   every edge).
+   every edge). A method card lists `Overrides` / `Overridden by`: use it for "who implements
+   this" and "which subclasses render this differently" instead of `find` on the method name.
 4. Traverse: `run.sh query callers|callees|path|file ...`; on a hub, `callers --summary`
    (directories, most frequent callers) or `--files-only` instead of the row listing.
 5. Impact: `run.sh query trace-deps TARGET --depth 3` (the `blast-radius` skill formats the

@@ -61,7 +61,10 @@ installed side by side).
 - `references ... via signature` means the type appears in a parameter, return or field type: an
   API contract, exactly the case where a DTO change ripples outward.
 - For Terraform, `references -> output.X` inside a module directory means a caller reads that
-  module output; `depends_on` is explicit. For Kubernetes, `selects` is a Service/PDB label
+  module output; `depends_on` is explicit; a `moved.<address>` dependent is a `moved` block that
+  names the target, so renaming the resource also means updating it. In a module repository the
+  examples usually call the registry address of the module they mirror; those show up only
+  with `--include-ambiguous` (an `ambiguous` `uses_module` lead to the local directory). For Kubernetes, `selects` is a Service/PDB label
   selector matching a workload's pod template, and `references` covers ConfigMap/Secret/PVC/
   ServiceAccount/Ingress-backend/HPA-target links.
 - "no dependents found" is a real result (dead code, or an entry point), but confirm the graph

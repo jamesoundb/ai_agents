@@ -1,8 +1,8 @@
-# Graph schema (`.ast-graph/graph.json`, version 4)
+# Graph schema (`.ast-graph/graph.json`, version 5)
 
 ```json
 {
-  "version": 4, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-15T21:10:00",
+  "version": 5, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-16T10:00:00",
   "stats": {"files": 28, "nodes": 151, "edges": 225, "unresolved_refs": 20, "asset_imports": 0,
             "languages": {"python": 6}, "edge_confidence": {"typed": 12}},
   "nodes": [ {node}, ... ],
@@ -22,13 +22,15 @@
 | `signature` | display form: `def f(x) -> int`, `func (s *S) Get(id string)`, `resource "aws_vpc" "this"` |
 | `annotations` | decorators / Java annotations / Rust attributes (text without `@`) |
 | `parent` | id of the containing node (file, class, struct, impl ...) |
-| `extra` | kind-specific: `type` (fields; `inferred: true` when taken from the initializer rather than a declaration), `package`, `receiver_type` (Go methods, Kotlin extension functions), `companion` / `anonymous` (Kotlin companion objects and `object : Base() {}` initialisers, both `class` nodes), `source`/`version`/`resolved_dir` (module_call), `description` (Terraform variable/output), `required_providers`/`required_version` (terraform block), `apiVersion`/`namespace`/`labels`/`images`/`selector`/`template_labels` (k8s_object), `has_errors`, `language` |
+| `extra` | kind-specific: `type` (fields; `inferred: true` when taken from the initializer rather than a declaration), `package`, `receiver_type` (Go methods, Kotlin extension functions), `companion` / `anonymous` (Kotlin companion objects and `object : Base() {}` initialisers, both `class` nodes), `source`/`version`/`resolved_dir` (module_call), `description` (Terraform variable/output), `required_providers`/`required_version` (terraform block), `from`/`to` (moved), `to`/`id` (import_block), `apiVersion`/`namespace`/`labels`/`images`/`selector`/`template_labels` (k8s_object), `has_errors` and `first_error_line` (file), `language` |
 
 Node kinds: `file`, `package`, `terraform_module`, `external`, `external_module`;
 code: `class`, `interface`, `struct`, `enum`, `trait`, `impl`, `record`, `annotation`, `type`,
-`module`, `function`, `method`, `constructor`, `field`, `variable`;
+`module`, `function`, `method`, `constructor`, `field`, `variable` (module/file-level variables,
+including Kotlin top-level properties with their declared `type`);
 Terraform: `resource`, `data`, `module_call`, `variable` (`var.x`), `output`, `provider`, `local`,
-`terraform`; Kubernetes/YAML: `k8s_object`, `helm_template`, `value` (Helm values.yaml keys).
+`terraform`, `moved`, `import_block`; Kubernetes/YAML: `k8s_object`, `helm_template`, `value`
+(Helm values.yaml keys).
 
 ## Edge
 
@@ -63,11 +65,12 @@ and not in scope is not guessed.
 
 ## Build artifacts
 
-`graph.json` (`version` = `GRAPH_VERSION`, currently 4, and `engine` = SHA-1 of `astgraph.py`; a
+`graph.json` (`version` = `GRAPH_VERSION`, currently 5, and `engine` = SHA-1 of `astgraph.py`; a
 mismatch of either forces a full re-parse) and, in
 git checkouts, `graph.json.stamp`: `{"version", "stamp", "stats", "built_at"}` where `stamp` is a
 SHA-1 over HEAD, the porcelain status of indexed source files under the root, their content, and
-the include/exclude filters. A matching stamp makes `build` return without loading the graph.
+the include/exclude/keep-dir filters. A matching stamp makes `build` return without loading the
+graph.
 
 ## Refs (per file, pre-link)
 
