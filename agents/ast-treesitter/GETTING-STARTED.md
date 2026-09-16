@@ -1,8 +1,8 @@
 # ast-treesitter: what to expect
 
-A short guide for the first week with the agent. The full spec is [`README.md`](README.md); the
-per-language details are in the `code-graph` skill's
-[`languages.md`](../../skills/code-graph/reference/languages.md).
+A short guide for the first week with the agent, written for Antigravity (`agy`) and Gemini CLI
+users. The full spec is [`README.md`](README.md); the per-language details are in the
+`code-graph` skill's [`languages.md`](../../skills/code-graph/reference/languages.md).
 
 ## What it is
 
@@ -20,31 +20,71 @@ objects. It is good at four kinds of question:
 It reads; it never edits. Its answers are built from the graph first and from targeted reads of
 the lines it cites, not from dumping files into the model.
 
-## Setup (once per repository)
+## Setup (once per machine)
+
+Install at user scope so every repository and scratch directory sees the agent, and updates are
+a single `git pull`:
 
 ```bash
 git clone <this repo> ~/ai_agents
-cd /path/to/your/project
-~/ai_agents/install.sh --harness claude      # or: codex | gemini | antigravity | copilot | all
-echo '.ast-graph/' >> .gitignore             # the graph is a build artifact
+~/ai_agents/install.sh --harness gemini,antigravity --scope user
+git config --global core.excludesFile ~/.config/git/ignore
+echo '.ast-graph/' >> ~/.config/git/ignore      # the graph is a build artifact in every repo
 ```
 
-Requirements: Python 3.10 or newer (the first run creates a private venv under
+What that writes (symlinks into `~/ai_agents`, so a `git pull` there updates everything):
+
+| harness | agent | skills |
+|---|---|---|
+| Antigravity (IDE and `agy`) | `~/.gemini/config/agents/ast-treesitter/agent.md` | `~/.gemini/config/skills/<skill>/` |
+| Gemini CLI | persona skill `~/.gemini/skills/ast-treesitter/` | `~/.gemini/skills/<skill>/` |
+
+Check it: `agy agents` lists `ast-treesitter` (verified with agy 1.2.4; the CLI keeps its own
+state in `~/.gemini/antigravity-cli/`, the IDE in `~/.gemini/antigravity/`, but both read the
+shared `~/.gemini/config/` customisation directory).
+
+## Before your first session: model access
+
+Antigravity signs a Google Workspace account into the Google Cloud usage mode, which sends
+model calls to Vertex AI in a quota project. If your first prompt fails with
+`Permission 'aiplatform.endpoints.predict' denied on resource '//aiplatform.googleapis.com/projects/...'`,
+the account has no Vertex AI access in that project. This is an admin setup step, not an agent
+problem:
+
+- The GCP admin enables the Vertex AI API in the team's project and grants
+  `roles/aiplatform.user` to the developers (or their group), then each developer sets
+  `"gcp": {"project": "<team-project>", "location": "global"}` in
+  `~/.gemini/antigravity-cli/settings.json`.
+- Or, for a pilot without IAM work: `"modelProvider": "gemini"` in the same file plus
+  `export GEMINI_API_KEY=...` (an AI Studio key; billing follows the key's project).
+
+`/logout` clears the stored session if you need to sign in with a different account.
+
+Requirements: Python 3.10 or newer (the first engine run creates a private venv under
 `~/.cache/astgraph`, about 30 seconds). No Node, no build of your project, no IDE plugin.
 
-Claude Code users: the subagent runs every engine command through `Bash`, and in the default
-permission mode each one prompts. Add this to the project's `.claude/settings.json` once:
+To update: `git -C ~/ai_agents pull`. To remove: the same install command with `--uninstall`.
+A repository that must pin a version can instead install a copy into itself
+(`install.sh --harness antigravity --target /path/to/repo --copy`); the workspace copy wins over
+the global one.
 
-```json
-{ "permissions": { "allow": ["Bash(*/code-graph/scripts/run.sh *)"] } }
-```
+Other harnesses: `--harness claude` (add `Bash(*/code-graph/scripts/run.sh *)` to the
+permission allow-list in `.claude/settings.json`, otherwise every engine call prompts), `codex`,
+`copilot`, or `all`.
 
 ## How to invoke it
 
-- Claude Code: ask a structural question and Claude delegates to the `ast-treesitter`
-  subagent, or address it directly ("use the ast-treesitter agent to ...").
-- Codex / Gemini CLI: `$ast-treesitter` (it is installed as a persona skill).
-- Copilot / Antigravity: pick `ast-treesitter` from the agent picker.
+- Antigravity IDE: pick `ast-treesitter` in the `/agents` picker, or ask a structural question
+  and let the main agent delegate with `invoke_subagent`.
+- Antigravity CLI: `agy --agent ast-treesitter --effort medium`, then ask; or from any
+  session, "use the ast-treesitter agent to ...". Start at medium effort: the graph does the
+  deterministic work, so high effort mostly adds a long, repetitive reasoning trace before the
+  same answer; raise it only for a question the agent got wrong. The agent is declared
+  read-only, so it runs in the sandboxed command policy and never edits files.
+- Gemini CLI: the agent is a skill named `ast-treesitter`; ask a structural question and Gemini
+  activates it, or start it explicitly from `/skills`. Gemini reads `~/.gemini/GEMINI.md` for
+  global instructions if your team wants a standing "use ast-treesitter for architecture and
+  impact questions" line.
 
 Give it the question a senior engineer would ask, with the symbol names you know. Good first
 questions:
@@ -109,7 +149,7 @@ Both
 The agent's skills are plain scripts you can run:
 
 ```bash
-S=.claude/skills/code-graph/scripts/run.sh           # or .agents/.gemini/.github equivalents
+S=~/.gemini/config/skills/code-graph/scripts/run.sh  # user-scope install; a workspace install is .agents/skills/...
 $S build --root .                                    # refresh the graph
 $S query overview --no-tests --lang kotlin           # hubs, directories, entry points
 $S query find OrderService                           # locate; exact matches first

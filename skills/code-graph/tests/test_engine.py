@@ -181,7 +181,7 @@ def test_resolution(root):
     check(("Palette.name", "typed") in use, f"py: `p = en.Palette()` keeps the module qualifier and types p {use}")
     tpk = G.confs(G.edges_from(G.node("test_palette.py", "test_pick")))
     check(("Palette.pick", "typed") in tpk, f"py: untyped pytest fixture parameter typed from the fixture's return annotation {tpk}")
-    for meth, want in (("Board.labels", "Color.label"), ("Board.comp", "Color.label"), ("Board.named", "Color.label"), ("Board.first", "Palette.pick"), ("use_with", "Board.first")):
+    for meth, want in (("Board.labels", "Color.label"), ("Board.comp", "Color.label"), ("Board.named", "Color.label"), ("Board.first", "Palette.pick"), ("use_with", "Board.first"), ("Board.first_label", "Color.label"), ("Board.named_swatch", "Color.label")):
         bc = G.confs(G.edges_from(G.node("loops.py", meth)))
         check((want, "typed") in bc, f"py: {meth} -> {want} typed (loop/comprehension/dict.items/walrus/branch field/with-as) {bc}")
     bn = G.confs(G.edges_from(G.node("loops.py", "Board.named")))
@@ -314,6 +314,8 @@ def test_resolution(root):
         check(any(c == "typed" for _, c in hits), f"kotlin: {want} typed ({hits})")
     check(sum(1 for q, l, c in kc2 if q == "Cart.grow" and c == "typed") >= 2, f"kotlin: DSL receiver lambda and `it` of also both reach Cart.grow {[x for x in kc2 if x[0] == 'Cart.grow']}")
     check(("Sq.area", kc2 and max(l for _, l, _ in kc2), "typed") in kc2 or any(q == "Sq.area" and c == "typed" and l > 45 for q, l, c in kc2), f"kotlin: `(o as Order) ?: o` initializer types the local {[x for x in kc2 if x[0] == 'Sq.area']}")
+    fa = G.confs(G.edges_from(G.node("Order.kt", "Cart.firstArea")))
+    check(("Sq.area", "typed") in fa, f"kotlin: `val first = items[0]` on a MutableList<Sq> property types the local {fa}")
     ct = G.confs(G.edges_from(G.node("Order.kt", "Cart.total")))
     check(("Sq.area", "typed") in ct, f"kotlin: `it` in sumOf on a MutableList<Sq> literal is Sq {ct}")
     an = G.confs(G.edges_from(G.node("Order.kt", "Cart.Audit.note")))

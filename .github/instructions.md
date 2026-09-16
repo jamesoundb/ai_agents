@@ -45,9 +45,12 @@ edit the canonical ones and re-run the installer (or the `install-agents` skill)
 
 Neutral tool names in AGENT.md (`shell, read, glob, grep, edit, write, web, search`) are mapped per
 harness in `tools/render.py` (`TOOL_MAP`). Vendor locations were verified against vendor docs and
-community guides on 2026-09-07 (Antigravity: antigravity.google/docs/subagents and
-/docs/cli/commands/agents); older Antigravity builds used `.agent/skills/` and
-`~/.gemini/antigravity/skills/`. Re-check when a harness changes its layout. Antigravity `skills:`
+community guides on 2026-09-07 and re-checked on 2026-09-16 (Antigravity: antigravity.google/docs/skills
+and /docs/cli/commands/agents: workspace `.agents/skills`, global `~/.gemini/config/{skills,agents}`;
+Gemini CLI: user skills `~/.gemini/skills` or the `~/.agents/skills` alias, global context
+`~/.gemini/GEMINI.md`, file name configurable via `context.fileName`); older Antigravity builds used
+`.agent/skills/` and `~/.gemini/antigravity/skills/` or `~/.gemini/antigravity-cli/skills/`. Re-check
+when a harness changes its layout. Antigravity `skills:`
 entries are paths, so the renderer receives the installed skills prefix from install.sh.
 
 ## Agents

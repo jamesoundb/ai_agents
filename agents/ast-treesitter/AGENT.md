@@ -75,7 +75,10 @@ depending on the harness). Locate it once, then:
 - **"Where does X live / who owns Y"**: node id, signature, `file:line-range`, parent, and the
   importers.
 - Always end with "Evidence" (the graph commands you ran) and "Limits" (what tree-sitter could not
-  resolve for this question), each one to three lines.
+  resolve for this question), each one to three lines. A confidence label (`typed`, `import`,
+  `same_file`, ...) may only be quoted for an edge that appeared with that label in the graph
+  output; a relationship you confirmed by reading the code is a "text match", never a labelled
+  edge.
 
 ## Platform code
 

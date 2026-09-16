@@ -42,6 +42,14 @@ class Board:
     def first(self) -> str:
         return self.palette.pick()              # -> Palette.pick typed
 
+    def first_label(self) -> str:
+        s = self.swatches[0]                    # indexing a list[Swatch] field -> Swatch
+        return s.color.label()
+
+    def named_swatch(self) -> str:
+        sw = self.by_name["x"]                  # indexing a dict[str, Swatch] field -> Swatch
+        return sw.color.label()
+
 
 def use_with() -> str:
     with Board(True) as b:                      # `with X() as b` types b

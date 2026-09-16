@@ -562,6 +562,13 @@ def py_bind_value(ctx, name, right):
     unwrap = right.type == "await"
     if unwrap and right.named_children:
         right = right.named_children[0]
+    if right.type == "subscript" and right.named_children:
+        base_t = py_type_of_expr(ctx, right.named_children[0])
+        kv = py_mapping_types(base_t)
+        elem = kv[1] if kv else py_element_of(base_t)
+        if elem:
+            ctx.declare(name, elem)   # `s = self.items[0]` / `sw = self.by_name["x"]`
+        return
     if right.type != "call":
         return
     fn = right.child_by_field_name("function")
@@ -1623,6 +1630,29 @@ KT_COLLECTION_CTORS = {"listOf": "List", "mutableListOf": "MutableList", "arrayL
                        "HashSet": "HashSet", "ArrayDeque": "ArrayDeque"}
 
 
+def kt_type_of_expr(ctx, node):
+    """Declared type text of a simple Kotlin expression: a scope variable, or a property of the enclosing class."""
+    if node is None:
+        return None
+    name = None
+    if node.type == "simple_identifier":
+        name = ctx.text(node)
+        t = ctx.lookup(name)
+        if t and not t.startswith("<"):
+            return t
+    elif node.type == "navigation_expression" and node.named_children and node.named_children[0].type == "this_expression":
+        suf = node.named_children[-1]
+        name = next((ctx.text(c) for c in suf.named_children if c.type == "simple_identifier"), None) if suf.type == "navigation_suffix" else None
+    if name:
+        cls = next((x for x in reversed(ctx.stack) if x["kind"] in ("class", "interface")), None)
+        if cls is not None:
+            for f in ctx.nodes:
+                if f["kind"] == "field" and f["parent"] == cls["id"] and f["name"] == name:
+                    t = f["extra"].get("type")
+                    return t if t and not t.startswith("<") else None
+    return None
+
+
 def kt_property(ctx, n):
     vd = next((c for c in n.named_children if c.type == "variable_declaration"), None)
     if vd is None:
@@ -1643,6 +1673,10 @@ def kt_property(ctx, n):
         init = init.named_children[0]   # `repo.find(id) ?: return` / `(x as T)`: the left operand carries the type
     if init is not None and init.type == "as_expression" and init.named_children and ttxt is None:
         ttxt = ctx.text(init.named_children[-1])   # `val real = chain as RealChain`
+    if init is not None and init.type == "indexing_expression" and init.named_children and ttxt is None:
+        elem = element_type(kt_type_of_expr(ctx, init.named_children[0]) or "")
+        if elem:
+            ttxt = elem   # `val interceptor = interceptors[index]` on a List<Interceptor> -> Interceptor
     callee = None
     if init is not None and init.type == "call_expression" and init.named_children:
         head = init.named_children[0]

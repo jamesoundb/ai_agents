@@ -27,6 +27,10 @@ class Cart(val items: MutableList<Sq> = mutableListOf()) {
     private val all = mutableListOf<Sq>()
     fun total(): Double = all.sumOf { it.area() }              // `it` in a collection lambda on MutableList<Sq> -> Sq.area
     fun grow(): Cart = apply { all += Sq(1) }
+    fun firstArea(): Double {
+        val first = items[0]                                   // indexing a MutableList<Sq> property -> Sq
+        return first.area()
+    }
     operator fun plus(o: Cart): Cart = Cart()
     inner class Audit {
         fun note(): Double = total()                            // inner class -> outer member
