@@ -1,9 +1,9 @@
-# Graph schema (`.ast-graph/graph.json`, version 1)
+# Graph schema (`.ast-graph/graph.json`, version 4)
 
 ```json
 {
-  "version": 1, "root": "/abs/repo", "built_at": "2026-09-07T13:42:32",
-  "stats": {"files": 28, "nodes": 151, "edges": 225, "unresolved_refs": 20,
+  "version": 4, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-15T21:10:00",
+  "stats": {"files": 28, "nodes": 151, "edges": 225, "unresolved_refs": 20, "asset_imports": 0,
             "languages": {"python": 6}, "edge_confidence": {"typed": 12}},
   "nodes": [ {node}, ... ],
   "edges": [ {edge}, ... ],
@@ -22,7 +22,7 @@
 | `signature` | display form: `def f(x) -> int`, `func (s *S) Get(id string)`, `resource "aws_vpc" "this"` |
 | `annotations` | decorators / Java annotations / Rust attributes (text without `@`) |
 | `parent` | id of the containing node (file, class, struct, impl ...) |
-| `extra` | kind-specific: `type` (fields), `package`, `receiver_type`, `source`/`resolved_dir` (module_call), `apiVersion`/`namespace`/`labels`/`images`/`selector`/`template_labels` (k8s_object), `required_providers`, `has_errors`, `language` |
+| `extra` | kind-specific: `type` (fields; `inferred: true` when taken from the initializer rather than a declaration), `package`, `receiver_type` (Go methods, Kotlin extension functions), `companion` / `anonymous` (Kotlin companion objects and `object : Base() {}` initialisers, both `class` nodes), `source`/`version`/`resolved_dir` (module_call), `description` (Terraform variable/output), `required_providers`/`required_version` (terraform block), `apiVersion`/`namespace`/`labels`/`images`/`selector`/`template_labels` (k8s_object), `has_errors`, `language` |
 
 Node kinds: `file`, `package`, `terraform_module`, `external`, `external_module`;
 code: `class`, `interface`, `struct`, `enum`, `trait`, `impl`, `record`, `annotation`, `type`,
@@ -58,6 +58,8 @@ leaves the repo) produce no edge and count as unresolved; calls on a receiver of
 and not in scope is not guessed.
 
 `stats` also carries `asset_imports`: JS/TS imports of non-code files, counted, never linked.
+`query stats` prints the same object plus `node_kinds` and `edge_types` histograms and the
+`root`/`built_at` of the graph.
 
 ## Build artifacts
 
@@ -72,7 +74,7 @@ the include/exclude filters. A matching stamp makes `build` return without loadi
 Raw, unresolved observations kept so that incremental builds can re-link without re-parsing:
 `{"kind": "call|import|extends|implements|instantiates|references|depends_on|uses_module|uses_type",
 "name", "src", "line", "hint", "hint_full", "hint_type", "chain", "names", "alias", "alias_map", "reexport",
-"argc", "arg_types", "attr", "via", "namespace"}`.
+"argc", "arg_types", "attr", "via", "namespace", "module_name"}`.
 `argc` is the number of call arguments (absent when a spread/splat is present) and `arg_types`
 their declared or literal types where known, used to choose among overloads; `hint_full` is the
 full qualifier text of a type reference; `reexport` marks `export ... from` / `pub use`.

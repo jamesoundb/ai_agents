@@ -85,7 +85,7 @@ name, a file path, `file-suffix:name` (`store.go:MemStore`) or `file-suffix:name
 (`readers.py:read_csv@1283`) to disambiguate, or a substring. A constructor (`__init__`,
 `constructor`, `new`) as a `callers`/`trace-deps` target automatically includes its class, since
 instantiations are recorded against the class. Overloads: calls attach to the implementation,
-never to Python `@overload` stubs; among same-named Java/TS/Go/Rust definitions the linker picks
+never to Python `@overload` stubs; among same-named Java/Kotlin/TS/Go/Rust definitions the linker picks
 by argument count, then by argument types where they are known (declared parameters and
 varargs, typed locals, literals, `this.`/`self.` fields, and calls typed from their return
 type); when several same-arity overloads remain undecided, the call is recorded as `ambiguous`
@@ -100,8 +100,9 @@ Terraform addresses use their native form (`aws_instance.app`, `module.vpc`, `va
 Tree-sitter is syntactic, so cross-file edges are resolved by name with a recorded confidence:
 `exact` (imports, HCL/K8s references), `typed` (receiver type known from a field, parameter,
 local declaration or an ancestor via `extends`/`implements`), `same_file`, `package` (same
-directory in Java/Go), `import` (target lives in an imported file, or the call is qualified with
-an imported repo package/module such as `store.New()`), `unique` (only one definition with that
+declared package in Java/Kotlin, `src/main` and `src/test` included; same directory in Go),
+`import` (target lives in an imported file, or the call is qualified with an imported repo
+package/module such as `store.New()`), `unique` (only one definition with that
 name anywhere), `ambiguous` (several candidates, all recorded, or a call on a receiver whose type
 is unknown). Treat `ambiguous` edges as leads, not facts; `trace-deps` and `overview` exclude
 them unless `--include-ambiguous` is passed.
@@ -124,9 +125,9 @@ The linker is receiver-aware and import-aware:
   unresolved. A call on a value of unknown type yields a `same_file` edge at most, otherwise up
   to three `ambiguous` leads in the same language; more candidates than that is noise, not a lead.
 - An unqualified call (`f()`) resolves through a from-import binding, then the same file, then the
-  same Go/Java package, then wildcard imports. It never targets a method (except Java's implicit
-  `this`), never a language builtin (`len`, `type`, `map`, `require`, `make`), and is never
-  guessed by name alone.
+  same Go/Java/Kotlin package, then wildcard imports. It never targets a method (except the
+  implicit `this` of Java and Kotlin), never a language builtin (`len`, `type`, `map`, `require`,
+  `make`), and is never guessed by name alone.
 - Base classes and signature types carry their qualifier: `collections_abc.Iterable` is external,
   `data_types.DatasetV2` resolves inside the bound module, fully-qualified names
   (`org.apache.commons.lang3.builder.Builder<T>`, `pkg.sub.Class`) resolve through the package,

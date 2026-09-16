@@ -21,8 +21,11 @@ intellectronica, section 3.1 "Context gathering mechanisms".
 | "Where should this change go?" | Candidate symbols with locations and their importers |
 | "How do our Terraform modules and Kubernetes objects connect?" | `module.x -> output.y`, `Service -> Deployment` selection, ConfigMap/Secret/PVC references |
 
-Not for: editing code (read-only by design), runtime/behavioral questions, questions that need a
-real type checker (overloads, generics, dynamic dispatch). It states these limits explicitly.
+Not for: editing code (read-only by design), runtime/behavioral questions, or anything that needs
+a real type checker: overloads are attributed only by argument count and the argument types the
+linker can see (otherwise reported as `ambiguous`), generics resolve only through a declared
+bound, and dynamic dispatch, reflection and DI-by-annotation are not followed. It states these
+limits explicitly.
 
 ## Definition and install
 
@@ -65,8 +68,11 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
   names bind to module files, re-exports are followed), or `self`/`this`. Calls on external or
   builtin receivers, unqualified builtins, and bare names that are neither imported nor in scope
   are left unresolved; values of unknown type get at most three same-language `ambiguous` leads.
-- Syntactic only: no overload/generic/dynamic-dispatch resolution; interface calls resolve to the
-  interface method (follow `implements` edges for implementations).
+- Syntactic only: overloads are chosen by arity and by the argument types the linker can see
+  (declared parameters, typed locals, literals, fields, call results); an undecided call is
+  recorded as `ambiguous` across the overload set rather than guessed. Generic parameters resolve
+  through their first declared bound only. No dynamic dispatch, reflection or DI-by-annotation;
+  interface calls resolve to the interface method (follow `implements` edges for implementations).
 
 ## Adoption checklist for a repository
 
@@ -126,10 +132,12 @@ After the same round, the Python repos: pandas 16,611 typed / 28,307 ambiguous /
 17s), TensorFlow 78,698 typed / 65,120 ambiguous / 0 unique (build 34s). Return-type inference
 adds roughly a third to build time on Python-heavy repos.
 
-Fixture (`skills/code-graph/tests/fixture`, 36 files, 8 languages, 2026-09-14):
+Fixture (`skills/code-graph/tests/fixture`, 62 indexed source files across nine languages plus
+build metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json`; the suite has
+156 check sites, 26 of them Kotlin; 2026-09-16):
 
-- Full build well under a second; incremental rebuild re-parses only changed files (1 of 35 after
-  a one-line edit) and is byte-for-byte identical to a full build.
+- Full build well under a second; incremental rebuild re-parses only changed files (1 of 62 after
+  a one-line edit) and yields the same node and edge sets as a full build.
 - Java example from the article reproduced: `PaymentOrchestrator` card shows injected fields and
   `processTransaction` calls resolved as `typed`; changing `PaymentRequest` lists the interface
   and class API contracts, the gateway client, the audit logger and the test.

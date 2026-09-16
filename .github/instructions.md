@@ -139,9 +139,12 @@ different one rather than adding vendor-neutral fallbacks.
   changes); linking is always full but linear (~4s per 3.6k
   files); graph load/dump is proportional to graph size (~1-3s per 100-300 MB). A git-unchanged
   tree returns in ~0.1s. Query output is capped (`symbol --limit`, `trace-deps --max-rows`).
-- Engine regression tests: `skills/code-graph/tests/run_tests.sh` builds the 8-language fixture in
-  `skills/code-graph/tests/fixture/` in a temp dir and asserts resolution confidence, test-file
-  detection, incremental == full and the git fast path. Run it after any change to `astgraph.py`.
+- Engine regression tests: `skills/code-graph/tests/run_tests.sh` copies the nine-language fixture
+  (Python, JavaScript, TypeScript, Go, Java, Kotlin, Rust, HCL, Kubernetes YAML) from
+  `skills/code-graph/tests/fixture/` to a temp dir, builds it there and asserts resolution
+  confidence per language, overload and return-type choices, test-file detection, incremental ==
+  full, determinism across hash seeds, the git fast path and the engine-hash cache key. Run it
+  after any change to `astgraph.py` and add a regression case for every linker fix.
 - Adding a language: map the extension in `EXT_LANG`, add a handler dict keyed by tree-sitter node
   type, register it in `HANDLERS`, and extend `resolve_import` if the language has imports.
 
@@ -165,11 +168,14 @@ Terraform skills are verified against a scratch fixture (root + modules with pla
 a clean module, a real `terraform show -json` plan produced offline with the google provider, a
 synthetic risky plan) and the scaffold output must pass `terraform validate` and the review gate;
 fixtures are described in the skills' READMEs.
-Engine changes are verified against a throwaway multi-language fixture (Java example from the
-source article, Python, TS/JS, Go, Rust, Terraform with a local module, Kubernetes manifests with
-Service/Deployment/ConfigMap/HPA/Ingress, a Helm template and values file). The fixture is
-generated in a scratch directory when regression-testing; each skill's README lists what its
-fixture contains.
+Engine changes are verified against the committed fixture in `skills/code-graph/tests/fixture/`
+(Java example from the source article, Python with re-exporting packages, TS/JS with a workspace
+package and tsconfig `extends`, Go with `go.mod`, Kotlin in a Gradle `src/main` + `src/test`
+layout, a Rust Cargo workspace, Terraform with a local module, Kubernetes manifests with
+Service/Deployment/ConfigMap/HPA/Ingress, a Helm template and values file). The runner copies it
+to a temp dir and never writes into the repo. The fixture contents and measured behaviour are
+described in `agents/ast-treesitter/README.md`; the Terraform and Kubernetes skills describe
+their own fixtures in their READMEs.
 
 ## Design references
 - Whitney, "Stop Dumping Raw Code into LLMs: Why ASTs lead to Scalable AI Agents" (Medium).

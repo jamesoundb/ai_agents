@@ -17,8 +17,10 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
 
 ## Known limits (state them when relevant)
 
-- No overload resolution, generics, dynamic dispatch, reflection, DI-by-annotation, or
-  monkeypatching. Interface calls resolve to the interface method, not to implementations; use
+- No real type checker. Overloads are attributed only by argument count and the argument types
+  the linker can see, and generics only through a declared bound (both described below); dynamic
+  dispatch, reflection, DI-by-annotation and monkeypatching are not followed at all. Interface
+  calls resolve to the interface method, not to implementations; use
   `query callers <Interface.method>` plus `implements` edges to find them.
 - Calls through untyped locals (`x = make_thing(); x.run()`) are recorded as `same_file` when a
   same-file definition exists, otherwise as up to three `ambiguous` same-language leads; they are
@@ -52,7 +54,7 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
   functions without a declared return type, lambda parameters (`it`, receiver lambdas), `by`
   delegation, annotation processors, reflection, `.kts` DSL calls; grammar parse errors on
   `(x as? T)?.m() == true ->` conditions and on assignments to a property named `where`.
-- Overloads (Java, TS declarations, Go/Rust same-named functions in different scopes): each
+- Overloads (Java, Kotlin, TS declarations, Go/Rust same-named functions in different scopes): each
   definition is its own node; a call is attributed by argument count, then by argument type where
   the arguments are declared parameters (varargs count as arrays), typed locals, literals,
   `this.`/`self.` fields or calls with a declared return type; otherwise the call becomes an

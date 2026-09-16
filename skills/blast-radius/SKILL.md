@@ -15,7 +15,8 @@ component that will change, list every dependent file with the dependent symbol,
 (`calls`, `imports`, `extends`, `implements`, `instantiates`, `references` via a signature or
 Terraform/K8s reference, `uses_module`, `selects`, `depends_on`), and the resolution confidence.
 
-ENGINE=`../code-graph/scripts/run.sh`
+Engine: `../code-graph/scripts/run.sh`, relative to this skill folder (the three skills are
+installed side by side).
 
 ## Procedure
 
@@ -43,12 +44,14 @@ ENGINE=`../code-graph/scripts/run.sh`
    |---|---|---|
    | `DataDTO` (app/dto.py) | field additions/renames | 1. api/controller.py (API contract, `references`, exact) 2. services/data_service.py (`convert_to_entity`, typed) 3. tests/test_data_service.py |
 
-   Then: files affected (direct / transitive), tests likely to exercise the change (the tool lists
-   dependents that are test files by language convention: `_test.go`, `test_*.py`/`*_test.py`,
-   `*.test.ts`/`*.spec.js`, `*Test.java`, or anything under a `test`, `tests`, `__tests__`, `spec`
-   or `testing` directory), and anything reported as unresolved or ambiguous that a human should
-   double-check. Tests that reach the target only through a framework (acceptance tests, DI)
-   are not in the graph; name them from the package convention instead.
+   Then: files affected (direct / transitive), tests likely to exercise the change (the tool's
+   "Tests reached through resolved edges" line lists dependents that are test files by language
+   convention: `_test.go`, `test_*.py`/`*_test.py`/`conftest.py`, `*.test.ts`/`*.spec.js`,
+   `*Test.java`/`*IT.java`, `*Test.kt`/`*Spec.kt`, `_test.rs`, or anything under a `test`, `tests`,
+   `__tests__`, `spec`, `specs` or `testing` directory), and anything reported as unresolved or
+   ambiguous that a human should double-check. The tests line is a lower bound: tests that reach
+   the target through fixtures, untyped receivers or a framework (acceptance tests, DI) are not
+   linked; name those from the package convention instead.
 5. Only after the matrix, open specific line ranges to confirm the riskiest edges. Do not read
    whole files.
 
