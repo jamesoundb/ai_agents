@@ -83,8 +83,11 @@ it writes into the repo is the graph under `.ast-graph/`).
 
 `callers` and `trace-deps` on a method that overrides another print a note with the base
 method and its direct-caller count, because callers that dispatch through the base reach the
-override at runtime; `find --no-tests` hides test-file symbols; `path` ignores `ambiguous` edges
-unless `--include-ambiguous`. Every query subcommand accepts `--json` for machine-readable
+override at runtime; `callers CLASS --no-members` keeps only edges to the class itself
+(instantiations, extends, signature references), the right view for a constructor change;
+`find` lists exact-name matches first and caps substring hits at 15 when exact matches exist
+(`--kind` drops path-only hits; `--no-tests` hides test-file symbols); `path` ignores
+`ambiguous` edges unless `--include-ambiguous`. Every query subcommand accepts `--json` for machine-readable
 output (`stats` always prints JSON). Run `query --root DIR ...` from outside the repo (the graph is read from
 `DIR/.ast-graph/graph.json`) or `query --graph PATH ...` for a graph at a custom path.
 
@@ -156,6 +159,13 @@ The linker is receiver-aware and import-aware:
   builtin containers (their `.pop()`/`.add()` never lead to repo methods); in a test file an
   untyped parameter that names a `@pytest.fixture` function with a return annotation (same file,
   then `conftest.py` up the tree) is typed from it, so `def test_x(app): app.route(...)` links.
+  Loop and comprehension variables are typed from the iterable (`for it in self.items` with
+  `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
+  (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields
+  `V`, `with X() as x` types `x` as `X`, `self.x = ...` inside an `if`/`try` of `__init__` is still
+  a field, `super().m()` resolves on the class's parents, `@property`/`@cached_property` segments
+  type a chain (`item.heavy.area()`), and literal receivers (`", ".join(..)`, `{...}.get(..)`) or
+  builtin-typed values (`dict`, `list`, `str` ...) never lead into repo methods.
 - Kotlin: inside `fun T.f()` the receiver `this` (and `this@f`) is `T`; a top-level
   `val currentDialect: Dialect` is a typed variable node, so `currentDialect.functionProvider.f()`
   resolves through the property chain from any file that imports it (explicitly or by wildcard)
@@ -168,6 +178,14 @@ The linker is receiver-aware and import-aware:
   type the local; enum entries are fields typed as the enum; `chain: Interceptor.Chain` (nested
   type of an imported class) and `: Interceptor.Chain` supertypes resolve; an inner class calls
   outer members; multi-line builder chains (`Request\n  .Builder()\n  .url(u)`) are one chain.
+  Smart casts type the variable inside `if (e is T)` (also `&&`-joined) and `when (e) { is T -> }`
+  branches; `val x by lazy { X() }` types `x`; `Topic::slug` callable references are calls;
+  `useCase()` on a parameter or property whose type declares `operator fun invoke` resolves to
+  it; a `fun interface` constructor call `Listener { }` links the interface; plain (non-`val`)
+  constructor parameters are in scope for property initialisers; data-class `copy(..)` and enum
+  `valueOf(..)` keep the receiver's type without inventing a member edge; `@Composable` (any
+  annotation) on a function type is blanked before parsing because the grammar rejects it, so
+  Compose components are indexed.
 - Terraform: references are resolved within a directory (root module or one module), `module.x.y`
   reaches `output.y` in the called module's directory, and a registry source whose `//subdir`
   exists in the repo (`ns/name/google//modules/x` with a local `modules/x`) gets an `ambiguous`

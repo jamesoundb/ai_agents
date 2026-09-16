@@ -1,8 +1,8 @@
-# Graph schema (`.ast-graph/graph.json`, version 6)
+# Graph schema (`.ast-graph/graph.json`, version 7)
 
 ```json
 {
-  "version": 6, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-16T12:00:00",
+  "version": 7, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-16T14:00:00",
   "stats": {"files": 28, "nodes": 151, "edges": 225, "unresolved_refs": 20, "asset_imports": 0,
             "languages": {"python": 6}, "edge_confidence": {"typed": 12}},
   "nodes": [ {node}, ... ],
@@ -65,7 +65,7 @@ and not in scope is not guessed.
 
 ## Build artifacts
 
-`graph.json` (`version` = `GRAPH_VERSION`, currently 6, and `engine` = SHA-1 of `astgraph.py`; a
+`graph.json` (`version` = `GRAPH_VERSION`, currently 7, and `engine` = SHA-1 of `astgraph.py`; a
 mismatch of either forces a full re-parse) and, in
 git checkouts, `graph.json.stamp`: `{"version", "stamp", "stats", "built_at"}` where `stamp` is a
 SHA-1 over HEAD, the porcelain status of indexed source files under the root, their content, and
@@ -77,9 +77,19 @@ graph.
 Raw, unresolved observations kept so that incremental builds can re-link without re-parsing:
 `{"kind": "call|import|extends|implements|instantiates|references|depends_on|uses_module|uses_type",
 "name", "src", "line", "hint", "hint_full", "hint_type", "chain", "names", "alias", "alias_map", "reexport",
-"argc", "arg_types", "attr", "via", "namespace", "module_name", "lam"}`.
+"argc", "arg_types", "attr", "via", "namespace", "module_name", "lam", "invoke_type"}`.
 `lam` (Kotlin) is the enclosing lambda's call: `{"callee", "recv", "hint_type", "chain", "argc"}`, used at
-link time to type an unqualified call's implicit receiver or `it`.
+link time to type an unqualified call's implicit receiver or `it`; `invoke_type` is the declared type of
+a variable called like a function (`useCase()`), resolved to its `operator fun invoke`.
+
+## Query JSON shapes
+
+`callers`/`callees --json`: `{"root": id, "levels": {id: hop}, "hops": [[from_id, edge, to_id, hop], ...],
+"note": dispatch note or null}` where `edge` is an edge object as above. `trace-deps --json`:
+`{"target": id, "levels": {...}, "hops": [...]}` with the same row shape. `path --json`:
+`{"src", "dst", "found", "hops": [{"src", "type", "confidence", "dst", "file", "line"}]}`. `find --json`
+is a list of nodes; `symbol --json` is `{"node", "children", "out", "in"}`; `overview --json` is
+`{"stats", "hub_symbols": [[id, count]], "hub_files": [[file, count]]}`.
 `argc` is the number of call arguments (absent when a spread/splat is present) and `arg_types`
 their declared or literal types where known, used to choose among overloads; `hint_full` is the
 full qualifier text of a type reference; `reexport` marks `export ... from` / `pub use`.

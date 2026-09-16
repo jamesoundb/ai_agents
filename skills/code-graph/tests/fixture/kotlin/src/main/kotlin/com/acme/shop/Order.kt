@@ -38,3 +38,40 @@ class Cart(val items: MutableList<Sq> = mutableListOf()) {
 }
 
 fun cart(block: Cart.() -> Unit): Cart = Cart().apply(block)   // DSL: lambda receiver is Cart
+
+sealed interface Ev {
+    data class Click(val id: Int) : Ev { fun describe(): String = "c" }
+    data object Refresh : Ev
+}
+
+fun interface Handler {
+    fun on(e: Ev)
+}
+
+class Widget(private val svc: OrderService) {              // plain constructor parameter: in scope for initialisers
+    val lazyOrder: Order by lazy { Order("l", Sq(1)) }
+    val h = Handler { e -> react(e) }                       // SAM constructor: calls the interface; lambda calls the outer member
+    val cached = svc.place(Order("w", Sq(2)))               // property initialiser through a constructor parameter
+
+    fun react(e: Ev): String {
+        if (e is Ev.Click) e.describe()                     // smart cast in `if`
+        return when (e) {
+            is Ev.Click -> e.describe()                     // smart cast in `when`
+            Ev.Refresh -> "r"
+        }
+    }
+
+    fun names(list: List<Order>): List<String> = list.map(Order::describeTwice)   // callable reference: skip (Order has no describeTwice)
+    fun sizes(): List<Int> = listOf(Sq(1)).map(Sq::describeTwice)                 // callable reference -> Sq.describeTwice
+    fun again(): Order = lazyOrder.copy()                   // data-class-style copy on a repo type: typed as Order, no member edge
+    fun kinds(): Kind = Kind.valueOf("SMALL")               // enum valueOf: no member edge, result typed as Kind
+    fun code(): Int = Kind.valueOf("SMALL").code()          // -> Kind.code typed
+}
+
+class Runner(val svc: OrderService) {
+    operator fun invoke(id: String): Order = Order(id, Sq(1))
+}
+
+class Consumer(private val runner: Runner) {
+    fun go(): Order = runner("1")                           // `operator fun invoke` through a property
+}

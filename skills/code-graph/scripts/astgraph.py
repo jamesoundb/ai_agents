@@ -85,12 +85,22 @@ TEST_FILE_RES = tuple(re.compile(p) for p in (
 
 def is_test_file(path):
     parts = path.replace(os.sep, "/").split("/")
+    if "src" in parts[:-1]:
+        # Gradle/Maven source sets: src/main is production even under a `testing` library module;
+        # src/test, src/androidTest, src/testDebug ... are tests
+        i = parts.index("src")
+        if i + 1 < len(parts) - 1:
+            ss = parts[i + 1]
+            if ss == "main":
+                return any(r.search(parts[-1]) for r in TEST_FILE_RES)   # only the basename conventions apply
+            if ss.startswith(("test", "androidTest", "integrationTest", "it")) and ss not in ("it",):
+                return True
     if any(p.lower() in TEST_DIR_SEGMENTS for p in parts[:-1]):
         return True
     return any(r.search(parts[-1]) for r in TEST_FILE_RES)
 
 
-GRAPH_VERSION = 6  # 6: Kotlin lambda contexts, enum entries, operator calls, typed collection literals; Python splat params, enum members, qualified constructors (5: HCL moved/import, dynamic iterators; 4: argc, re-exports)
+GRAPH_VERSION = 7  # 7: Python loop/with/walrus typing, nested __init__ fields; Kotlin smart casts, by lazy, callable refs, invoke hints, Compose type annotations (6: lambdas, enums, operators; 5: HCL moved/dynamic)
 
 # Unqualified calls to these names are language builtins; never linked to a repo symbol of the same name.
 BUILTIN_CALLS = {
@@ -471,7 +481,17 @@ def py_function(ctx, n):
     # self.x: T = ... inside __init__ become fields of the class
     if kind == "method":
         body = n.child_by_field_name("body")
-        for stmt in (body.named_children if body is not None else []):
+
+        def stmts(node):   # statements at any nesting level except inside nested defs/classes/lambdas
+            for c in (node.named_children if node is not None else []):
+                if c.type in ("function_definition", "class_definition", "decorated_definition", "lambda"):
+                    continue
+                if c.type in ("expression_statement", "assignment"):
+                    yield c
+                elif c.type in ("if_statement", "elif_clause", "else_clause", "try_statement", "except_clause", "finally_clause",
+                                "with_statement", "for_statement", "while_statement", "block", "match_statement", "case_clause"):
+                    yield from stmts(c)
+        for stmt in stmts(body):
             a = py_assignment(stmt)
             if a is not None:
                 left, typ = a.child_by_field_name("left"), a.child_by_field_name("type")
@@ -535,6 +555,27 @@ def py_import(ctx, n):
     return True
 
 
+def py_bind_value(ctx, name, right):
+    """Type a local from its value: `X(...)` / `mod.X(...)` constructor, else the callee for link-time typing."""
+    if right is None:
+        return
+    unwrap = right.type == "await"
+    if unwrap and right.named_children:
+        right = right.named_children[0]
+    if right.type != "call":
+        return
+    fn = right.child_by_field_name("function")
+    if fn is None:
+        return
+    t = base_type_name(ctx.text(fn))
+    if t[:1].isupper():
+        full = strip_type_decor(ctx.text(fn))
+        # `bp = flask.Blueprint(...)`: keep the module qualifier so the type resolves through the import
+        ctx.declare(name, full if re.match(r"^[a-z_]\w*(\.\w+)*\.[A-Z]", full) else t)
+    else:
+        ctx.declare_call(name, ctx.text(fn), unwrap)
+
+
 def py_expr_stmt(ctx, n):
     a = py_assignment(n)   # `expression_statement > assignment` or a bare `assignment`, depending on grammar version
     if a is not None:
@@ -545,19 +586,118 @@ def py_expr_stmt(ctx, n):
                              signature=f"{ctx.text(left)}: {ctx.text(typ)}" if typ is not None else ctx.text(left))
             elif typ is not None:
                 ctx.declare(ctx.text(left), ctx.text(typ))
-            elif right is not None and right.type in ("call", "await"):
-                unwrap = right.type == "await"
-                if unwrap and right.named_children:
-                    right = right.named_children[0]
-                fn = right.child_by_field_name("function") if right.type == "call" else None
-                t = base_type_name(ctx.text(fn)) if fn is not None else ""
-                if t[:1].isupper():
-                    full = strip_type_decor(ctx.text(fn))
-                    # `bp = flask.Blueprint(...)`: keep the module qualifier so the type resolves through the import
-                    ctx.declare(ctx.text(left), full if re.match(r"^[a-z_]\w*(\.\w+)*\.[A-Z]", full) else t)
-                elif fn is not None:
-                    ctx.declare_call(ctx.text(left), ctx.text(fn), unwrap)
+            else:
+                py_bind_value(ctx, ctx.text(left), right)
     return False
+
+
+def py_named(ctx, n):
+    """`(found := d.get(k))`: the walrus binds like an assignment."""
+    kids = n.named_children
+    if len(kids) == 2 and kids[0].type == "identifier" and ctx.top()["kind"] != "file":
+        py_bind_value(ctx, ctx.text(kids[0]), kids[1])
+    return False
+
+
+def py_with(ctx, n):
+    """`with httpx.Client() as client:` types `client` as the constructed class (the 99% case of `__enter__`)."""
+    for clause in (c for c in n.named_children if c.type == "with_clause"):
+        for item in (c for c in clause.named_children if c.type == "with_item"):
+            ap = next((c for c in item.named_children if c.type == "as_pattern"), None)
+            if ap is None or len(ap.named_children) < 2:
+                continue
+            value, alias = ap.named_children[0], ap.named_children[-1]
+            if alias.type == "as_pattern_target" and alias.named_children:
+                alias = alias.named_children[0]
+            if alias.type == "identifier" and ctx.top()["kind"] != "file":
+                py_bind_value(ctx, ctx.text(alias), value)
+    return False
+
+
+PY_ITERABLES = r"(?:typing\.)?(?:list|List|set|Set|frozenset|FrozenSet|tuple|Tuple|Sequence|MutableSequence|Iterable|Iterator|Collection|deque|Deque|Generator|AsyncIterator|AsyncIterable|AsyncGenerator|KeysView|ValuesView)"
+PY_MAPPINGS = r"(?:typing\.|collections\.)?(?:dict|Dict|Mapping|MutableMapping|defaultdict|DefaultDict|OrderedDict)"
+
+
+def py_element_of(t):
+    """`list[Item]` / `Iterable[Item]` / `tuple[Item, ...]` -> `Item`; `dict[K, V]` -> `K`; else None."""
+    if not t:
+        return None
+    t = unwrap_optional(t)
+    m = re.match(r"^" + PY_ITERABLES + r"\[(.+)\]$", t)
+    if m:
+        return split_top(m.group(1))[0].strip().strip("\"'") or None
+    kv = py_mapping_types(t)
+    return kv[0] if kv else None
+
+
+def py_mapping_types(t):
+    """`dict[str, Item]` -> ("str", "Item"); None when not a mapping with two arguments."""
+    if not t:
+        return None
+    m = re.match(r"^" + PY_MAPPINGS + r"\[(.+)\]$", unwrap_optional(t))
+    if not m:
+        return None
+    parts = [x.strip().strip("\"'") for x in split_top(m.group(1))]
+    return (parts[0], parts[1]) if len(parts) == 2 else None
+
+
+def py_type_of_expr(ctx, node):
+    """Declared type text of a simple expression: a scope variable or `self.<field>`; else None."""
+    if node is None:
+        return None
+    if node.type == "identifier":
+        t = ctx.lookup(ctx.text(node))
+        return t if t and not t.startswith("<") else None
+    if node.type == "attribute":
+        obj, attr = node.child_by_field_name("object"), node.child_by_field_name("attribute")
+        if obj is not None and attr is not None and ctx.text(obj) in ("self", "cls"):
+            cls = next((x for x in reversed(ctx.stack) if x["kind"] == "class"), None)
+            if cls is not None:
+                for f in ctx.nodes:
+                    if f["kind"] == "field" and f["parent"] == cls["id"] and f["name"] == ctx.text(attr):
+                        t = f["extra"].get("type")
+                        return t if t and not t.startswith("<") else None
+    return None
+
+
+def py_declare_loop_vars(ctx, left, right):
+    """`for it in self.items` / `for k, v in d.items()` / comprehension clauses: type the loop variables."""
+    if left is None or right is None or ctx.top()["kind"] == "file":
+        return
+    elem, kv = None, None
+    if right.type == "call":
+        fn = right.child_by_field_name("function")
+        if fn is not None and fn.type == "attribute":
+            m = ctx.text(fn.child_by_field_name("attribute"))
+            base = py_mapping_types(py_type_of_expr(ctx, fn.child_by_field_name("object")))
+            if base and m == "items":
+                kv = base
+            elif base and m == "values":
+                elem = base[1]
+            elif base and m == "keys":
+                elem = base[0]
+    else:
+        elem = py_element_of(py_type_of_expr(ctx, right))
+    names = [ctx.text(left)] if left.type == "identifier" else [ctx.text(c) for c in left.named_children if c.type == "identifier"] if left.type in ("pattern_list", "tuple_pattern") else []
+    if kv and len(names) == 2:
+        ctx.declare(names[0], kv[0])
+        ctx.declare(names[1], kv[1])
+    elif elem and len(names) == 1:
+        ctx.declare(names[0], elem)
+
+
+def py_for(ctx, n):
+    py_declare_loop_vars(ctx, n.child_by_field_name("left"), n.child_by_field_name("right"))
+    return False
+
+
+def py_comprehension(ctx, n):
+    """Clauses are declared before the element expression is walked (`[i.price() for i in self.items]`)."""
+    for c in n.named_children:
+        if c.type == "for_in_clause":
+            py_declare_loop_vars(ctx, c.child_by_field_name("left"), c.child_by_field_name("right"))
+    ctx.walk_children(n)
+    return True
 
 
 PY_HANDLERS = {
@@ -567,7 +707,10 @@ PY_HANDLERS = {
     "call": py_call,
     "import_statement": py_import,
     "import_from_statement": py_import,
-    "expression_statement": py_expr_stmt, "assignment": py_expr_stmt,
+    "expression_statement": py_expr_stmt, "assignment": py_expr_stmt, "named_expression": py_named,
+    "with_statement": py_with, "for_statement": py_for,
+    "list_comprehension": py_comprehension, "set_comprehension": py_comprehension,
+    "generator_expression": py_comprehension, "dictionary_comprehension": py_comprehension,
 }
 
 
@@ -1359,12 +1502,14 @@ def kt_ctor_fields(ctx, n):
     for p in pc.named_children:
         if p.type != "class_parameter":
             continue
-        if not any(c.type == "binding_pattern_kind" for c in p.named_children):
-            continue
         name = next((ctx.text(c) for c in p.named_children if c.type == "simple_identifier"), None)
         typ = next((c for c in p.named_children if c.type in ("user_type", "nullable_type", "function_type", "parenthesized_type")), None)
+        ttxt = ctx.text(typ) if typ is not None else None
+        if not any(c.type == "binding_pattern_kind" for c in p.named_children):
+            if name and ttxt:
+                ctx.declare(name, ttxt)   # a plain constructor parameter is in scope for property initialisers and init blocks
+            continue
         if name:
-            ttxt = ctx.text(typ) if typ is not None else None
             ctx.add_node("field", name, p, signature=f"{name}: {ttxt}" if ttxt else name, type_text=ttxt, extra={"type": ttxt})
 
 
@@ -1379,6 +1524,7 @@ def kt_class(ctx, n):
     sig = f"{kind if kind != 'enum' else 'enum class'} {name}{ctx.text(tp) if tp is not None else ''}"
     node = ctx.add_node(kind, name, n, signature=sig, annotations=kt_annotations(ctx, n))
     ctx.push(node)
+    ctx.push_scope()   # constructor parameters live here
     kt_supertypes(ctx, n)
     kt_ctor_fields(ctx, n)
     for body in (c for c in n.named_children if c.type in ("class_body", "enum_class_body")):
@@ -1387,6 +1533,7 @@ def kt_class(ctx, n):
             if ename:
                 ctx.add_node("field", ename, e, signature=f"{ename}: {ctx.top()['name']}", extra={"type": ctx.top()["name"], "inferred": True})
         ctx.walk_children(body)
+    ctx.pop_scope()
     ctx.pop()
     return True
 
@@ -1484,6 +1631,14 @@ def kt_property(ctx, n):
     typ = next((c for c in vd.named_children if c.type in ("user_type", "nullable_type", "function_type", "parenthesized_type")), None)
     init = kt_initializer(ctx, n)
     ttxt = ctx.text(typ) if typ is not None else None
+    delegate = next((c for c in n.named_children if c.type == "property_delegate"), None)
+    if init is None and delegate is not None and delegate.named_children and delegate.named_children[0].type == "call_expression":
+        dcall = delegate.named_children[0]
+        if dcall.named_children and ctx.text(dcall.named_children[0]) == "lazy":
+            lam = next((x for suf in dcall.named_children if suf.type == "call_suffix" for x in suf.named_children if x.type == "annotated_lambda"), None)
+            stmts = next((x for lit in (lam.named_children if lam is not None else []) if lit.type == "lambda_literal" for x in lit.named_children if x.type == "statements"), None)
+            if stmts is not None and stmts.named_children:
+                init = stmts.named_children[-1]   # `by lazy { Repo(Net()) }`: the value is the last expression
     while init is not None and init.type in ("elvis_expression", "parenthesized_expression") and init.named_children:
         init = init.named_children[0]   # `repo.find(id) ?: return` / `(x as T)`: the left operand carries the type
     if init is not None and init.type == "as_expression" and init.named_children and ttxt is None:
@@ -1552,6 +1707,9 @@ def kt_call(ctx, n):
         extra["arg_types"] = types
     lam = {"callee": None, "recv": None, "hint_type": None, "chain": None, "argc": argc}
     if head.type == "simple_identifier":
+        vt = ctx.lookup(ctx.text(head))
+        if vt and not vt.startswith("<"):
+            extra["invoke_type"] = vt   # `getFollowableTopics()` on a typed parameter: `operator fun invoke`
         ctx.add_ref("call", ctx.text(head), n, **extra)
         lam["callee"] = ctx.text(head)
     elif head.type == "navigation_expression" and head.named_children:
@@ -1620,6 +1778,86 @@ def kt_arith(ctx, n):
         ctx.add_ref("call", KT_OPERATOR_FUNS[op], n, hint=ltxt, **extra)
     ctx.walk(kids[0])
     ctx.walk(kids[1])
+    return True
+
+
+def kt_smart_casts(ctx, cond):
+    """[(name, type)] asserted by `x is T` conditions (directly, in parentheses or joined by &&)."""
+    out = []
+    if cond is None:
+        return out
+    if cond.type == "check_expression":
+        kids = cond.named_children
+        txt = ctx.text(cond)
+        if len(kids) == 2 and kids[0].type == "simple_identifier" and " is " in txt and "!is" not in txt:
+            out.append((ctx.text(kids[0]), ctx.text(kids[1])))
+    elif cond.type in ("conjunction_expression", "parenthesized_expression"):
+        for c in cond.named_children:
+            out += kt_smart_casts(ctx, c)
+    return out
+
+
+def kt_if(ctx, n):
+    """`if (e is Click) e.describe()`: inside the then-branch, `e` is a Click."""
+    kids = n.named_children
+    if not kids:
+        return False
+    cond = kids[0]
+    ctx.walk(cond)
+    casts = kt_smart_casts(ctx, cond)
+    first_body = True
+    for c in kids[1:]:
+        if c.type == "control_structure_body" and first_body and casts:
+            ctx.push_scope()
+            for name, typ in casts:
+                ctx.declare(name, typ)
+            ctx.walk(c)
+            ctx.pop_scope()
+        else:
+            ctx.walk(c)
+        if c.type == "control_structure_body":
+            first_body = False
+    return True
+
+
+def kt_when(ctx, n):
+    """`when (e) { is Click -> e.describe() }`: inside that entry, `e` is a Click."""
+    subj = next((c for c in n.named_children if c.type == "when_subject"), None)
+    name = ctx.text(subj.named_children[0]) if subj is not None and subj.named_children and subj.named_children[0].type == "simple_identifier" else None
+    for c in n.named_children:
+        if c.type != "when_entry":
+            ctx.walk(c)
+            continue
+        typ = None
+        body = None
+        for x in c.named_children:
+            if x.type == "when_condition" and x.named_children and x.named_children[0].type == "type_test":
+                t = ctx.text(x.named_children[0]).strip()
+                if t.startswith("is ") and typ is None:
+                    typ = t[3:].strip()
+            if x.type == "control_structure_body":
+                body = x
+            if x.type != "control_structure_body":
+                ctx.walk(x)
+        if body is not None and name and typ:
+            ctx.push_scope()
+            ctx.declare(name, typ)
+            ctx.walk(body)
+            ctx.pop_scope()
+        elif body is not None:
+            ctx.walk(body)
+    return True
+
+
+def kt_callable_ref(ctx, n):
+    """`Topic::slug` / `::helper`: a reference to a callable is recorded as a call of it."""
+    kids = n.named_children
+    if not kids:
+        return False
+    if len(kids) >= 2:
+        ctx.add_ref("call", ctx.text(kids[-1]), n, hint=ctx.text(kids[0]), argc=None)
+    else:
+        ctx.add_ref("call", ctx.text(kids[0]), n, argc=None)
     return True
 
 
@@ -1951,7 +2189,7 @@ def k8s_collect(ctx, data, doc_node, out, parent_key=None):
 
 
 def yaml_file(ctx, root):
-    if b"{{" in ctx.src:  # Helm/Go template: not valid YAML, index best-effort by regex
+    if re.search(rb"(?<!\$)\{\{", ctx.src):  # Helm/Go template (not GitHub Actions `${{ }}`): index best-effort by regex
         kinds = re.findall(r"^kind:\s*([A-Za-z]+)", ctx.src.decode("utf-8", "replace"), flags=re.M)
         ctx.add_node("helm_template", os.path.basename(ctx.path), root, signature=f"helm template ({', '.join(dict.fromkeys(kinds)) or 'unknown kind'})",
                      extra={"kinds": list(dict.fromkeys(kinds))})
@@ -2021,6 +2259,7 @@ KOTLIN_HANDLERS = {
     "class_declaration": kt_class, "object_declaration": kt_object, "companion_object": kt_object,
     "function_declaration": kt_function, "property_declaration": kt_property, "call_expression": kt_call,
     "infix_expression": kt_infix, "additive_expression": kt_arith, "multiplicative_expression": kt_arith,
+    "if_expression": kt_if, "when_expression": kt_when, "callable_reference": kt_callable_ref,
 }
 
 HANDLERS = {
@@ -2046,6 +2285,8 @@ def extract_file(path, root_dir, src=None):
     if src is None:
         with open(os.path.join(root_dir, path), "rb") as f:
             src = f.read()
+    if lang == "kotlin":
+        src = KT_TYPE_ANNOTATION_RE.sub(lambda m: b" " * len(m.group(0)), src)   # same byte offsets, no parse error
     ctx = Ctx(path, lang, src, root_dir)
     tree = parser_for(lang).parse(src)
     if lang == "yaml":
@@ -2116,12 +2357,27 @@ def element_type(t):
     return inner.rstrip("?").split("<")[0].strip()
 
 
+KOTLIN_SYNTHETIC_MEMBERS = {"copy", "valueOf", "values", "entries", "ordinal", "name", "hashCode", "equals", "toString", "compareTo"}
 KT_RECEIVER_LAMBDAS = {"apply", "run"}
 KT_IT_LAMBDAS = {"also", "let", "takeIf", "takeUnless"}
 KT_ELEMENT_LAMBDAS = {"forEach", "map", "mapNotNull", "filter", "filterNot", "first", "firstOrNull", "last", "lastOrNull", "find",
                       "any", "all", "none", "count", "sumOf", "flatMap", "onEach", "sortedBy", "sortedByDescending", "groupBy",
                       "associateBy", "associateWith", "maxByOrNull", "minByOrNull", "maxOf", "minOf", "partition", "takeWhile",
                       "dropWhile", "single", "singleOrNull", "indexOfFirst", "distinctBy", "forEachIndexed", "sumBy"}
+
+
+# `content: @Composable RowScope.() -> Unit` / `x: @Composable () -> Unit`: the grammar rejects an
+# annotation in a type position and loses the whole declaration. Blanked before parsing.
+KT_TYPE_ANNOTATION_RE = re.compile(rb"@[A-Za-z_][\w.]*(?=[ \t]+(?:\(\)?[ \t]*->|\([^)]*\)[ \t]*->|[A-Za-z_][\w.]*(?:<[^>]*>)?\.\())")
+
+
+BUILTIN_TYPE_NAMES = {"dict", "list", "set", "tuple", "str", "int", "float", "bool", "bytes", "bytearray", "object", "type",
+                      "frozenset", "complex", "Dict", "List", "Set", "Tuple", "Any", "Callable", "Iterable", "Iterator",
+                      "Sequence", "Mapping", "MutableMapping", "MutableSequence", "Optional", "Union", "Self",
+                      "String", "Int", "Long", "Double", "Float", "Boolean", "Char", "Unit", "Nothing", "Number", "Short",
+                      "Byte", "Map", "MutableMap", "HashMap", "MutableList", "ArrayList", "MutableSet", "HashSet", "Array",
+                      "Integer", "Object", "Void", "CharSequence", "StringBuilder", "string", "error", "int64", "int32",
+                      "float64", "float32", "byte", "rune", "number", "boolean", "void", "Promise", "Record", "Partial"}
 
 
 def first_error_line(root):
@@ -2132,6 +2388,9 @@ def first_error_line(root):
     while stack:
         n = stack.pop()
         if n.is_error or n.is_missing:
+            if any(c.has_error for c in n.children):
+                stack.extend(c for c in n.children if c.has_error)   # a wrapper ERROR: report the inner one
+                continue
             line = n.start_point[0] + 1
             best = line if best is None or line < best else best
             continue
@@ -2205,6 +2464,7 @@ def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=8, show_l
             lines.append(f"{'  ' * depth}{kind_label(n)}{sig}{rng(n)}{ann}")
             if show_calls and calls_by_src.get(n["id"]):
                 cl = calls_by_src[n["id"]]
+                cl = [(" ".join(c.split())[:57] + "...") if len(" ".join(c.split())) > 60 else " ".join(c.split()) for c in cl]
                 lines.append(f"{'  ' * (depth + 1)}calls: " + ", ".join(cl[:max_calls]) + (f" (+{len(cl) - max_calls} more)" if len(cl) > max_calls else ""))
             emit(n["id"], depth + 1)
 
@@ -3557,6 +3817,7 @@ def link_graph(root_dir, files, tf_modules):
     def lead_pick(cands, rel):
         """Receiver of unknown type: a same-file definition is plausible; otherwise a few same-language leads."""
         cands = same_family(cands, rel)
+        cands = [c for c in cands if c["id"] != _cur.get("src")]   # `self._pool.handle_request()` is not a self-call
         if not is_test_file(rel):
             cands = [c for c in cands if not is_test_file(c["file"])]   # main code never leads into a test helper
         if not cands:
@@ -3732,6 +3993,26 @@ def link_graph(root_dir, files, tf_modules):
                 fake["hint_type"] = root_type
                 fake["chain"] = [seg.split("(")[0].strip("*&!? ") for seg in split_chain(hint)][1:]
             targets, conf, mode = resolve_call(fake, rel, lang_of(rel), cont)
+            if not targets and hint:
+                # synthetic or builtin members whose result type follows from the receiver:
+                # Kotlin data-class `copy(...)`, enum `valueOf(...)`, and `dict[K, V].get/pop/setdefault(...)`
+                rm, rn = receiver_mode(dict(fake, name=name), rel, lang_of(rel), cont)
+                if rm == "typed" and rn is not None:
+                    if name == "copy" or (name == "valueOf" and rn["kind"] == "enum"):
+                        return "node", rn
+                if name in ("get", "pop", "setdefault", "__getitem__"):
+                    raw = None
+                    hchain = split_chain(hint)
+                    if root_type and len(hchain) == 1:
+                        raw = root_type
+                    elif cont is not None and len(hchain) == 2 and hchain[0] in ("self", "this"):
+                        for oid in owner_ids(cont):
+                            if hchain[1] in field_types_raw.get(oid, {}):
+                                raw = field_types_raw[oid][hchain[1]]
+                                break
+                    kv = py_mapping_types(raw) if raw else None
+                    if kv:
+                        return resolve_type_ref(kv[1], rel, cont, depth + 1)
             if not targets:
                 return "unknown", None   # callee not in the graph: the receiver stays an unknown value (lead)
             if targets[0]["kind"] in TYPE_LIKE_KINDS:
@@ -3744,6 +4025,8 @@ def link_graph(root_dir, files, tf_modules):
             return resolve_type_ref(rt, targets[0]["file"], container_of(targets[0]["id"]), depth + 1)
         type_text = unwrap_optional(type_text)
         q, base = split_qualifier(type_text)
+        if not q and base in BUILTIN_TYPE_NAMES and not candidates(base, TYPE_LIKE_KINDS):
+            return "ext", None   # `dict[str, Item].get()`, `list[T].append()`: builtin receivers never lead anywhere
         if q:
             if q in ns_ext.get(rel, ()):
                 return "ext", None
@@ -3792,6 +4075,8 @@ def link_graph(root_dir, files, tf_modules):
                     if nested:
                         tn = nested[0]   # `Order.Builder()` / `b.Audit()`: a nested or inner class constructor
                         continue
+                    if seg == "copy" or (seg == "valueOf" and tn["kind"] == "enum"):
+                        continue         # `Kind.valueOf("x").code()`, `order.copy(..).f()`: same type as the receiver
                     return None
                 rt = return_type(targets[0])
                 if not rt:
@@ -3808,6 +4093,16 @@ def link_graph(root_dir, files, tf_modules):
                 nested = [c for c in candidates(seg, TYPE_LIKE_KINDS) if c.get("parent") == tn["id"]]
                 if nested:
                     tn = nested[0]   # `Outer.Inner.f()`
+                    continue
+                props, _ = typed_pick([c for c in candidates(seg, {"method"}) if any(a.endswith(("property", "cached_property", "getter")) for a in c.get("annotations", []))], tn)
+                if props:
+                    rt = return_type(props[0])   # `item.heavy.area()`: a Python property segment
+                    kind, nxt = resolve_type_ref(rt, props[0]["file"], container_of(props[0]["id"])) if rt else ("none", None)
+                    if kind == "ext":
+                        return ""
+                    if nxt is None:
+                        return None
+                    tn = nxt
                     continue
                 return None
             owner, ft, q = found
@@ -3968,6 +4263,14 @@ def link_graph(root_dir, files, tf_modules):
                 return "external", None
             return ("typed", t) if t else ("unknown", None)
 
+        if first and re.match(r"^(?:[bBrRfFuU]{0,2}[\"'`]|[\[{]|\d)", first):
+            return "external", None   # `", ".join(...)`, `b"".join(...)`, `{...}.get(...)`, `[...].append(...)`
+        if first == "super" and cont is not None:
+            # Python `super().m()`, Java/Kotlin `super.m()`: the method lives on an ancestor
+            parents = parents_of.get(cont["id"], [])
+            if not parents:
+                return "external", None
+            return from_node(parents[0], chain[1:], flags[1:])
         if r.get("hint_type"):  # receiver root typed by a local declaration/parameter (maybe a call result)
             kind, tn = resolve_type_ref(r["hint_type"], rel, cont)
             if kind == "unknown":
@@ -4070,7 +4373,7 @@ def link_graph(root_dir, files, tf_modules):
         """Resolve one call ref -> (targets, confidence, mode); mode 'external'/'builtin' mean no edge.
         When several same-arity overloads remain undecided, they are all returned as `ambiguous`."""
         saved = dict(_cur)   # re-entrant: typing an argument or receiver may resolve nested calls
-        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "rel": rel, "cont": cont, "overload_undecided": False})
+        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src")})
         try:
             targets, conf, mode = _resolve_call(r, rel, lang, cont)
             if targets and _cur.get("overload_undecided") and conf in ("typed", "same_file", "package", "import"):
@@ -4194,12 +4497,22 @@ def link_graph(root_dir, files, tf_modules):
                 while not targets and outer is not None and outer.get("kind") in CONTAINER_KINDS:
                     targets, conf = typed_pick(candidates(name, {"method", "constructor"}), outer)   # inner class -> outer member
                     outer = node_by_id.get(outer.get("parent"))
+            inv_type = r.get("invoke_type")
+            if not targets and not inv_type and lang in ("kotlin", "java") and cont is not None:
+                fo = field_owner(cont, name)   # `runner("1")` on a property: `operator fun invoke`
+                if fo is not None and fo[1] and not fo[1].startswith("<"):
+                    inv_type = ((fo[2] + ".") if fo[2] else "") + fo[1]
+            if not targets and inv_type:
+                ik, itn = resolve_type_ref(inv_type, rel, cont)   # `useCase()` -> `operator fun invoke`
+                if ik == "node" and itn is not None:
+                    targets, conf = typed_pick(candidates("invoke", {"method"}), itn)
             if not targets:
-                cands = candidates(name, {"function", "class", "struct", "constructor"})
+                free_kinds = {"function", "class", "struct", "constructor"} | ({"interface"} if lang in ("kotlin", "java") else set())
+                cands = candidates(name, free_kinds)
                 if name in ns_repo.get(rel, {}):
                     on = orig(rel, name)
                     ocands = candidates(on, {"function", "class", "struct", "constructor"}) if on != name else cands
-                    targets, conf = bound_pick(ocands, on, ns_repo[rel][name], {"function", "class", "struct", "constructor"})   # from-import wins over same-file shadowing
+                    targets, conf = bound_pick(ocands, on, ns_repo[rel][name], free_kinds)   # from-import wins over same-file shadowing
                 if not targets:
                     same = [c for c in cands if c["file"] == rel]
                     if same:
@@ -4209,7 +4522,7 @@ def link_graph(root_dir, files, tf_modules):
                         if pkg:
                             targets, conf = by_arity(pkg)[:1], "package"
                 if not targets and "*" in ns_repo.get(rel, {}):
-                    targets, conf = bound_pick(cands, name, ns_repo[rel]["*"], {"function", "class", "struct", "constructor"})
+                    targets, conf = bound_pick(cands, name, ns_repo[rel]["*"], free_kinds)
                 if not targets and lang == "rust":
                     targets, conf = pick(same_family(cands, rel), rel)
         elif mode == "namespace":
@@ -4218,6 +4531,8 @@ def link_graph(root_dir, files, tf_modules):
             targets, conf = pick(same_family(candidates(name, {"function", "method", "struct", "constructor"}), rel), rel)
         elif mode == "typed":
             targets, conf = typed_pick(candidates(name, {"function", "method", "class", "struct", "constructor"}), payload)
+            if not targets and lang == "kotlin" and (name in KOTLIN_SYNTHETIC_MEMBERS or re.match(r"^component\d+$", name)):
+                return [], None, "builtin"   # data-class copy/componentN, enum valueOf/values/entries, Any members
             if not targets:  # our type but no such member (embedded struct, macro, dynamic attr): keep as a lead
                 targets, conf = lead_pick(candidates(name, {"method"}), rel)
         else:  # unknown receiver
@@ -4415,7 +4730,13 @@ def q_find(g, args):
         return (r, structural, stub, is_test_file(n["file"]) if n.get("file") else False, len(n["file"]), n["line"])
 
     res.sort(key=rank)
-    total = len(res)
+    if args.kind:
+        res = [n for n in res if rank(n)[0] < 5]   # a path-only hit is not a symbol of that kind
+    exact_n = sum(1 for n in res if rank(n)[0] <= 1)
+    if exact_n and len(res) > exact_n + 15:
+        res = res[: exact_n + 15]   # exact matches plus a few substring hits; the rest is noise for a name lookup
+    total = len(res) if not (exact_n and len(res) == exact_n + 15) else len(res) + 1
+    total = max(total, len(res))
     res = res[:args.limit]
     if args.json:
         print(json.dumps(res))
@@ -4612,7 +4933,7 @@ def with_owner_if_constructor(g, n):
 def q_callers(g, args, direction="in"):
     n = ensure_one(g, args.name)
     targets = with_owner_if_constructor(g, n) if direction == "in" else [n["id"]]
-    if n["kind"] in CONTAINER_KINDS or n["kind"] == "file":
+    if (n["kind"] in CONTAINER_KINDS or n["kind"] == "file") and not getattr(args, "no_members", False):
         targets += [k["id"] for k in g.children(n["id"])]
     # Every dependency relation except file-level imports, so Terraform/K8s references count as "callers".
     seen, hops = bfs(g, targets, direction, DEP_EDGE_TYPES - {"imports"}, args.depth, args.include_ambiguous)
@@ -4781,8 +5102,14 @@ def q_trace_deps(g, args):
     print(f"Files affected: {len(per_file)} (direct: {len(direct)}, transitive: {len(per_file) - len(direct)}); dependency rows: {total_rows}")
     if tests:
         shown_t = tests[: args.top * 2]
-        print("Tests reached through resolved edges (a lower bound; tests that reach the target through fixtures or untyped receivers are not linked): "
-              + ", ".join(shown_t) + (f" (+{len(tests) - len(shown_t)} more; --files-only lists all)" if len(tests) > len(shown_t) else ""))
+        head = "Tests reached through resolved edges (a lower bound; tests that reach the target through fixtures or untyped receivers are not linked)"
+        tail = f" (+{len(tests) - len(shown_t)} more; --files-only lists all)" if len(tests) > len(shown_t) else ""
+        if len(shown_t) <= 5:
+            print(head + ": " + ", ".join(shown_t) + tail)
+        else:
+            print(head + ":" + tail)
+            for t in shown_t:
+                print(f"  - {t}")
     amb = sum(1 for e in g.g["edges"] if e["confidence"] == "ambiguous" and e["dst"] in start_set)
     if amb and not args.include_ambiguous:
         print(f"Note: {amb} ambiguous edge(s) to the target were excluded; re-run with --include-ambiguous to see them.")
@@ -4811,8 +5138,9 @@ def q_overview(g, args):
         sf = g.nodes.get(e["src"], {}).get("file")
         if test_files and (sf in test_files or in_test_module(e["src"])):
             continue   # --no-tests: usage from test files or inline test modules does not make a symbol a hub
-        if lang_files is not None and (sf not in lang_files or g.nodes.get(e["dst"], {}).get("file") not in lang_files):
-            continue   # --lang: rank only within the requested language(s)
+        dst_node = g.nodes.get(e["dst"], {})
+        if lang_files is not None and (sf not in lang_files or (dst_node.get("file") not in lang_files and dst_node.get("kind") not in ("external", "external_module"))):
+            continue   # --lang: rank only within the requested language(s); externals keep their counts
         indeg[e["dst"]] += 1
         outdeg[e["src"]] += 1
     # roll member usage up to the containing symbol and file
@@ -4997,6 +5325,7 @@ def main(argv=None):
         x.add_argument("--files-only", action="store_true", help="only the files, grouped by hop")
         x.add_argument("--max-rows", type=int, default=200, help="above this many rows the listing degrades to --summary (default 200)")
         x.add_argument("--top", type=int, default=15, help="rows per section in --summary")
+        x.add_argument("--no-members", action="store_true", help="for a class/file target: only edges to the class itself (instantiations, extends, references), not to its members")
         x.set_defaults(qfn=(lambda d: (lambda g, a: q_callers(g, a, d)))(direction))
     x = qs.add_parser("trace-deps", help="blast radius: every file/symbol that depends on a target")
     x.add_argument("target", help="file path, symbol name, qualified name, or node id")

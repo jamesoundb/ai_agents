@@ -6,7 +6,7 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
 
 | language | definitions extracted | relationships | type tracking used for `typed` calls |
 |---|---|---|---|
-| Python | classes (bases, decorators), functions/methods (params, return annotation), class-level and `self.x` fields (enum members typed as the enum), module variables | imports (absolute, relative, `from x import y`, `as` aliases), calls, instantiation via call of a capitalized name (`mod.Class(...)` keeps the qualifier) | annotated parameters (`Optional[X]`, `X \| None`, `"X"` unwrapped), `x: T`, `x = T(...)`, `self.f = T(...)` / `= typed_param`, `x = f()` return types, `*args`/`**kwargs` as tuple/dict, pytest fixture parameters from the fixture's return annotation |
+| Python | classes (bases, decorators), functions/methods (params, return annotation), class-level and `self.x` fields (enum members typed as the enum), module variables | imports (absolute, relative, `from x import y`, `as` aliases), calls, instantiation via call of a capitalized name (`mod.Class(...)` keeps the qualifier) | annotated parameters (`Optional[X]`, `X \| None`, `"X"` unwrapped), `x: T`, `x = T(...)`, `self.f = T(...)` / `= typed_param`, `x = f()` return types, `*args`/`**kwargs` as tuple/dict, pytest fixture parameters from the fixture's return annotation, loop/comprehension variables from `list[T]`/`dict[K, V]`, `with X() as x`, walrus, `super()` |
 | JavaScript / TypeScript / TSX | classes (extends/implements, decorators), interfaces, type aliases, enums, namespaces, functions, arrow-function consts, methods, fields, TS parameter properties | ESM imports, `require()`, calls, `new X()`, interface extends | typed parameters, `const x: T`, `const x = new T()`, field types |
 | Go | structs (fields, embedded types), interfaces (method set), funcs, methods (attached to receiver struct in the same package), package vars/consts | imports (module path from `go.mod`), calls, composite literals | receiver, typed parameters, `x := T{}` / `&T{}`, `var x T`, field chains (`h.S.Get`) |
 | Java | classes/interfaces/enums/records/annotations (extends, implements, annotations), methods, constructors, fields | imports (single, wildcard, static), method invocations, `new X()`; same package resolved without import | fields, parameters, local declarations, enhanced-for variables, `this.field` chains |
@@ -46,7 +46,7 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
   `first`, ...) type `it` from the receiver or its element type (`List<T>`, `Set<T>`,
   `Sequence<T>`, `mutableListOf<T>()`); `it` on a receiver whose type or element type the graph
   does not know (a call-chain receiver such as `xs.map { }.filter { }`, a `Map`, an external
-  collection) stays a lead. Operators record `plus`/`minus`/`times`/`div`/`rem` only when the
+  collection) stays a lead; a named lambda parameter (`{ list -> list.f() }`) is not typed. Operators record `plus`/`minus`/`times`/`div`/`rem` only when the
   left operand is a constructor call or a local of a non-builtin declared type, never for
   literals or builtin numbers; a parenthesised binary expression as a receiver (`(a + b).f()`) is
   a lead.
@@ -105,5 +105,9 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
   Directories named `build`, `dist`, `target`, `vendor` (and the rest of `DEFAULT_EXCLUDE_DIRS`)
   are skipped unless `--keep-dir NAME` re-includes them.
 - Helm templates are not parsed as YAML (Go template syntax); only their `kind:` lines are noted.
+- Kotlin grammar limits that remain (Exposed: 17 of 888 files): single-line `object X : B() { .. }`
+  bodies, `when` conditions with `(x as? T)?.m() == true`, assignments to a property named
+  `where`. Annotations on function types (`@Composable () -> Unit`) are handled by blanking the
+  annotation before parsing (same byte offsets, so lines are exact).
 - Files with syntax errors produce partial skeletons flagged `parse errors (first at LN)`.
 - Extensions not in `EXT_LANG` (astgraph.py) are skipped; add a mapping and, if needed, a handler.

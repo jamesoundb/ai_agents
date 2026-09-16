@@ -181,6 +181,13 @@ def test_resolution(root):
     check(("Palette.name", "typed") in use, f"py: `p = en.Palette()` keeps the module qualifier and types p {use}")
     tpk = G.confs(G.edges_from(G.node("test_palette.py", "test_pick")))
     check(("Palette.pick", "typed") in tpk, f"py: untyped pytest fixture parameter typed from the fixture's return annotation {tpk}")
+    for meth, want in (("Board.labels", "Color.label"), ("Board.comp", "Color.label"), ("Board.named", "Color.label"), ("Board.first", "Palette.pick"), ("use_with", "Board.first")):
+        bc = G.confs(G.edges_from(G.node("loops.py", meth)))
+        check((want, "typed") in bc, f"py: {meth} -> {want} typed (loop/comprehension/dict.items/walrus/branch field/with-as) {bc}")
+    bn = G.confs(G.edges_from(G.node("loops.py", "Board.named")))
+    check(not any(q.endswith(".join") for q, _ in bn), f"py: a string-literal receiver never leads into a repo `join` {bn}")
+    check(astgraph.is_test_file("core/testing/src/main/kotlin/x/TopicsTestData.kt") is False and astgraph.is_test_file("core/data/src/test/kotlin/x/RepoTest.kt") and astgraph.is_test_file("feature/x/src/androidTest/kotlin/x/ScreenTest.kt"),
+          "jvm: src/main under a `testing` module is production; src/test and src/androidTest are tests")
 
     # --- JavaScript
     jrun = G.node("js/src/service.js", "Service.run")
@@ -286,7 +293,7 @@ def test_resolution(root):
     check("Base.kt" in imp_edges and imp_edges.count("Base.kt") >= 2, f"kotlin: imports of a class, a function and a wildcard all resolve to Base.kt {imp_edges}")
     check(astgraph.is_test_file("kotlin/src/main/kotlin/x/FooTest.kt") and not astgraph.is_test_file("kotlin/src/main/kotlin/x/Latest.kt"), "kotlin: *Test.kt is a test file, Latest.kt is not")
     fields = sorted(n["name"] for n in G.g["nodes"] if n["kind"] == "field" and n["file"].endswith("Order.kt"))
-    check(fields == ["LARGE", "SMALL", "all", "id", "items", "side", "sq"], f"kotlin: primary-constructor val/var parameters, class properties and enum entries are fields {fields}")
+    check(fields == ["LARGE", "SMALL", "all", "cached", "h", "id", "id", "items", "lazyOrder", "runner", "side", "sq", "svc", "svc"], f"kotlin: primary-constructor val/var parameters, class properties and enum entries are fields {fields}")
     card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Order")
     check("create" in card and "Members" in card, "kotlin: class card lists companion members")
     dt = G.confs(G.edges_from(G.node("Order.kt", "Sq.describeTwice")))
@@ -319,6 +326,28 @@ def test_resolution(root):
     check(mc == [("Provider.Chain", "import")], f"kotlin: `: Provider.Chain` implements the nested interface of an imported type {mc}")
     bc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Cart.Builder.kind")
     check("fun kind(k: Kind): Builder" in bc, f"kotlin: `= apply {{ }}` setter gets the receiver as return type: {bc.splitlines()[0]}")
+    wr = G.node("Order.kt", "Widget.react")
+    rc2 = [(G.nodes[e["dst"]]["qname"], e["line"], e["confidence"]) for e in G.edges_from(wr)]
+    check(sum(1 for q, _, c in rc2 if q == "Ev.Click.describe" and c == "typed") == 2, f"kotlin: smart casts in `if (e is T)` and `when (e) {{ is T -> }}` type e {rc2}")
+    wcls = G.node("Order.kt", "Widget")
+    wc = [(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["src"] == wcls["id"] and e["type"] == "calls"]
+    check(("Handler", "same_file") in wc and ("Widget.react", "typed") in wc and ("OrderService.place", "typed") in wc,
+          f"kotlin: SAM constructor, lambda -> outer member, and a property initialiser through a plain constructor parameter {wc}")
+    lz = G.node("Order.kt", "Widget.lazyOrder")
+    check(lz["extra"].get("type") == "Order", f"kotlin: `by lazy {{ Order(..) }}` types the property {lz['extra']}")
+    sz = G.confs(G.edges_from(G.node("Order.kt", "Widget.sizes")))
+    check(("Sq.describeTwice", "typed") in sz, f"kotlin: callable reference `Sq::describeTwice` is a typed call {sz}")
+    ag = G.confs(G.edges_from(G.node("Order.kt", "Widget.again")))
+    check(not any(q.endswith(".copy") for q, _ in ag), f"kotlin: synthetic `copy` produces no member edge {ag}")
+    cd2 = G.confs(G.edges_from(G.node("Order.kt", "Widget.code")))
+    check(("Kind.code", "typed") in cd2, f"kotlin: `Kind.valueOf(..).code()` typed through the enum {cd2}")
+    go = G.confs(G.edges_from(G.node("Order.kt", "Consumer.go")))
+    check(("Runner.invoke", "typed") in go, f"kotlin: `runner(\"1\")` on a typed property resolves `operator fun invoke` {go}")
+    comp = G.g["files"]["kotlin/src/main/kotlin/com/acme/shop/Compose.kt"]
+    check(not comp["file_node"]["extra"].get("has_errors") and any(n["name"] == "Row" for n in comp["nodes"]) and any(n["name"] == "Screen" for n in comp["nodes"]),
+          "kotlin: `@Composable` on a function type no longer breaks the file (grammar workaround)")
+    sc = G.confs(G.edges_from(G.node("Compose.kt", "Screen")))
+    check(("Row", "same_file") in sc, f"kotlin: composable calling composable resolved {sc}")
     ft = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "find", "helper", "--no-tests", "--json")
     check(all(not n["file"].split("/")[-1].startswith("test") and "/tests/" not in n["file"] for n in json.loads(ft)), "find --no-tests hides test-file symbols")
 

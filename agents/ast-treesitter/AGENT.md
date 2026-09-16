@@ -60,7 +60,8 @@ depending on the harness). Locate it once, then:
    run `callers` on the base method: those callers reach the override at runtime.
 5. Impact: `run.sh query trace-deps TARGET --depth 3` (the `blast-radius` skill formats the
    matrix). On a hub target use `--summary` and `--files-only` first; never paste a per-edge
-   table with hundreds of rows into your answer.
+   table with hundreds of rows into your answer. For a constructor or class-shape change use
+   `callers CLASS --no-members` to see instantiation sites without the member-call rows.
 6. Verify the two or three riskiest edges by reading only their line ranges.
 7. Answer.
 
