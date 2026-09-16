@@ -34,3 +34,9 @@ class H2Dialect : Dialect {
 }
 
 val currentDialect: Dialect = H2Dialect()             // top-level typed property: a variable node
+
+interface Provider {
+    interface Chain {
+        fun proceed(): Int
+    }
+}

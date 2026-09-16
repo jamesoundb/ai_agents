@@ -55,7 +55,9 @@ depending on the harness). Locate it once, then:
    every edge). A method card lists `Overrides` / `Overridden by`: use it for "who implements
    this" and "which subclasses render this differently" instead of `find` on the method name.
 4. Traverse: `run.sh query callers|callees|path|file ...`; on a hub, `callers --summary`
-   (directories, most frequent callers) or `--files-only` instead of the row listing.
+   (directories, most frequent callers) or `--files-only` instead of the row listing. When
+   `callers` or `trace-deps` prints a dispatch note (the target overrides a base method), also
+   run `callers` on the base method: those callers reach the override at runtime.
 5. Impact: `run.sh query trace-deps TARGET --depth 3` (the `blast-radius` skill formats the
    matrix). On a hub target use `--summary` and `--files-only` first; never paste a per-edge
    table with hundreds of rows into your answer.

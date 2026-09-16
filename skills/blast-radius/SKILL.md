@@ -49,9 +49,12 @@ installed side by side).
    convention: `_test.go`, `test_*.py`/`*_test.py`/`conftest.py`, `*.test.ts`/`*.spec.js`,
    `*Test.java`/`*IT.java`, `*Test.kt`/`*Spec.kt`, `_test.rs`, or anything under a `test`, `tests`,
    `__tests__`, `spec`, `specs` or `testing` directory), and anything reported as unresolved or
-   ambiguous that a human should double-check. The tests line is a lower bound: tests that reach
-   the target through fixtures, untyped receivers or a framework (acceptance tests, DI) are not
-   linked; name those from the package convention instead.
+   ambiguous that a human should double-check. The tests line is a lower bound: Python tests
+   whose fixture functions carry a return annotation are linked (the untyped parameter is typed
+   from the fixture), but tests that reach the target through unannotated fixtures, untyped
+   receivers or a framework (acceptance tests, DI) are not; name those from the package
+   convention instead. When the target overrides a base method, the note under the header says
+   how many callers reach it through the base by dynamic dispatch; include them.
 5. Only after the matrix, open specific line ranges to confirm the riskiest edges. Do not read
    whole files.
 

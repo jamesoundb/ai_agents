@@ -168,6 +168,19 @@ def test_resolution(root):
           f"path --json: one hop per text row with src/type/confidence/dst/file/line ({len(pj['hops'])} hops)")
     pn = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentGatewayClient", "PaymentOrchestratorTest", "--json"))
     check(pn["found"] is False and pn["hops"] == [], "path --json: no path -> found=false, empty hops")
+    pal = G.node("enums.py", "Palette")
+    pc = {(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["src"].startswith(pal["id"].split("@")[0]) or G.nodes[e["src"]].get("parent") == pal["id"]}
+    check(("Color.label", "typed") in pc, f"py: Optional[\"Color\"] field and an enum member both type Color.label {sorted(pc)}")
+    pc_calls = [(G.nodes[e["src"]]["qname"], G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["type"] == "calls" and G.nodes[e["src"]]["qname"] in ("Palette.pick", "Palette.name", "Palette.opts")]
+    check(("Palette.pick", "Color.label", "typed") in pc_calls and ("Palette.name", "Color.label", "typed") in pc_calls, f"py: enum member and Optional field calls typed {pc_calls}")
+    check(not any(s_ == "Palette.opts" and d_.endswith(".pop") for s_, d_, _ in pc_calls), f"py: **kwargs.pop() leads nowhere {pc_calls}")
+    tpal = G.node("palette_user.py", "ThemedPalette")
+    ext = [(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["src"] == tpal["id"] and e["type"] == "extends"]
+    check(ext == [("Palette", "import")], f"py: `from .enums import Palette as BasePalette` resolves the base class {ext}")
+    use = G.confs(G.edges_from(G.node("palette_user.py", "use")))
+    check(("Palette.name", "typed") in use, f"py: `p = en.Palette()` keeps the module qualifier and types p {use}")
+    tpk = G.confs(G.edges_from(G.node("test_palette.py", "test_pick")))
+    check(("Palette.pick", "typed") in tpk, f"py: untyped pytest fixture parameter typed from the fixture's return annotation {tpk}")
 
     # --- JavaScript
     jrun = G.node("js/src/service.js", "Service.run")
@@ -246,7 +259,7 @@ def test_resolution(root):
     check(not G.edges_from(kp, name="println"), "kotlin: builtin println not linked")
     check(not G.edges_from(kp, name="first"), "kotlin: List.first() (external) not linked")
     area_lines = sorted(e["line"] for e in G.edges_from(kp, name="area"))
-    check(area_lines == [23, 29], f"kotlin: field chain and safe-call chain both reach Sq.area {area_lines}")
+    check(area_lines == [23, 29, 49], f"kotlin: field chain, safe-call chain and cast+elvis local all reach Sq.area {area_lines}")
     chain_lines = sorted((e["line"], e.get("name")) for e in G.edges_from(kp) if e["line"] == 33 and e["confidence"] != "ambiguous")
     check(chain_lines == [(33, "OrderRepo"), (33, "double"), (33, "save")], f"kotlin: inner calls of a navigation chain are recorded {chain_lines}")
     saves = sorted((e["line"], e["confidence"]) for e in G.edges_from(kp, name="save"))
@@ -254,7 +267,7 @@ def test_resolution(root):
     check(("Sq.plus2", "typed") in kc, f"kotlin: infix call `a plus2 b` typed {kc}")
     check(not [e for e in G.edges_from(kp) if e.get("name") in ("let", "forEach")], "kotlin: stdlib scope/collection functions produce no lead edges")
     sq_card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Sq")
-    check("double" in sq_card and "[extension]" in sq_card, "kotlin: extension functions appear on the receiver's card")
+    check("double" in sq_card and "[extension, " in sq_card, "kotlin: extension functions appear on the receiver's card (tagged with their file)")
     lk = sorted(e["line"] for e in G.edges_from(kp, name="lookup") if e["confidence"] == "typed")
     check(39 in lk, f"kotlin: `val reg = Registry` local typed as the object {lk}")
     tk = sorted((e.get("name"), G.nodes[e["dst"]]["line"], e["confidence"]) for e in G.edges_from(kp) if e.get("name") in ("take", "take2"))
@@ -273,7 +286,7 @@ def test_resolution(root):
     check("Base.kt" in imp_edges and imp_edges.count("Base.kt") >= 2, f"kotlin: imports of a class, a function and a wildcard all resolve to Base.kt {imp_edges}")
     check(astgraph.is_test_file("kotlin/src/main/kotlin/x/FooTest.kt") and not astgraph.is_test_file("kotlin/src/main/kotlin/x/Latest.kt"), "kotlin: *Test.kt is a test file, Latest.kt is not")
     fields = sorted(n["name"] for n in G.g["nodes"] if n["kind"] == "field" and n["file"].endswith("Order.kt"))
-    check(fields == ["id", "side", "sq"], f"kotlin: primary-constructor val/var parameters are fields {fields}")
+    check(fields == ["LARGE", "SMALL", "all", "id", "items", "side", "sq"], f"kotlin: primary-constructor val/var parameters, class properties and enum entries are fields {fields}")
     card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Order")
     check("create" in card and "Members" in card, "kotlin: class card lists companion members")
     dt = G.confs(G.edges_from(G.node("Order.kt", "Sq.describeTwice")))
@@ -288,6 +301,26 @@ def test_resolution(root):
     check("Overridden by" in ja and "Circle.area" in ja and "Square.area" in ja, f"java: interface method card lists implementers' methods: {[l for l in ja.splitlines() if 'Overrid' in l]}")
     jc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Circle.java:Circle.area")
     check("Overrides: Shape.area" in jc, f"java: implementing method card names the interface method: {[l for l in jc.splitlines() if 'Overrid' in l]}")
+    kc2 = [(G.nodes[e["dst"]]["qname"], e["line"], e["confidence"]) for e in G.edges_from(kp)]
+    for want in ("Cart.grow", "Kind.code", "Order.Builder.build" if False else "Cart.Builder.build", "Cart.plus"):
+        hits = [(l, c) for q, l, c in kc2 if q == want]
+        check(any(c == "typed" for _, c in hits), f"kotlin: {want} typed ({hits})")
+    check(sum(1 for q, l, c in kc2 if q == "Cart.grow" and c == "typed") >= 2, f"kotlin: DSL receiver lambda and `it` of also both reach Cart.grow {[x for x in kc2 if x[0] == 'Cart.grow']}")
+    check(("Sq.area", kc2 and max(l for _, l, _ in kc2), "typed") in kc2 or any(q == "Sq.area" and c == "typed" and l > 45 for q, l, c in kc2), f"kotlin: `(o as Order) ?: o` initializer types the local {[x for x in kc2 if x[0] == 'Sq.area']}")
+    ct = G.confs(G.edges_from(G.node("Order.kt", "Cart.total")))
+    check(("Sq.area", "typed") in ct, f"kotlin: `it` in sumOf on a MutableList<Sq> literal is Sq {ct}")
+    an = G.confs(G.edges_from(G.node("Order.kt", "Cart.Audit.note")))
+    check(("Cart.total", "typed") in an, f"kotlin: inner class calls the outer member {an}")
+    kn = G.node("Order.kt", "Kind.SMALL")
+    check(kn["kind"] == "field" and kn["extra"].get("type") == "Kind", f"kotlin: enum entries are fields typed as the enum {kn['extra']}")
+    rc = G.confs(G.edges_from(G.node("OrderService.kt", "runChain")))
+    check(("Provider.Chain.proceed", "typed") in rc, f"kotlin: parameter typed `Provider.Chain` (Provider imported) resolves member calls {rc}")
+    mc = [(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["src"] == G.node("OrderService.kt", "MyChain")["id"] and e["type"] == "implements"]
+    check(mc == [("Provider.Chain", "import")], f"kotlin: `: Provider.Chain` implements the nested interface of an imported type {mc}")
+    bc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Cart.Builder.kind")
+    check("fun kind(k: Kind): Builder" in bc, f"kotlin: `= apply {{ }}` setter gets the receiver as return type: {bc.splitlines()[0]}")
+    ft = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "find", "helper", "--no-tests", "--json")
+    check(all(not n["file"].split("/")[-1].startswith("test") and "/tests/" not in n["file"] for n in json.loads(ft)), "find --no-tests hides test-file symbols")
 
     # --- Terraform / Kubernetes
     types = {(e["type"], e["confidence"]) for e in G.g["edges"]}
@@ -322,9 +355,9 @@ def test_resolution(root):
     ovl = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--lang", "go"))
     files_go = {G.nodes[i]["file"] for i, _ in ovl["hub_symbols"]}
     check(files_go and all(f.endswith(".go") for f in files_go), f"overview --lang go ranks only Go symbols {sorted(files_go)}")
-    ovt = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--no-tests"))
+    ovt = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--no-tests", "--top", "80"))
     scored = {G.nodes[i]["qname"]: c for i, c in ovt["hub_symbols"]}
-    check("PaymentRequest" in scored and scored["PaymentRequest"] < {G.nodes[i]["qname"]: c for i, c in json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json"))["hub_symbols"]}["PaymentRequest"],
+    check("PaymentRequest" in scored and scored["PaymentRequest"] < {G.nodes[i]["qname"]: c for i, c in json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--top", "80"))["hub_symbols"]}["PaymentRequest"],
           "overview --no-tests drops the usage coming from PaymentOrchestratorTest")
     fj = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "file", "python/pkg/ops.py", "--json"))
     check("python/app/consumer.py" in fj.get("imported_by", []) and any(n["name"] == "convert" for n in fj["nodes"]), f"query file --json lists nodes and importers {fj.get('imported_by')}")

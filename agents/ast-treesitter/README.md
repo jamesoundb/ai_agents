@@ -134,16 +134,18 @@ Other languages (2026-09-15):
 | JetBrains/Exposed (Kotlin, Gradle multi-module) | 888 | 6.9s, 256 MB | 13,709 / 8,528 / 24,061 | package resolution shared with Java; companions, extension and infix functions, anonymous objects, properties typed from DSL builder calls; the infix `eq` operator has 678 typed callers in 132 files; `currentDialect.functionProvider.charLength()` typed through an imported top-level `val`; `FunctionProvider.charLength` card lists its three dialect overrides |
 | terraform-google-modules/terraform-google-kubernetes-engine (HCL, 7 generated module copies) | 658 (hcl 541, yaml 77, go 38) | 1.0s, 59 MB | 8 / 0 / 57 (references: 9,322 exact) | every `var.`/`local.`/`module.` reference resolved at its own line; 76 `moved` blocks linked to their targets; `dynamic` iterators no longer counted as unresolved (2,588 -> 1,191); registry-sourced examples reach the local sub-module as leads; `overview` collapses the seven same-named copies |
 | ripgrep (Rust workspace) | 115 | 1.3s, 54 MB | 2,889 / 1,676 / 3,284 | `crate::`, `super::`, `self::`, grouped and cross-crate `use`, `pub use` re-exports resolve; generic-bounded fields reach trait methods; `?`-unwrapped locals typed |
+| pallets/flask (Python, 2026-09-16) | 91 | 0.4s, 47 MB | 323 / 672 / 304 | aliased base class (`Blueprint as SansioBlueprint`) resolved so the blueprint hierarchy and `Blueprint.add_url_rule` dependents exist; pytest-fixture parameters typed from the fixture's return annotation (`app.register_blueprint` callers in tests); `**options.pop()` no longer leads into repo `pop` methods; `path Flask Scaffold` is the extends chain |
+| square/okhttp (Kotlin + Java, 2026-09-16) | 692 | 5.3s, 125 MB | 23,014 / 2,700 / 6,582 | typed edges up from 17,379: `chain.proceed()` on a parameter typed `Interceptor.Chain` (nested type of an import), `implements Interceptor.Chain`, `val realChain = chain as RealInterceptorChain`, inner-class calls to outer members, multi-line `Request\n .Builder()` chains; `RealInterceptorChain.proceed` prints the dispatch note with its 86 base-method callers |
 
 After the same round, the Python repos: pandas 16,611 typed / 28,307 ambiguous / 0 unique (build
 17s), TensorFlow 78,698 typed / 65,120 ambiguous / 0 unique (build 34s). Return-type inference
 adds roughly a third to build time on Python-heavy repos.
 
-Fixture (`skills/code-graph/tests/fixture`, 63 indexed source files across nine languages plus
+Fixture (`skills/code-graph/tests/fixture`, 67 indexed source files across nine languages plus
 build metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json`; the suite has
-176 check sites; 2026-09-16):
+195 check sites; 2026-09-16):
 
-- Full build well under a second; incremental rebuild re-parses only changed files (1 of 63 after
+- Full build well under a second; incremental rebuild re-parses only changed files (1 of 67 after
   a one-line edit) and yields the same node and edge sets as a full build.
 - Java example from the article reproduced: `PaymentOrchestrator` card shows injected fields and
   `processTransaction` calls resolved as `typed`; changing `PaymentRequest` lists the interface

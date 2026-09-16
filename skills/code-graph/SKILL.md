@@ -81,8 +81,11 @@ it writes into the repo is the graph under `.ast-graph/`).
 5. **Only then read source**, and only the line range the graph reported
    (`Read` with offset/limit, or `sed -n 'START,ENDp' FILE`).
 
-Every query subcommand accepts `--json` for machine-readable output (`stats` always prints
-JSON). Run `query --root DIR ...` from outside the repo (the graph is read from
+`callers` and `trace-deps` on a method that overrides another print a note with the base
+method and its direct-caller count, because callers that dispatch through the base reach the
+override at runtime; `find --no-tests` hides test-file symbols; `path` ignores `ambiguous` edges
+unless `--include-ambiguous`. Every query subcommand accepts `--json` for machine-readable
+output (`stats` always prints JSON). Run `query --root DIR ...` from outside the repo (the graph is read from
 `DIR/.ast-graph/graph.json`) or `query --graph PATH ...` for a graph at a custom path.
 
 ## Naming symbols in queries
@@ -147,10 +150,24 @@ The linker is receiver-aware and import-aware:
 - Re-exports are followed everywhere they occur: Python `from x import y` in `__init__.py`,
   JS/TS `export { a as b } from` / `export * from` barrels, Rust `pub use` (grouped paths
   expanded).
+- Python: `Optional["X"]`, `X | None`, `Union[X, None]`, `Final[X]` and string annotations all
+  mean `X`; an `Enum` member (`Status.PAID`) has the enum's type; `x = flask.Blueprint(...)` keeps
+  its module qualifier; `from a import B as C` resolves `class D(C)` to `B`; `*args`/`**kwargs` are
+  builtin containers (their `.pop()`/`.add()` never lead to repo methods); in a test file an
+  untyped parameter that names a `@pytest.fixture` function with a return annotation (same file,
+  then `conftest.py` up the tree) is typed from it, so `def test_x(app): app.route(...)` links.
 - Kotlin: inside `fun T.f()` the receiver `this` (and `this@f`) is `T`; a top-level
   `val currentDialect: Dialect` is a typed variable node, so `currentDialect.functionProvider.f()`
   resolves through the property chain from any file that imports it (explicitly or by wildcard)
-  or shares its package.
+  or shares its package. Lambdas: the implicit receiver of `x.apply { }` / `x.run { }` and of a
+  DSL builder `order(id) { add(..) }` (a function whose parameter is `T.() -> R`) is that type;
+  `it` in `x.also { }` / `x.let { }` is `x`, and in `xs.forEach { }` / `map` / `filter` / `sumOf`
+  / `first` ... on a `List<T>`/`Set<T>`/`Sequence<T>` (declared or `mutableListOf<T>()`) it is `T`.
+  Builder setters `fun x(v) = apply { }` return the receiver; `a + b` / `*` / `-` / `/` / `%` on
+  a repo-typed left operand are calls of `plus`/`times`/...; `val r = x as T` and `x ?: return`
+  type the local; enum entries are fields typed as the enum; `chain: Interceptor.Chain` (nested
+  type of an imported class) and `: Interceptor.Chain` supertypes resolve; an inner class calls
+  outer members; multi-line builder chains (`Request\n  .Builder()\n  .url(u)`) are one chain.
 - Terraform: references are resolved within a directory (root module or one module), `module.x.y`
   reaches `output.y` in the called module's directory, and a registry source whose `//subdir`
   exists in the repo (`ns/name/google//modules/x` with a local `modules/x`) gets an `ambiguous`

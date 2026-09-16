@@ -67,7 +67,7 @@ COMMON_TYPE_WORDS = {"String", "Integer", "Long", "Boolean", "Double", "Float", 
                      "Vec", "Option", "Result", "Box", "Rc", "Arc", "Void", "None", "True", "False", "Number",
                      "Date", "Error", "Exception", "Iterable", "Iterator", "Callable", "Tuple", "Union"}
 # Signature keywords: when a signature already starts with one, the skeleton omits the kind label.
-SIG_KEYWORDS = ("def ", "func ", "fn ", "fun ", "object ", "class ", "interface ", "struct ", "type ", "enum ", "trait ", "impl ",
+SIG_KEYWORDS = ("def ", "func ", "fn ", "fun ", "object ", "companion ", "val ", "var ", "class ", "interface ", "struct ", "type ", "enum ", "trait ", "impl ",
                 "mod ", "function ", "const ", "variable ", "output ", "resource ", "data ", "module ",
                 "provider ", "local.", "terraform", "namespace ", "record ", "annotation ")
 # Test-file detection: exact directory segments and per-language basename conventions. A plain
@@ -90,7 +90,7 @@ def is_test_file(path):
     return any(r.search(parts[-1]) for r in TEST_FILE_RES)
 
 
-GRAPH_VERSION = 5  # 5: HCL moved/import blocks, dynamic iterators, exact reference lines; Kotlin top-level variables; first parse-error line (4: argc, re-exports, asset imports)
+GRAPH_VERSION = 6  # 6: Kotlin lambda contexts, enum entries, operator calls, typed collection literals; Python splat params, enum members, qualified constructors (5: HCL moved/import, dynamic iterators; 4: argc, re-exports)
 
 # Unqualified calls to these names are language builtins; never linked to a repo symbol of the same name.
 BUILTIN_CALLS = {
@@ -219,6 +219,7 @@ class Ctx:
         self.pending_annotations = []
         self.file_extra = {}
         self.scopes = []  # stack of {local var name: type name} for typed call resolution
+        self.lambda_stack = []   # Kotlin: enclosing trailing-lambda calls, for implicit receivers and `it`
         self.file_node = {
             "id": path, "kind": "file", "name": os.path.basename(path), "qname": path,
             "file": path, "line": 1, "end_line": src.count(b"\n") + 1, "signature": path,
@@ -306,6 +307,8 @@ class Ctx:
     def add_ref(self, kind, name, tsnode, hint=None, **extra):
         if not name:
             return
+        if kind == "call" and hint:
+            hint = re.sub(r"\s*\.\s*", ".", hint).strip()   # multi-line builder chains: `Request\n  .Builder()\n  .url(x)`
         ref = {"kind": kind, "name": name, "src": self.top()["id"],
                "line": extra.pop("line", None) or tsnode.start_point[0] + 1, "hint": hint}
         if kind == "call" and "argc" not in extra:
@@ -319,13 +322,15 @@ class Ctx:
                     ref["arg_types"] = types
         if kind == "call" and hint:
             # Resolve the receiver's root locally when we can: `o.process()` with `Foo o` in scope.
-            chain = [seg.split("(")[0].strip("*&!? ") for seg in hint.split(".")]
+            chain = [seg.split("(")[0].strip("*&!? ") for seg in split_chain(hint)]
             root = chain[0]
             root_type = self.lookup(root)
             if root_type:
                 ref["hint_type"] = root_type
                 ref["chain"] = chain[1:]
         ref.update(extra)
+        if kind == "call" and self.lambda_stack and (not hint or split_chain(hint)[0] in ("it", "this")):
+            ref["lam"] = self.lambda_stack[-1]   # implicit receiver / `it` of the enclosing lambda (resolved at link time)
         self.refs.append(ref)
         return ref
 
@@ -419,10 +424,13 @@ def py_class(ctx, n):
     node = ctx.add_node("class", name, n, signature=f"class {name}")
     ctx.push(node)
     sup = n.child_by_field_name("superclasses")
+    enum_like = False
     if sup is not None:
         for c in sup.named_children:
             if c.type in ("identifier", "attribute", "subscript"):
                 ctx.add_ref("extends", base_type_name(ctx.text(c)), c, hint=split_qualifier(ctx.text(c))[0], hint_full=strip_type_decor(ctx.text(c)))
+                if base_type_name(ctx.text(c)) in ("Enum", "IntEnum", "StrEnum", "Flag", "IntFlag"):
+                    enum_like = True   # `NEW = 1` members are values of the enum class
     body = n.child_by_field_name("body")
     if body is not None:
         for stmt in body.named_children:
@@ -431,8 +439,9 @@ def py_class(ctx, n):
                 left, typ = a.child_by_field_name("left"), a.child_by_field_name("type")
                 if left is not None and left.type == "identifier":
                     sig = f"{ctx.text(left)}: {ctx.text(typ)}" if typ is not None else ctx.text(left)
+                    ftype = ctx.text(typ) if typ is not None else (name if enum_like and ctx.text(left).isupper() else None)
                     ctx.add_node("field", ctx.text(left), stmt, signature=sig, type_text=ctx.text(typ) if typ is not None else None,
-                                 extra={"type": ctx.text(typ) if typ is not None else None})
+                                 extra={"type": ftype, "inferred": True} if (ftype and typ is None) else {"type": ftype})
         ctx.walk_children(body)
     ctx.pop()
     return True
@@ -450,9 +459,15 @@ def py_function(ctx, n):
     pn = n.child_by_field_name("parameters")
     for p in (pn.named_children if pn is not None else []):
         if p.type == "typed_parameter" and p.named_children:
-            ctx.declare(ctx.text(p.named_children[0]), ctx.text(p.child_by_field_name("type")))
+            pname = ctx.text(p.named_children[0])
+            if pname.startswith("*"):
+                ctx.declare(pname.lstrip("*"), "dict" if pname.startswith("**") else "tuple")   # `**options: t.Any` is a dict
+            else:
+                ctx.declare(pname, ctx.text(p.child_by_field_name("type")))
         elif p.type == "typed_default_parameter":
             ctx.declare(ctx.text(p.child_by_field_name("name")), ctx.text(p.child_by_field_name("type")))
+        elif p.type in ("list_splat_pattern", "dictionary_splat_pattern"):
+            ctx.declare(ctx.text(p).lstrip("*"), "dict" if p.type == "dictionary_splat_pattern" else "tuple")
     # self.x: T = ... inside __init__ become fields of the class
     if kind == "method":
         body = n.child_by_field_name("body")
@@ -471,7 +486,8 @@ def py_function(ctx, n):
                             if right is not None and right.type == "call" and right.child_by_field_name("function") is not None:
                                 fn_text = ctx.text(right.child_by_field_name("function"))
                                 cand = base_type_name(fn_text)
-                                ftype = cand if cand[:1].isupper() else "<call>" + fn_text + "|"
+                                full = strip_type_decor(fn_text)
+                                ftype = (full if re.match(r"^[a-z_]\w*(\.\w+)*\.[A-Z]", full) else cand) if cand[:1].isupper() else "<call>" + fn_text + "|"
                             elif right is not None and right.type == "identifier":
                                 ftype = ctx.lookup(ctx.text(right))
                         ctx.add_node("field", fname, stmt, signature=f"{fname}: {ftype}" if ftype else fname, type_text=ftype,
@@ -536,7 +552,9 @@ def py_expr_stmt(ctx, n):
                 fn = right.child_by_field_name("function") if right.type == "call" else None
                 t = base_type_name(ctx.text(fn)) if fn is not None else ""
                 if t[:1].isupper():
-                    ctx.declare(ctx.text(left), t)
+                    full = strip_type_decor(ctx.text(fn))
+                    # `bp = flask.Blueprint(...)`: keep the module qualifier so the type resolves through the import
+                    ctx.declare(ctx.text(left), full if re.match(r"^[a-z_]\w*(\.\w+)*\.[A-Z]", full) else t)
                 elif fn is not None:
                     ctx.declare_call(ctx.text(left), ctx.text(fn), unwrap)
     return False
@@ -1364,6 +1382,10 @@ def kt_class(ctx, n):
     kt_supertypes(ctx, n)
     kt_ctor_fields(ctx, n)
     for body in (c for c in n.named_children if c.type in ("class_body", "enum_class_body")):
+        for e in (x for x in body.named_children if x.type == "enum_entry"):
+            ename = next((ctx.text(x) for x in e.named_children if x.type == "simple_identifier"), None)
+            if ename:
+                ctx.add_node("field", ename, e, signature=f"{ename}: {ctx.top()['name']}", extra={"type": ctx.top()["name"], "inferred": True})
         ctx.walk_children(body)
     ctx.pop()
     return True
@@ -1411,6 +1433,11 @@ def kt_function(ctx, n):
         elif seen_params and c.type in ("user_type", "nullable_type", "function_type", "parenthesized_type"):
             ret = ctx.text(c)
             break
+    if ret is None and ctx.top()["kind"] in ("class", "interface", "object"):
+        body = next((c for c in n.named_children if c.type == "function_body"), None)
+        btxt = ctx.text(body).lstrip("= \t") if body is not None else ""
+        if re.match(r"^(apply|also)\s*\{", btxt) or btxt.strip() == "this":
+            ret = ctx.top()["name"]   # `fun id(v: String) = apply { id = v }`: a builder setter returns the receiver
     tp = next((c for c in n.named_children if c.type == "type_parameters"), None)
     sig = f"fun{' ' + ctx.text(tp) if tp is not None else ''} {rtype + '.' if rtype else ''}{name}({', '.join(parts)})" + (f": {ret}" if ret else "")
     kind = "method" if (rtype or ctx.top()["kind"] in ("class", "interface", "enum")) else "function"
@@ -1443,6 +1470,12 @@ def kt_initializer(ctx, n):
     return None
 
 
+KT_COLLECTION_CTORS = {"listOf": "List", "mutableListOf": "MutableList", "arrayListOf": "ArrayList", "listOfNotNull": "List",
+                       "setOf": "Set", "mutableSetOf": "MutableSet", "hashSetOf": "HashSet", "linkedSetOf": "LinkedHashSet",
+                       "emptyList": "List", "emptySet": "Set", "sequenceOf": "Sequence", "arrayOf": "Array", "ArrayList": "ArrayList",
+                       "HashSet": "HashSet", "ArrayDeque": "ArrayDeque"}
+
+
 def kt_property(ctx, n):
     vd = next((c for c in n.named_children if c.type == "variable_declaration"), None)
     if vd is None:
@@ -1451,10 +1484,20 @@ def kt_property(ctx, n):
     typ = next((c for c in vd.named_children if c.type in ("user_type", "nullable_type", "function_type", "parenthesized_type")), None)
     init = kt_initializer(ctx, n)
     ttxt = ctx.text(typ) if typ is not None else None
+    while init is not None and init.type in ("elvis_expression", "parenthesized_expression") and init.named_children:
+        init = init.named_children[0]   # `repo.find(id) ?: return` / `(x as T)`: the left operand carries the type
+    if init is not None and init.type == "as_expression" and init.named_children and ttxt is None:
+        ttxt = ctx.text(init.named_children[-1])   # `val real = chain as RealChain`
     callee = None
     if init is not None and init.type == "call_expression" and init.named_children:
         head = init.named_children[0]
         callee = ctx.text(head) if head.type in ("simple_identifier", "navigation_expression") else None
+        if callee:
+            callee = re.sub(r"\s+", "", callee)
+        suf = next((c for c in init.named_children if c.type == "call_suffix"), None)
+        targs = next((ctx.text(c) for c in (suf.named_children if suf is not None else []) if c.type == "type_arguments"), None)
+        if ttxt is None and targs and callee in KT_COLLECTION_CTORS:
+            ttxt = KT_COLLECTION_CTORS[callee] + targs   # `mutableListOf<Line>()` -> MutableList<Line>: element type for `it`
     elif init is not None and init.type == "simple_identifier" and ctx.text(init)[:1].isupper() and ttxt is None:
         ttxt = ctx.text(init)   # `val reg = Registry`: a reference to an object/class
     if ttxt is None and callee and callee[:1].isupper() and "." not in callee:
@@ -1507,8 +1550,10 @@ def kt_call(ctx, n):
     extra = {"argc": argc}
     if types:
         extra["arg_types"] = types
+    lam = {"callee": None, "recv": None, "hint_type": None, "chain": None, "argc": argc}
     if head.type == "simple_identifier":
         ctx.add_ref("call", ctx.text(head), n, **extra)
+        lam["callee"] = ctx.text(head)
     elif head.type == "navigation_expression" and head.named_children:
         recv, suf = head.named_children[0], head.named_children[-1]
         member = next((ctx.text(c) for c in suf.named_children if c.type == "simple_identifier"), None) if suf.type == "navigation_suffix" else None
@@ -1520,10 +1565,61 @@ def kt_call(ctx, n):
                 ae = recv.named_children[0]
                 ref["hint_type"] = ctx.text(ae.named_children[-1])
                 ref["chain"] = []
+            lam.update(callee=member, recv=ref["hint"], hint_type=ref.get("hint_type"), chain=ref.get("chain"))
     for c in n.named_children[1:]:
-        ctx.walk(c)   # arguments and trailing lambdas may contain calls
+        if c.type != "call_suffix":
+            ctx.walk(c)
+            continue
+        for sc in c.named_children:
+            if sc.type == "annotated_lambda":
+                ctx.lambda_stack.append(lam)     # `x.apply { add() }`, `order(id) { add() }`, `xs.forEach { it.f() }`
+                ctx.walk(sc)
+                ctx.lambda_stack.pop()
+            elif sc.type == "value_arguments":
+                for a in sc.named_children:
+                    if a.type == "value_argument" and a.named_children and a.named_children[-1].type == "lambda_literal":
+                        ctx.lambda_stack.append(lam)
+                        ctx.walk(a)
+                        ctx.lambda_stack.pop()
+                    else:
+                        ctx.walk(a)
+            else:
+                ctx.walk(sc)
     if head.type != "simple_identifier":
         ctx.walk(head)   # `a.b().c()`: the receiver chain holds further calls (and chained constructors)
+    return True
+
+
+KT_OPERATOR_FUNS = {"+": "plus", "-": "minus", "*": "times", "/": "div", "%": "rem"}
+KT_BUILTIN_TYPES = {"Int", "Long", "Short", "Byte", "Double", "Float", "Char", "Boolean", "String", "Number", "Any", "Unit"}
+
+
+def kt_arith(ctx, n):
+    """`Line(1) + Line(2)` / `a * b` with a repo-typed left operand: a call of the operator function.
+    Left operands that are literals, untyped or of builtin types record nothing (no false leads)."""
+    kids = n.named_children
+    if len(kids) != 2:
+        return False
+    op = next((ctx.text(c) for c in n.children if not c.is_named and ctx.text(c) in KT_OPERATOR_FUNS), None)
+    left = kids[0]
+    ltxt = ctx.text(left)
+    typed = False
+    if left.type == "call_expression" and left.named_children and left.named_children[0].type == "simple_identifier" \
+            and ctx.text(left.named_children[0])[:1].isupper():
+        typed = True
+    elif left.type == "simple_identifier":
+        t = ctx.lookup(ltxt)
+        typed = bool(t) and not t.startswith("<") and strip_type_decor(t).split(".")[-1] not in KT_BUILTIN_TYPES
+    elif left.type == "this_expression":
+        typed = True
+    if op and typed:
+        argc, types = ctx.arg_info([kids[1]])
+        extra = {"argc": argc}
+        if types:
+            extra["arg_types"] = types
+        ctx.add_ref("call", KT_OPERATOR_FUNS[op], n, hint=ltxt, **extra)
+    ctx.walk(kids[0])
+    ctx.walk(kids[1])
     return True
 
 
@@ -1924,7 +2020,7 @@ KOTLIN_HANDLERS = {
     "package_header": kt_package, "import_header": kt_import,
     "class_declaration": kt_class, "object_declaration": kt_object, "companion_object": kt_object,
     "function_declaration": kt_function, "property_declaration": kt_property, "call_expression": kt_call,
-    "infix_expression": kt_infix,
+    "infix_expression": kt_infix, "additive_expression": kt_arith, "multiplicative_expression": kt_arith,
 }
 
 HANDLERS = {
@@ -1962,9 +2058,77 @@ def extract_file(path, root_dir, src=None):
     return ctx.file_node, ctx.nodes, ctx.refs
 
 
+def split_top(txt, sep=","):
+    """Split at `sep` outside brackets (the `>` of a `->` function type is not a bracket)."""
+    parts, cur, depth = [], "", 0
+    for i, ch in enumerate(txt):
+        if ch in "<([{":
+            depth += 1
+        elif ch in ">)]}" and not (ch == ">" and i > 0 and txt[i - 1] == "-"):
+            depth -= 1
+        if ch == sep and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return parts
+
+
+def split_chain(hint):
+    """Receiver text -> raw segments split at dots outside parentheses/brackets:
+    `a.b(x.y).c` -> ["a", "b(x.y)", "c"]."""
+    return [seg for seg in split_top(hint, ".")]
+
+
+def unwrap_optional(t):
+    """`Optional["X"]`, `X | None`, `"X"`, `Union[X, None]`, `Final[X]`, `Annotated[X, ..]`, Kotlin `X?` -> `X`."""
+    t = t.strip().strip("\"'").strip()
+    for _ in range(3):
+        m = re.match(r"^(?:typing\.|t\.)?(?:Optional|Final|ClassVar|Annotated)\[(.+)\]$", t)
+        if m:
+            t = split_top(m.group(1))[0].strip().strip("\"'")
+            continue
+        m = re.match(r"^(?:typing\.|t\.)?Union\[(.+)\]$", t)
+        if m:
+            parts = [x.strip().strip("\"'") for x in split_top(m.group(1)) if x.strip() != "None"]
+            if len(parts) == 1:
+                t = parts[0]
+                continue
+            break
+        if "|" in t:
+            parts = [x.strip().strip("\"'") for x in split_top(t, "|") if x.strip() != "None"]
+            if len(parts) == 1:
+                t = parts[0]
+                continue
+        break
+    return t[:-1] if t.endswith("?") else t
+
+
+def element_type(t):
+    """`List<Line>` / `MutableSet<Order?>` / `Sequence<X>` -> `Line` / `Order` / `X`; None for maps and non-collections."""
+    m = re.match(r"^(?:kotlin\.collections\.|java\.util\.)?(?:Mutable)?(?:List|Set|Collection|Iterable|Sequence|Array|ArrayList|HashSet|LinkedHashSet|ArrayDeque|Deque)<(.+)>\??$", (t or "").strip())
+    if not m:
+        return None
+    inner = m.group(1).strip()
+    if "," in split_top(inner)[0] if False else len(split_top(inner)) != 1:
+        return None
+    return inner.rstrip("?").split("<")[0].strip()
+
+
+KT_RECEIVER_LAMBDAS = {"apply", "run"}
+KT_IT_LAMBDAS = {"also", "let", "takeIf", "takeUnless"}
+KT_ELEMENT_LAMBDAS = {"forEach", "map", "mapNotNull", "filter", "filterNot", "first", "firstOrNull", "last", "lastOrNull", "find",
+                      "any", "all", "none", "count", "sumOf", "flatMap", "onEach", "sortedBy", "sortedByDescending", "groupBy",
+                      "associateBy", "associateWith", "maxByOrNull", "minByOrNull", "maxOf", "minOf", "partition", "takeWhile",
+                      "dropWhile", "single", "singleOrNull", "indexOfFirst", "distinctBy", "forEachIndexed", "sumBy"}
+
+
 def first_error_line(root):
-    """1-based line of the first ERROR/MISSING node, descending only into subtrees that contain one."""
-    best, stack = None, [root]
+    """1-based line of the first ERROR/MISSING node, descending only into subtrees that contain one.
+    Some grammars (Kotlin) flag `has_error` on a node without producing an ERROR child; then the
+    innermost flagged node's line is reported."""
+    best, innermost, stack = None, None, [root]
     while stack:
         n = stack.pop()
         if n.is_error or n.is_missing:
@@ -1972,8 +2136,11 @@ def first_error_line(root):
             best = line if best is None or line < best else best
             continue
         if n.has_error:
-            stack.extend(n.children)
-    return best
+            kids = [c for c in n.children if c.has_error]
+            if not kids and (innermost is None or n.start_point[0] + 1 < innermost):
+                innermost = n.start_point[0] + 1
+            stack.extend(kids)
+    return best if best is not None else innermost
 
 
 # ----------------------------------------------------------------------------------------------
@@ -2752,6 +2919,10 @@ def link_graph(root_dir, files, tf_modules):
     res_ctx = {"java_pkgs": {k: sorted(v) for k, v in java_pkgs.items()}, "kt_top": kt_top}
     imports_of = defaultdict(set)   # file -> set of files it imports (resolved)
     ns_repo = defaultdict(dict)     # file -> {local name: set(files it is bound to)} for repo imports
+    alias_orig = defaultdict(dict)  # file -> {local alias: original name} for `from x import A as B`
+
+    def orig(rel, name):
+        return alias_orig.get(rel, {}).get(name, name)
     ns_ext = defaultdict(set)       # file -> local names bound to external packages/modules
     import_links = defaultdict(list)  # file -> [(names, alias_map, target files)] for re-export following
     ext_nodes = {}
@@ -2832,6 +3003,8 @@ def link_graph(root_dir, files, tf_modules):
                             cand = cand.lstrip("./")
                             if cand in file_set:
                                 bound.add(cand)
+            if am.get(nm) and am[nm] != nm:
+                alias_orig[r["_file"]][am[nm]] = nm
             out.setdefault(am.get(nm, nm), set()).update(bound or tfiles)
         return out
 
@@ -2954,14 +3127,16 @@ def link_graph(root_dir, files, tf_modules):
 
     # Field type lookup for typed call resolution: class node id -> {field name: type}
     field_types = defaultdict(dict)
+    field_types_raw = defaultdict(dict)   # class node id -> {field name: declared type text with generics}
     field_qual = defaultdict(dict)   # class node id -> {field name: package qualifier of its type or None}
     for n in nodes:
         if n["kind"] == "field" and n["parent"] and n["extra"].get("type"):
+            field_types_raw[n["parent"]][n["name"]] = n["extra"]["type"]
             if n["extra"]["type"].startswith("<call"):
                 field_types[n["parent"]][n["name"]] = n["extra"]["type"]   # resolved from the callee's return type on use
                 field_qual[n["parent"]][n["name"]] = None
                 continue
-            q, base = split_qualifier(n["extra"]["type"])
+            q, base = split_qualifier(unwrap_optional(n["extra"]["type"]))   # `Optional["Repo"]` / `Repo | None` -> Repo
             field_types[n["parent"]][n["name"]] = base
             field_qual[n["parent"]][n["name"]] = q
 
@@ -3014,17 +3189,17 @@ def link_graph(root_dir, files, tf_modules):
                 ch = sig[j]
                 if ch in "([{<":
                     depth += 1
-                elif ch in ")]}>":
+                elif ch in ")]}>" and not (ch == ">" and j > 0 and sig[j - 1] == "-"):
                     depth -= 1
                     if depth == 0:
                         break
                 j += 1
             inner = sig[idx + 1:j]
             params, cur, depth = [], "", 0
-            for ch in inner:
+            for ci, ch in enumerate(inner):
                 if ch in "([{<":
                     depth += 1
-                elif ch in ")]}>":
+                elif ch in ")]}>" and not (ch == ">" and ci > 0 and inner[ci - 1] == "-"):
                     depth -= 1
                 if ch == "," and depth == 0:
                     params.append(cur)
@@ -3160,17 +3335,17 @@ def link_graph(root_dir, files, tf_modules):
                 ch = sig[j]
                 if ch in "([{<":
                     depth += 1
-                elif ch in ")]}>":
+                elif ch in ")]}>" and not (ch == ">" and j > 0 and sig[j - 1] == "-"):
                     depth -= 1
                     if depth == 0:
                         break
                 j += 1
             inner = sig[idx + 1:j]
             params, cur, depth = [], "", 0
-            for ch in inner:
+            for ci, ch in enumerate(inner):
                 if ch in "([{<":
                     depth += 1
-                elif ch in ")]}>":
+                elif ch in ")]}>" and not (ch == ">" and ci > 0 and inner[ci - 1] == "-"):
                     depth -= 1
                 if ch == "," and depth == 0:
                     params.append(cur)
@@ -3241,7 +3416,7 @@ def link_graph(root_dir, files, tf_modules):
         fake = {"kind": "call", "name": name.strip(), "hint": hint, "src": cont["id"] if cont else rel, "line": 0, "argc": None}
         if hint and root_type:
             fake["hint_type"] = root_type
-            fake["chain"] = [seg.split("(")[0].strip("*&!? ") for seg in hint.split(".")][1:]
+            fake["chain"] = [seg.split("(")[0].strip("*&!? ") for seg in split_chain(hint)][1:]
         saved = dict(_cur)
         try:
             targets, conf, mode = resolve_call(fake, rel, lang_of(rel), cont)
@@ -3323,17 +3498,20 @@ def link_graph(root_dir, files, tf_modules):
         """Free-name choice: same_file > package > import > unique > ambiguous (types and free calls)."""
         if not cands:
             return [], None
+        def prefer_top(lst):   # `Request` means the top-level class, not `Dns.Request` nested elsewhere
+            top = [c for c in lst if c.get("parent") == c.get("file")]
+            return top if top and len(top) < len(lst) else lst
         same = [c for c in cands if c["file"] == rel]
         if same:
-            return by_arity(same)[:1], "same_file"
+            return by_arity(prefer_top(same))[:1], "same_file"
         lang = lang_of(rel)
         if lang in ("java", "kotlin", "go"):  # same package, no import needed
             pkg = [c for c in cands if same_package(c["file"], rel)]
             if pkg:
-                return by_arity(pkg)[:1], "package"
+                return by_arity(prefer_top(pkg))[:1], "package"
         imp = [c for c in cands if c["file"] in imports_of.get(rel, ())]
         if imp:
-            return by_arity(imp)[:1], "import"
+            return by_arity(prefer_top(imp))[:1], "import"
         if len({c["file"] for c in cands}) == 1:
             # one definition site: a struct plus its impl blocks, or a class and an overload, count as unique
             primary = [c for c in cands if c["kind"] != "impl"] or cands
@@ -3379,6 +3557,8 @@ def link_graph(root_dir, files, tf_modules):
     def lead_pick(cands, rel):
         """Receiver of unknown type: a same-file definition is plausible; otherwise a few same-language leads."""
         cands = same_family(cands, rel)
+        if not is_test_file(rel):
+            cands = [c for c in cands if not is_test_file(c["file"])]   # main code never leads into a test helper
         if not cands:
             return [], None
         same = [c for c in cands if c["file"] == rel]
@@ -3431,7 +3611,7 @@ def link_graph(root_dir, files, tf_modules):
         while j < len(sig):
             if sig[j] in "([{<":
                 depth += 1
-            elif sig[j] in ")]}>":
+            elif sig[j] in ")]}>" and not (sig[j] == ">" and j > 0 and sig[j - 1] == "-"):
                 depth -= 1
                 if depth == 0:
                     break
@@ -3550,7 +3730,7 @@ def link_graph(root_dir, files, tf_modules):
                     "line": 0, "argc": None}
             if hint and root_type:
                 fake["hint_type"] = root_type
-                fake["chain"] = [seg.split("(")[0].strip("*&!? ") for seg in hint.split(".")][1:]
+                fake["chain"] = [seg.split("(")[0].strip("*&!? ") for seg in split_chain(hint)][1:]
             targets, conf, mode = resolve_call(fake, rel, lang_of(rel), cont)
             if not targets:
                 return "unknown", None   # callee not in the graph: the receiver stays an unknown value (lead)
@@ -3562,15 +3742,23 @@ def link_graph(root_dir, files, tf_modules):
             if unwrap:
                 rt = unwrap_generic(rt)
             return resolve_type_ref(rt, targets[0]["file"], container_of(targets[0]["id"]), depth + 1)
+        type_text = unwrap_optional(type_text)
         q, base = split_qualifier(type_text)
         if q:
             if q in ns_ext.get(rel, ()):
                 return "ext", None
+            if q[:1].isupper() and "." not in q and depth < 3:
+                # `Interceptor.Chain`: the qualifier is itself a type; the base is nested in it
+                okind, outer = _resolve_type_ref(q, rel, cont, depth + 1)
+                if okind == "node" and outer is not None:
+                    nested = [c for c in candidates(base, TYPE_LIKE_KINDS) if c.get("parent") == outer["id"]]
+                    if nested:
+                        return "node", nested[0]
             if q in ns_repo.get(rel, {}):
                 tn = type_node(base, rel, ns_repo[rel][q])
                 return ("node", tn) if tn else ("none", None)
         if base in ns_repo.get(rel, {}):
-            tn = type_node(base, rel, ns_repo[rel][base])
+            tn = type_node(orig(rel, base), rel, ns_repo[rel][base])
             if tn:
                 return "node", tn
         tn = type_node(base, rel)
@@ -3600,6 +3788,10 @@ def link_graph(root_dir, files, tf_modules):
                 # method-call segment: the type of `x.m()` is m's return type
                 targets, conf = typed_pick(candidates(seg, {"method", "function"}), tn)
                 if not targets:
+                    nested = [c for c in candidates(seg, TYPE_LIKE_KINDS) if c.get("parent") == tn["id"]]
+                    if nested:
+                        tn = nested[0]   # `Order.Builder()` / `b.Audit()`: a nested or inner class constructor
+                        continue
                     return None
                 rt = return_type(targets[0])
                 if not rt:
@@ -3613,6 +3805,10 @@ def link_graph(root_dir, files, tf_modules):
                 continue
             found = field_owner(tn, seg)
             if found is None:
+                nested = [c for c in candidates(seg, TYPE_LIKE_KINDS) if c.get("parent") == tn["id"]]
+                if nested:
+                    tn = nested[0]   # `Outer.Inner.f()`
+                    continue
                 return None
             owner, ft, q = found
             if ft.startswith("<call"):
@@ -3678,12 +3874,28 @@ def link_graph(root_dir, files, tf_modules):
                     targets, conf = [], None            # `schema.Resource{}`, `collections_abc.Iterable`
                 elif hint and hint in ns_repo.get(rel, {}):
                     targets, conf = bound_pick(cands, name, ns_repo[rel][hint], TYPE_LIKE_KINDS)
+                    if not targets and hint[:1].isupper():
+                        # `Interceptor.Chain` with `import okhttp3.Interceptor`: nested in the imported type
+                        outer = type_node(orig(rel, hint), rel, ns_repo[rel][hint])
+                        nested = [c for c in cands if outer is not None and c.get("parent") == outer["id"]]
+                        if nested:
+                            targets, conf = nested[:1], "import"
                 elif hint is None and name in ns_repo.get(rel, {}):
-                    targets, conf = bound_pick(cands, name, ns_repo[rel][name], TYPE_LIKE_KINDS)   # from-imported type name
+                    on = orig(rel, name)   # `from x import Blueprint as SansioBlueprint`: look up the original name
+                    ocands = [c for c in candidates(on, TYPE_LIKE_KINDS) if not is_within(c, r["src"])] if on != name else cands
+                    targets, conf = bound_pick(ocands, on, ns_repo[rel][name], TYPE_LIKE_KINDS)   # from-imported type name
                     if not targets:
                         targets, conf = pick(cands, rel)
                 elif hint and hint[:1].isupper():
-                    targets, conf = pick(cands, rel)     # `Outer.Inner`: qualifier is a type, not a module
+                    # `Outer.Inner`: the qualifier is a type (imported, same package or in this file); prefer the
+                    # member nested in it over any same-named type elsewhere
+                    okind, outer = resolve_type_ref(hint, rel, None)
+                    nested = [c for c in cands if okind == "node" and outer is not None and c.get("parent") == outer["id"]]
+                    if nested:
+                        nf = nested[0]["file"]
+                        targets, conf = nested[:1], ("same_file" if nf == rel else ("package" if same_package(nf, rel) else "import"))
+                    else:
+                        targets, conf = pick(cands, rel)
                 elif hint:
                     targets, conf = [], None             # qualifier is an unknown value/module: not a type reference we can trust
                 else:
@@ -3740,7 +3952,7 @@ def link_graph(root_dir, files, tf_modules):
         hint = r.get("hint") or ""
         if not hint:
             return "free", None
-        raw = hint.split(".")
+        raw = split_chain(hint)
         flags = ["(" in seg for seg in raw]
         chain = [seg.split("(")[0].strip("*&!? ") for seg in raw]
         if chain[0].startswith("new "):
@@ -3818,7 +4030,7 @@ def link_graph(root_dir, files, tf_modules):
                     rest = chain[k:]
                     if pref[:1].isupper() or rest:
                         # the binding may be a type (`from x import Foo; Foo.make()`), or a module path continues
-                        tn = type_node(chain[k - 1], rel, fset) if k == len(chain) or rest else None
+                        tn = type_node(orig(rel, chain[k - 1]), rel, fset) if k == len(chain) or rest else None
                         if tn is not None:
                             return from_node(tn, rest, flags[k:])
                         if rest:
@@ -3838,6 +4050,10 @@ def link_graph(root_dir, files, tf_modules):
             return ("external" if hint.split("::")[0] in ("std", "core", "alloc") else "rust_path"), None
         if first in ext:
             return "external", None
+        if lang == "python" and first and not flags[0] and is_test_file(rel):
+            tn = fixture_type(first, rel, r["src"])   # `def test_x(app): app.register_blueprint(...)`
+            if tn is not None:
+                return from_node(tn, chain[1:], flags[1:])
         return "unknown", None
 
     def toplevel_var(name, rel, repo):
@@ -3868,8 +4084,97 @@ def link_graph(root_dir, files, tf_modules):
             _cur.clear()
             _cur.update(saved)
 
+    def lambda_receiver(lam, rel, cont, r, want_it, want_this):
+        """Type node of the implicit receiver (`apply`/`run`/DSL `T.() -> R`) or of `it` (`also`/`let`, collection
+        functions on a `List<T>`) for a call inside a Kotlin lambda; None when unknown."""
+        callee, recv = lam.get("callee") or "", lam.get("recv")
+
+        def recv_node():
+            fake = {"kind": "call", "name": callee, "hint": recv, "src": r["src"], "line": 0, "argc": None}
+            if lam.get("hint_type"):
+                fake["hint_type"], fake["chain"] = lam["hint_type"], lam.get("chain") or []
+            m, p = receiver_mode(fake, rel, "kotlin", cont)
+            return p if m == "typed" and p else None
+
+        if recv and callee in KT_RECEIVER_LAMBDAS and not want_it:
+            return recv_node()
+        if recv and callee in KT_IT_LAMBDAS and want_it:
+            return recv_node()
+        if recv and callee in KT_ELEMENT_LAMBDAS and want_it:
+            txt = lam.get("hint_type") if not lam.get("chain") else None
+            if not txt and cont is not None and "." not in recv and "(" not in recv:
+                for oid in owner_ids(cont):
+                    if recv in field_types_raw.get(oid, {}):
+                        txt = field_types_raw[oid][recv]   # `MutableList<Line>`: generics kept for the element type
+                        break
+            elem = element_type(txt or "")
+            if not elem:
+                return None
+            k, tn = resolve_type_ref(elem, rel, cont)
+            return tn if k == "node" else None
+        if not recv and callee and not want_it and not want_this:
+            # DSL builder `order(id) { add(x) }`: the lambda's receiver is the `T` of the function's `T.() -> R` parameter
+            fcands = [c for c in candidates(callee, {"function"})]
+            fn, _ = pick(fcands, rel)
+            if not fn and callee in ns_repo.get(rel, {}):
+                fn, _ = bound_pick(fcands, callee, ns_repo[rel][callee], {"function"})
+            if not fn and "*" in ns_repo.get(rel, {}):
+                fn, _ = bound_pick(fcands, callee, ns_repo[rel]["*"], {"function"})
+            for f in fn[:1]:
+                for ptxt in params_of(f) or []:
+                    m = re.search(r"([A-Za-z_][\w.]*)(?:<[^>]*>)?\.\(", ptxt)
+                    if m:
+                        k, tn = resolve_type_ref(m.group(1), f["file"], None)
+                        return tn if k == "node" else None
+        return None
+
+    def fixture_type(name, rel, src_id):
+        """pytest: an untyped test parameter `app` is the return type of the fixture function `app`
+        (same file first, then conftest.py in the test's directory or above)."""
+        src = node_by_id.get(src_id)
+        if not src or src["kind"] not in ("function", "method"):
+            return None
+        if not any(re.match(r"^\**" + re.escape(name) + r"\b", p_) for p_ in (params_of(src) or [])):
+            return None
+        fx = [c for c in candidates(name, {"function"}) if any("fixture" in a for a in c.get("annotations", []))]
+        if not fx:
+            return None
+        d = os.path.dirname(rel)
+
+        def rank(c):
+            cd = os.path.dirname(c["file"])
+            if c["file"] == rel:
+                return 0
+            if os.path.basename(c["file"]) == "conftest.py" and (cd == d or cd == "" or d.startswith(cd + "/")):
+                return 1 + d.count("/") - cd.count("/")
+            return 50
+        fx.sort(key=rank)
+        if rank(fx[0]) >= 50 and len(fx) > 1:
+            return None
+        rt = return_type(fx[0])
+        if not rt:
+            return None
+        k, tn = resolve_type_ref(rt, fx[0]["file"], container_of(fx[0]["id"]))
+        return tn if k == "node" else None
+
     def _resolve_call(r, rel, lang, cont):
         name = r["name"]
+        lam = r.get("lam")
+        if lang == "kotlin" and lam:
+            segs = split_chain(r.get("hint")) if r.get("hint") else []
+            root = segs[0] if segs else ""
+            if not segs or root in ("it", "this"):
+                tn = lambda_receiver(lam, rel, cont, r, want_it=(root == "it"), want_this=(root == "this"))
+                if tn is not None:
+                    chain = [x.split("(")[0].strip("*&!? ") for x in segs[1:]]
+                    flags = ["(" in x for x in segs[1:]]
+                    t2 = follow_chain(tn, chain, flags) if chain else tn
+                    if t2:
+                        targets, conf = typed_pick(candidates(name, {"function", "method", "class", "constructor"}), t2)
+                        if targets:
+                            return targets, conf, "typed"
+                        if name in KOTLIN_STDLIB_MEMBERS:
+                            return [], None, "builtin"
         mode, payload = receiver_mode(r, rel, lang, cont)
         if mode == "external":
             return [], None, "external"
@@ -3885,10 +4190,16 @@ def link_graph(root_dir, files, tf_modules):
             targets, conf = [], None
             if lang in ("java", "kotlin") and cont is not None:
                 targets, conf = typed_pick(candidates(name, {"method", "constructor"}), cont)
+                outer = node_by_id.get(cont.get("parent"))
+                while not targets and outer is not None and outer.get("kind") in CONTAINER_KINDS:
+                    targets, conf = typed_pick(candidates(name, {"method", "constructor"}), outer)   # inner class -> outer member
+                    outer = node_by_id.get(outer.get("parent"))
             if not targets:
                 cands = candidates(name, {"function", "class", "struct", "constructor"})
                 if name in ns_repo.get(rel, {}):
-                    targets, conf = bound_pick(cands, name, ns_repo[rel][name], {"function", "class", "struct", "constructor"})   # from-import wins over same-file shadowing
+                    on = orig(rel, name)
+                    ocands = candidates(on, {"function", "class", "struct", "constructor"}) if on != name else cands
+                    targets, conf = bound_pick(ocands, on, ns_repo[rel][name], {"function", "class", "struct", "constructor"})   # from-import wins over same-file shadowing
                 if not targets:
                     same = [c for c in cands if c["file"] == rel]
                     if same:
@@ -4048,10 +4359,15 @@ def fmt_node(n, with_file=True):
 def ensure_one(g, query, kinds=None):
     matches = g.resolve(query, kinds)
     if not matches:
-        sys.exit(f"no symbol or file matches '{query}'. Try: query find {query}")
+        bare = re.split(r"[.:/]", query.strip())[-1] or query
+        sys.exit(f"no symbol or file matches '{query}'. Try: query find {bare}" + (f" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
     if len(matches) > 1 and not all(m["id"] == matches[0]["id"] for m in matches):
         qn = query.split(":", 1)[1] if ":" in query and "::" not in query else query
         exact = [m for m in matches if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower() or m["file"] == query]
+        for narrow in (lambda m: not is_test_file(m["file"]), lambda m: m.get("parent") == m.get("file")):
+            sub = [m for m in exact if narrow(m)]   # production code before tests, top-level before nested
+            if sub and len(sub) < len(exact):
+                exact = sub
         if len(exact) == 1:
             return exact[0]
         preferred = [m for m in exact if m["kind"] in TYPE_LIKE_KINDS | {"k8s_object", "resource", "module_call", "file", "terraform_module", "package"}]
@@ -4075,6 +4391,8 @@ def q_find(g, args):
            and (not args.kind or n["kind"] in args.kind) and n["kind"] != "file" or (n["kind"] == "file" and ql in n["file"].lower() and (not args.kind or "file" in args.kind))]
     if langs:
         res = [n for n in res if lang_of(n) in langs]
+    if getattr(args, "no_tests", False):
+        res = [n for n in res if not (n.get("file") and is_test_file(n["file"]))]
 
     def rank(n):
         # exact name (case-sensitive, then case-insensitive) < exact qname < name starts with query < substring
@@ -4110,6 +4428,42 @@ def q_find(g, args):
         print(f"... {total - len(res)} more matches (exact-name matches are listed first; narrow with --kind, --lang or a longer query)")
 
 
+def overrides_of(g, n):
+    """(methods this one overrides, methods overriding it): same-named members across extends/implements,
+    three levels each way. Empty for anything that is not a member of a container."""
+    par = g.nodes.get(n.get("parent"))
+    if n["kind"] not in ("method", "function") or par is None or par["kind"] not in CONTAINER_KINDS:
+        return [], []
+
+    def related(start, down):
+        seen, out, frontier = {start["id"]}, [], [(start, 0)]
+        while frontier:
+            cls, depth = frontier.pop(0)
+            if depth >= 3:
+                continue
+            edges = g.in_edges(cls["id"], {"extends", "implements"}) if down else g.out_edges(cls["id"], {"extends", "implements"})
+            for e in edges:
+                nxt = g.nodes.get(e["src"] if down else e["dst"])
+                if nxt is None or nxt["id"] in seen or nxt["kind"] not in CONTAINER_KINDS:
+                    continue
+                seen.add(nxt["id"])
+                out.extend(k for k in g.children(nxt["id"]) if k["name"] == n["name"] and k["kind"] in ("method", "function"))
+                frontier.append((nxt, depth + 1))
+        return out
+    return related(par, False), related(par, True)
+
+
+def dispatch_note(g, n):
+    """One line telling the reader that callers may reach `n` through the method it overrides."""
+    ups, _ = overrides_of(g, n)
+    if not ups:
+        return None
+    base = ups[0]
+    direct = len([e for e in g.inc.get(base["id"], []) if e["type"] == "calls"])
+    return (f"note: {n['qname']} overrides {base['qname']} ({base['file']}:{base['line']}); {direct} direct caller(s) of the base "
+            f"method reach this override by dynamic dispatch and are listed under `query callers {base['qname']}`")
+
+
 def q_symbol(g, args):
     n = ensure_one(g, args.name)
     if args.json:
@@ -4122,25 +4476,8 @@ def q_symbol(g, args):
         if ex:
             print("  extra: " + json.dumps(ex)[:400])
     cap = None if getattr(args, "all", False) else getattr(args, "limit", 40)
-    par = g.nodes.get(n.get("parent"))
-    if n["kind"] in ("method", "function") and par is not None and par["kind"] in CONTAINER_KINDS:
-        # same-named members of ancestors (Overrides) and descendants (Overridden by), 3 levels each way
-        def related(start, down):
-            seen, out, frontier = {start["id"]}, [], [(start, 0)]
-            while frontier:
-                cls, depth = frontier.pop(0)
-                if depth >= 3:
-                    continue
-                edges = g.in_edges(cls["id"], {"extends", "implements"}) if down else g.out_edges(cls["id"], {"extends", "implements"})
-                for e in edges:
-                    nxt = g.nodes.get(e["src"] if down else e["dst"])
-                    if nxt is None or nxt["id"] in seen or nxt["kind"] not in CONTAINER_KINDS:
-                        continue
-                    seen.add(nxt["id"])
-                    out.extend(k for k in g.children(nxt["id"]) if k["name"] == n["name"] and k["kind"] in ("method", "function"))
-                    frontier.append((nxt, depth + 1))
-            return out
-        ups, downs = related(par, False), related(par, True)
+    ups, downs = overrides_of(g, n)
+    if ups or downs:
         if ups:
             print("├── Overrides: " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in ups[:8]))
         if downs:
@@ -4174,9 +4511,10 @@ def q_symbol(g, args):
         # Kotlin extension functions `fun X.f()` belong on X's card even though they live at file level
         own = {k["id"] for k in kids}
         exts = [m for m in g.g["nodes"] if m["kind"] == "method" and m.get("extra", {}).get("receiver_type") == n["name"]
-                and m["id"] not in own and m.get("parent") != n["id"] and m["file"].endswith((".kt", ".kts"))]
+                and m["id"] not in own and m.get("parent") != n["id"] and m["file"].endswith((".kt", ".kts"))
+                and (is_test_file(n["file"]) or not is_test_file(m["file"]))]   # test-only extensions stay off production cards
         if exts:
-            kids = kids + [dict(m, signature=m["signature"] + "   [extension]") for m in sorted(exts, key=lambda m: (m["file"], m["line"]))]
+            kids = kids + [dict(m, signature=m["signature"] + f"   [extension, {m['file']}]") for m in sorted(exts, key=lambda m: (m["file"], m["line"]))]
     if kids:
         print("├── Members" + (f" ({len(kids)}, showing {cap})" if cap and len(kids) > cap else ""))
         for k in kids[:cap]:
@@ -4279,10 +4617,13 @@ def q_callers(g, args, direction="in"):
     # Every dependency relation except file-level imports, so Terraform/K8s references count as "callers".
     seen, hops = bfs(g, targets, direction, DEP_EDGE_TYPES - {"imports"}, args.depth, args.include_ambiguous)
     if args.json:
-        print(json.dumps({"root": n["id"], "levels": seen, "hops": [(a, e, b, l) for a, e, b, l in hops]}))
+        print(json.dumps({"root": n["id"], "levels": seen, "hops": [(a, e, b, l) for a, e, b, l in hops], "note": dispatch_note(g, n) if direction == "in" else None}))
         return
     label = "callers of" if direction == "in" else "callees of"
     print(f"{label} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}")
+    note = dispatch_note(g, n) if direction == "in" else None
+    if note:
+        print("  " + note)
     if not hops:
         print("  none found (no resolved edges)")
         return
@@ -4372,6 +4713,9 @@ def q_trace_deps(g, args):
         per_file[f]["level"] = min(per_file[f]["level"], lvl)
         per_file[f]["items"].append((lvl, dep, e, tgt))
     print(f"### Blast Radius & Downstream Impact: {n['kind']} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}")
+    note = dispatch_note(g, n)
+    if note:
+        print(note)
     if not per_file:
         print("no dependents found in the graph (nothing imports, calls, extends, references or selects it).")
         return
@@ -4557,7 +4901,7 @@ def q_path(g, args):
     while dq and found is None:
         x = dq.popleft()
         for e in g.out.get(x, []):
-            if e["type"] == "contains":
+            if e["type"] == "contains" or (e["confidence"] == "ambiguous" and not getattr(args, "include_ambiguous", False)):
                 continue
             y = e["dst"]
             if y not in prev:
@@ -4638,6 +4982,7 @@ def main(argv=None):
     x = qs.add_parser("find", help="search symbols/files by name (exact-name matches first)")
     x.add_argument("name"); x.add_argument("--kind", action="append"); x.add_argument("--limit", type=int, default=50); x.add_argument("--json", action="store_true")
     x.add_argument("--lang", action="append", help="only symbols from files of this language (repeatable)")
+    x.add_argument("--no-tests", action="store_true", help="hide symbols defined in test files")
     x.set_defaults(qfn=q_find)
     x = qs.add_parser("symbol", help="architecture card for one symbol: members, dependencies, dependents")
     x.add_argument("name"); x.add_argument("--json", action="store_true")
@@ -4672,6 +5017,7 @@ def main(argv=None):
     x.set_defaults(qfn=q_file)
     x = qs.add_parser("path", help="shortest dependency path from one symbol/file to another")
     x.add_argument("src"); x.add_argument("dst"); x.add_argument("--json", action="store_true")
+    x.add_argument("--include-ambiguous", action="store_true", help="allow ambiguous (lead) edges on the path")
     x.set_defaults(qfn=q_path)
     x = qs.add_parser("stats", help="graph statistics")
     x.set_defaults(qfn=q_stats)

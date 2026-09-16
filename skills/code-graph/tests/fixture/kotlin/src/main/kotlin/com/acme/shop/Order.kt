@@ -20,3 +20,21 @@ object Registry {
 }
 
 fun Sq.describeTwice(): Int = this@describeTwice.double().side + this.double().side   // `this` / `this@label` = the receiver Sq
+
+enum class Kind { SMALL, LARGE; fun code(): Int = ordinal }
+
+class Cart(val items: MutableList<Sq> = mutableListOf()) {
+    private val all = mutableListOf<Sq>()
+    fun total(): Double = all.sumOf { it.area() }              // `it` in a collection lambda on MutableList<Sq> -> Sq.area
+    fun grow(): Cart = apply { all += Sq(1) }
+    operator fun plus(o: Cart): Cart = Cart()
+    inner class Audit {
+        fun note(): Double = total()                            // inner class -> outer member
+    }
+    class Builder {
+        fun kind(k: Kind) = apply { }                           // `= apply {}` returns the Builder
+        fun build(): Cart = Cart()
+    }
+}
+
+fun cart(block: Cart.() -> Unit): Cart = Cart().apply(block)   // DSL: lambda receiver is Cart

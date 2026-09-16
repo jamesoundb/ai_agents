@@ -176,9 +176,11 @@ a clean module, a real `terraform show -json` plan produced offline with the goo
 synthetic risky plan) and the scaffold output must pass `terraform validate` and the review gate;
 fixtures are described in the skills' READMEs.
 Engine changes are verified against the committed fixture in `skills/code-graph/tests/fixture/`
-(Java example from the source article, Python with re-exporting packages, TS/JS with a workspace
-package and tsconfig `extends`, Go with `go.mod`, Kotlin in a Gradle `src/main` + `src/test`
-layout with extension functions, overrides and an imported top-level property, a Rust Cargo
+(Java example from the source article, Python with re-exporting packages, `Optional`/enum/alias
+cases and a pytest `conftest.py` fixture, TS/JS with a workspace package and tsconfig `extends`,
+Go with `go.mod`, Kotlin in a Gradle `src/main` + `src/test` layout with extension functions,
+overrides, an imported top-level property, DSL/`also`/collection lambdas, operators, a builder
+`= apply { }` chain and a nested interface of an imported type, a Rust Cargo
 workspace, Terraform with a root calling a local module, a registry source mirroring a local
 directory, `dynamic` blocks and a `moved` block, Kubernetes manifests with
 Service/Deployment/ConfigMap/HPA/Ingress, a Helm template and values file). The runner copies it

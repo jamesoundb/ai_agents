@@ -1,8 +1,8 @@
-# Graph schema (`.ast-graph/graph.json`, version 5)
+# Graph schema (`.ast-graph/graph.json`, version 6)
 
 ```json
 {
-  "version": 5, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-16T10:00:00",
+  "version": 6, "engine": "<sha1 of astgraph.py>", "root": "/abs/repo", "built_at": "2026-09-16T12:00:00",
   "stats": {"files": 28, "nodes": 151, "edges": 225, "unresolved_refs": 20, "asset_imports": 0,
             "languages": {"python": 6}, "edge_confidence": {"typed": 12}},
   "nodes": [ {node}, ... ],
@@ -65,7 +65,7 @@ and not in scope is not guessed.
 
 ## Build artifacts
 
-`graph.json` (`version` = `GRAPH_VERSION`, currently 5, and `engine` = SHA-1 of `astgraph.py`; a
+`graph.json` (`version` = `GRAPH_VERSION`, currently 6, and `engine` = SHA-1 of `astgraph.py`; a
 mismatch of either forces a full re-parse) and, in
 git checkouts, `graph.json.stamp`: `{"version", "stamp", "stats", "built_at"}` where `stamp` is a
 SHA-1 over HEAD, the porcelain status of indexed source files under the root, their content, and
@@ -77,7 +77,9 @@ graph.
 Raw, unresolved observations kept so that incremental builds can re-link without re-parsing:
 `{"kind": "call|import|extends|implements|instantiates|references|depends_on|uses_module|uses_type",
 "name", "src", "line", "hint", "hint_full", "hint_type", "chain", "names", "alias", "alias_map", "reexport",
-"argc", "arg_types", "attr", "via", "namespace", "module_name"}`.
+"argc", "arg_types", "attr", "via", "namespace", "module_name", "lam"}`.
+`lam` (Kotlin) is the enclosing lambda's call: `{"callee", "recv", "hint_type", "chain", "argc"}`, used at
+link time to type an unqualified call's implicit receiver or `it`.
 `argc` is the number of call arguments (absent when a spread/splat is present) and `arg_types`
 their declared or literal types where known, used to choose among overloads; `hint_full` is the
 full qualifier text of a type reference; `reexport` marks `export ... from` / `pub use`.

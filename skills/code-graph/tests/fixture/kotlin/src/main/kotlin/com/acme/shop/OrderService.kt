@@ -40,6 +40,19 @@ class OrderService(val repo: OrderRepo) : Base<Sq>(Sq(2)) {
         take(saved.sq)                            // subtype-aware overload: take(Shape), not take(Any)
         take2(saved.sq)                           // take2(Shape) beats the generic take2(T)
         currentDialect.functionProvider.charLength()   // imported top-level val -> property chain -> typed
+        val c = cart { grow() }                       // DSL lambda: implicit receiver Cart -> Cart.grow
+        c.also { it.grow() }                          // `it` of also -> Cart.grow
+        Kind.SMALL.code()                             // enum entry -> Kind.code
+        Cart.Builder().kind(Kind.LARGE).build()       // `= apply {}` setter keeps the chain typed -> Builder.build
+        val summed = Cart() + Cart()                  // operator -> Cart.plus
+        val real = (o as Order) ?: o                  // cast + elvis initializer: typed Order
+        real.sq.area()
         return saved
     }
 }
+
+class MyChain : Provider.Chain {                  // implements a nested interface of an imported type
+    override fun proceed(): Int = 1
+}
+
+fun runChain(chain: Provider.Chain): Int = chain.proceed()   // parameter typed by an imported nested type
