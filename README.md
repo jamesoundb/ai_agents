@@ -96,3 +96,7 @@ with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VEN
 ## Development
 
 Architecture reference: `.github/instructions.md`. Worklogs are kept locally in `.github/troubleshooting/` and are not published.
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 James Wurbel.
