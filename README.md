@@ -19,14 +19,34 @@ AGENTS.md, CLAUDE.md, GEMINI.md   repo instructions (CLAUDE.md/GEMINI.md just im
 
 ## Quick start
 
-1. `git clone <this repo> ~/ai_agents`
-2. Open your coding harness in that clone (Claude Code, Codex, Gemini CLI, Antigravity or
-   Copilot) and ask it to **install the agents** (or invoke the `install-agents` skill:
-   `/install-agents`, `$install-agents`, ...). The skill is pre-linked for every harness, so it is
-   discovered in a fresh clone. It asks for harness, scope and the target project, runs
-   `install.sh`, verifies the result and tells you how to invoke the agents.
+Install globally: clone once into your home directory and install for your user, so the agents
+and skills are available in every project and in every supported harness.
 
-Without an LLM (CI, scripting), run the installer directly:
+```bash
+git clone <this repo> ~/ai_agents
+~/ai_agents/install.sh --harness all --scope user
+```
+
+`--harness all` installs into every harness's user folder (Claude Code, Codex, Gemini CLI,
+Antigravity, Copilot), so the same command works whichever tool you use. Skills are symlinked
+into the clone, so keep `~/ai_agents` where it is.
+
+To update, pull and re-run the installer (skills update with the pull; agents are rendered copies
+and need the re-run):
+
+```bash
+cd ~/ai_agents && git pull && ./install.sh --harness all --scope user
+```
+
+Prefer to let your AI tool do it? Open your harness in `~/ai_agents` and ask it to **install the
+agents globally (user scope)**, or invoke the `install-agents` skill (`/install-agents`,
+`$install-agents`, ...). The skill is pre-linked for every harness, so it is discovered in a fresh
+clone. It defaults to project scope, so say "user scope" or "globally".
+
+### Per-project install (alternative)
+
+To install into a single repository instead, for example to commit the agents with a project so
+the whole team gets them from that repo, run the installer from that project:
 
 ```bash
 cd /path/to/your/project
@@ -34,8 +54,9 @@ cd /path/to/your/project
 echo '.ast-graph/' >> .gitignore                # graph artifact of the code-graph skill
 ```
 
-Add `--copy` to copy instead of symlink, `--scope user` to install into your home directory,
-`--target DIR` to install somewhere other than the current directory, `--uninstall` to remove.
+Other options: `--copy` to copy instead of symlink (Windows, CI images), `--target DIR` to install
+somewhere other than the current directory (the directory must already exist), `--uninstall` to
+remove.
 
 | harness | where things land (project scope) | how to invoke |
 |---|---|---|
