@@ -49,6 +49,12 @@ agents globally (user scope)**, or invoke the `install-agents` skill (`/install-
 clone. It installs globally (user scope) for the harness it is running in, like the commands
 above; ask it for a specific project, or for more harnesses, if you want that instead.
 
+In Antigravity the clone has to be the session's workspace for `install-agents` to be discovered
+(it lives in `.agents/skills/`, which Antigravity reads from the workspace root). Interactive `agy`
+started inside `~/ai_agents` is the normal case; in print mode add the directory explicitly:
+`agy --add-dir . -p "install the agents"` (or `agy --new-project`). `/skills` in a session lists
+what was found. If it is not there, run the `install.sh` command above instead: it needs no session.
+
 ### Per-project install (alternative)
 
 To install into a single repository instead, for example to commit the agents with a project so
