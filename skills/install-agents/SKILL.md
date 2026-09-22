@@ -20,10 +20,12 @@ Do not hand-copy files or write harness config yourself.
 
 - **Harness**: you know which product you are (Claude Code, Codex, Gemini CLI, Antigravity,
   Copilot). Default to that one. If the developer wants several, use a comma list or `all`.
-- **Scope**: `project` (files in the target repo, shareable with the team) or `user` (files in
-  the developer's home directory, available in every project). Default `project`.
-- **Target**: the repository to install into. Default: the current working directory. If the
-  developer names another project, pass its absolute path with `--target`.
+- **Scope**: `user` (files in the developer's home directory, available in every project) or
+  `project` (files in one repository, e.g. to commit them for that repo's team). **Default `user`**,
+  the organization's standard install (README "Quick start"). Use `project` only when the developer
+  asks for a single repository or names one to install into.
+- **Target** (project scope only): the repository to install into. Default: the current working
+  directory. If the developer names another project, pass its absolute path with `--target`.
 - **Link or copy**: symlinks (default) keep installs in sync with this clone; use `--copy` on
   Windows without developer mode, in CI images, or when the clone will be deleted.
 - **Which agents/skills**: everything by default. `--agents a,b` / `--skills x,y` to narrow.
@@ -31,8 +33,13 @@ Do not hand-copy files or write harness config yourself.
 ## 2. Run the installer
 
 ```bash
-scripts/install.sh --harness <claude|codex|gemini|antigravity|copilot|all> [--scope user] [--target /abs/path] [--copy] [--agents ...] [--skills ...]
+# default: global install for this developer
+scripts/install.sh --harness <claude|codex|gemini|antigravity|copilot|all> --scope user [--copy] [--agents ...] [--skills ...]
+# only when a single repository was asked for
+scripts/install.sh --harness <...> --scope project --target /abs/path [--copy] [--agents ...] [--skills ...]
 ```
+
+Always pass `--scope` explicitly: `install.sh` on its own defaults to project scope.
 
 `scripts/install.sh` (relative to this skill folder) resolves this skill's real location and runs
 the repository's `install.sh`, so it works whether the skill is symlinked or opened in place.
@@ -40,12 +47,15 @@ Add `--uninstall` to remove what a previous run installed. Re-running is idempot
 
 ## 3. Verify (mandatory)
 
-- List what was created and confirm each path exists, e.g. `ls -la <target>/.claude/skills`,
-  `cat <target>/.claude/agents/<agent>.md | head -20` (adjust per harness; the installer prints
-  every path it wrote).
-- Confirm `AGENTS.md` in the target contains the managed block (project scope).
-- If the target is a git repository, confirm `.ast-graph/` is in its `.gitignore`; add the line if
-  the developer agrees (the code-graph skill writes its graph there).
+- List what was created and confirm each path exists (the installer prints every path it wrote):
+  user scope, e.g. `ls -la ~/.claude/skills ~/.claude/agents`; project scope, e.g.
+  `ls -la <target>/.claude/skills` and `cat <target>/.claude/agents/<agent>.md | head -20`
+  (adjust per harness).
+- Project scope only: confirm `AGENTS.md` in the target contains the managed block, and if the
+  target is a git repository confirm `.ast-graph/` is in its `.gitignore`; add the line if the
+  developer agrees (the code-graph skill writes its graph there).
+- User scope: remind the developer to keep the `~/ai_agents` clone where it is (skills are
+  symlinks into it) and that updating is `cd ~/ai_agents && git pull` plus re-running the install.
 
 ## 4. Tell the developer how to invoke
 

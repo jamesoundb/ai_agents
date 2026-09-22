@@ -52,6 +52,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$HARNESSES" ] || { echo "--harness is required (claude, codex, gemini, antigravity, copilot, all)" >&2; exit 1; }
+case "$SCOPE" in
+  project|user) ;;
+  *) echo "--scope must be project or user (got: $SCOPE); for a global install use --scope user" >&2; exit 1 ;;
+esac
 [ "$HARNESSES" = "all" ] && HARNESSES="claude,codex,gemini,antigravity,copilot"
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 

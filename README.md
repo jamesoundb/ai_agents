@@ -41,7 +41,8 @@ cd ~/ai_agents && git pull && ./install.sh --harness all --scope user
 Prefer to let your AI tool do it? Open your harness in `~/ai_agents` and ask it to **install the
 agents globally (user scope)**, or invoke the `install-agents` skill (`/install-agents`,
 `$install-agents`, ...). The skill is pre-linked for every harness, so it is discovered in a fresh
-clone. It defaults to project scope, so say "user scope" or "globally".
+clone. It installs globally (user scope) by default, like the commands above; ask it for a
+specific project if you want a per-project install instead.
 
 ### Per-project install (alternative)
 

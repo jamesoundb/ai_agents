@@ -37,6 +37,10 @@ check "--help lists the options"             grep -q '^  --target DIR' "$WORK/he
 check "--help prints no script code"         test -z "$(grep -E 'set -euo|REPO=|^usage\(\)' "$WORK/help.txt")"
 # shellcheck disable=SC2016  # single quotes are intended: $0/$1 expand inside bash -c
 check "missing --target gives a clear error" bash -c '! "$0" --harness claude --target "$1/nope" 2>&1 | grep -q "No such file" && ! "$0" --harness claude --target "$1/nope" >/dev/null 2>&1' "$REPO/install.sh" "$WORK"
+mkdir -p "$WORK/scope-test"
+# shellcheck disable=SC2016  # single quotes are intended: $0/$1 expand inside bash -c
+check "unknown --scope is rejected"          bash -c '! "$0" --harness claude --scope global --target "$1" >/dev/null 2>&1' "$REPO/install.sh" "$WORK/scope-test"
+check "rejected --scope wrote nothing"       test -z "$(ls -A "$WORK/scope-test")"
 
 echo "== project scope =="
 PROJ="$WORK/project"
