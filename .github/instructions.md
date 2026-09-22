@@ -16,6 +16,10 @@ agents/<name>/README.md         organization-facing spec (purpose, limits, adopt
 skills/<skill>/SKILL.md         Agent Skills standard; scripts/ and reference/ live beside it
 tools/render.py                 renders AGENT.md -> Claude / Copilot / Antigravity agents, agent-as-skill,
                                 and the managed block for AGENTS.md (stdlib only)
+tools/ci/                       the CI checks as plain scripts (run locally or in the pipeline):
+                                check_repo.py, install_check.sh, smoke.sh, release_notes.sh
+.gitlab-ci.yml                  GitLab pipeline: MR checks, and a GitLab Release per vX.Y.Z tag
+.gitlab/merge_request_templates/Default.md   MR checklist
 install.sh                      installs into a harness: symlink (default) or --copy, project or
                                 --scope user, --target DIR, --uninstall; maintains AGENTS.md block
 AGENTS.md                       repo instructions read by Codex, Gemini CLI, Copilot, Cursor
@@ -193,6 +197,35 @@ Service/Deployment/ConfigMap/HPA/Ingress, a Helm template and values file). The 
 to a temp dir and never writes into the repo. The fixture contents and measured behaviour are
 described in `agents/ast-treesitter/README.md`; the Terraform and Kubernetes skills describe
 their own fixtures in their READMEs.
+
+## CI and releases
+The repo is hosted in GitLab (company project; a personal GitLab project is the lower environment
+for pipeline changes). `.gitlab-ci.yml` only orchestrates; each job calls a script in `tools/ci/`
+so the same check runs on a laptop.
+
+- Pipelines: merge request pipelines, `main`, branches without an open MR, and tags
+  (`workflow:rules`; a branch with an open MR runs only its MR pipeline).
+- `check` stage: `repo-checks` (`check_repo.py`: Agent Skills name/description rules, name == folder,
+  agent `skills:`/`tools:` references, AGENTS.md managed block equals `render.py agents-md`),
+  `lint` (blocking: ruff `E9,F63,F7,F82`, `shellcheck --severity=error`), `lint-advisory`
+  (`allow_failure`: ruff `E,F,W,B`, full shellcheck). Lint tool versions are pinned.
+- `test` stage: `engine-tests` (`run_tests.sh`), `install-check` (project scope into a temp repo +
+  uninstall must leave it clean; user scope into a temp `HOME`; expected counts derived from
+  `agents/` and `skills/`), `smoke` (every skill script `--help`; code-graph skeleton;
+  terraform-review and k8s-manifest-review on the fixture with `--no-tools`; a freshly scaffolded
+  module must pass terraform-review with no findings; synth -> analyze -> guardrails).
+- Image `python:3.12`; skill dependencies (`requirements.txt` + PyYAML) are pip-installed into the
+  image's python3, which the skills' `run.sh` discovers. Review scripts exit 0 = gate pass,
+  1 = gate fail, 2 = error; the smoke test accepts 0/1 plus a `Gate (` line.
+- Release: tags matching `^v\d+\.\d+\.\d+(-suffix)?$` run `release-notes`
+  (`release_notes.sh`, full history via `GIT_DEPTH: 0`) and `release`
+  (`registry.gitlab.com/gitlab-org/cli`, `glab release create` with `GLAB_ENABLE_CI_AUTOLOGIN`, i.e.
+  the job token). `release` needs every check job, so a tag whose checks fail is not released.
+  Creating the tag in the UI with release notes pre-creates the release and fails the job.
+- Rollback policy: developers track `main`; roll back with a revert on `main` (forward fix), never
+  by moving tags. Tags are known-good pins (`git checkout vX.Y.Z` + re-run install).
+- Project settings the YAML cannot set: protect `v*` tags (Maintainers), "Pipelines must succeed"
+  on merge, and runners/compute minutes for the group.
 
 ## Design references
 - Whitney, "Stop Dumping Raw Code into LLMs: Why ASTs lead to Scalable AI Agents" (Medium).

@@ -1,0 +1,115 @@
+# .gitlab-ci.yml — checks for every merge request, and a GitLab Release for every vX.Y.Z tag.
+# Each check is a script under tools/ci/, so developers can run exactly the same thing locally
+# (see README "Contributing"). Release and rollback process: README "Versions and rollback".
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"   # merge request pipelines
+    - if: $CI_COMMIT_TAG                                 # tag pipelines (releases)
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS   # branch with an open MR: its MR pipeline covers it
+      when: never
+    - if: $CI_COMMIT_BRANCH                              # main, and branches without an MR yet
+
+stages: [check, test, release]
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_ROOT_USER_ACTION: ignore
+  # Release tags: vMAJOR.MINOR.PATCH with an optional -suffix (v1.2.0, v1.3.0-rc.1)
+  RELEASE_TAG_RE: '/^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/'
+
+default:
+  image: python:3.12           # Debian-based: has git and bash; skills need Python 3.10+
+  interruptible: true          # a newer push to the same branch cancels the older pipeline
+
+# Python dependencies of the skills (tree-sitter for code-graph/terraform-review/k8s-manifest-review,
+# PyYAML for k8s-rightsize). Installed into the image's python3, which the skills' run.sh picks up.
+.python-deps:
+  cache:
+    key:
+      prefix: pip-deps
+      files: [skills/code-graph/scripts/requirements.txt]
+    paths: [.cache/pip]
+  before_script:
+    - pip install --quiet -r skills/code-graph/scripts/requirements.txt pyyaml
+
+# Pinned lint tools, so a new ruff/shellcheck release cannot turn a green pipeline red by itself.
+.lint-tools:
+  cache:
+    key: pip-lint
+    paths: [.cache/pip]
+  before_script:
+    - pip install --quiet ruff==0.16.8 shellcheck-py==0.11.0.1
+
+# ---------------------------------------------------------------- check
+
+repo-checks:
+  stage: check
+  script:
+    - python3 tools/ci/check_repo.py      # frontmatter, agent->skill references, AGENTS.md in sync
+
+lint:
+  stage: check
+  extends: .lint-tools
+  script:
+    # Blocking: only things that are broken (Python syntax errors and undefined names, shell errors).
+    - ruff check --isolated --select E9,F63,F7,F82 --exclude skills/code-graph/tests/fixture .
+    - shellcheck --severity=error $(git ls-files '*.sh')
+
+lint-advisory:
+  stage: check
+  extends: .lint-tools
+  allow_failure: true                     # reported on the MR, never blocks; tighten over time
+  script:
+    - rc=0
+    - ruff check --isolated --select E,F,W,B --line-length 120 --exclude skills/code-graph/tests/fixture --statistics . || rc=1
+    - shellcheck $(git ls-files '*.sh') || rc=1
+    - exit $rc
+
+# ---------------------------------------------------------------- test
+
+engine-tests:
+  stage: test
+  extends: .python-deps
+  script:
+    - skills/code-graph/tests/run_tests.sh   # code-graph regression suite (9-language fixture)
+
+install-check:
+  stage: test
+  script:
+    - tools/ci/install_check.sh              # project + user scope installs into temp dirs, uninstall
+
+smoke:
+  stage: test
+  extends: .python-deps
+  script:
+    - tools/ci/smoke.sh                      # every skill script runs on fixtures / synthetic data
+
+# ---------------------------------------------------------------- release (tags only)
+
+release-notes:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG =~ $RELEASE_TAG_RE
+  variables:
+    GIT_DEPTH: "0"                           # full history: notes list commits since the previous tag
+  script:
+    - git fetch --quiet --tags origin
+    - tools/ci/release_notes.sh "$CI_COMMIT_TAG" > release-notes.md
+    - cat release-notes.md
+  artifacts:
+    paths: [release-notes.md]
+    expire_in: 1 week
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ $RELEASE_TAG_RE
+  # Only release a tag whose checks all passed; release-notes also supplies the notes file.
+  needs: [release-notes, repo-checks, lint, engine-tests, install-check, smoke]
+  variables:
+    GLAB_ENABLE_CI_AUTOLOGIN: "true"         # glab authenticates with CI_JOB_TOKEN
+  script:
+    - glab release create "$CI_COMMIT_TAG" --name "$CI_COMMIT_TAG" --notes-file release-notes.md --repo "$CI_PROJECT_PATH"

@@ -21,6 +21,9 @@ invoke the agents. If skills are unavailable in your harness, run
   extend the fixture with a regression case for every linker fix.
 - Architecture reference lives in `.github/instructions.md`; worklogs stay local in
   `.github/troubleshooting/` (git-ignored).
+- Every change goes through a merge request whose pipeline (`.gitlab-ci.yml`) must pass. Run the
+  same checks locally first: `python3 tools/ci/check_repo.py`, `tools/ci/install_check.sh`,
+  `tools/ci/smoke.sh` (see README "Contributing").
 
 <!-- BEGIN managed by install.sh (agents repo); edits inside this block are overwritten -->
 ## AI agents and skills installed in this repository

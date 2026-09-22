@@ -102,6 +102,35 @@ The three skills install together; `code-skeleton` and `blast-radius` call the e
 `../code-graph/scripts/run.sh`. The engine needs Python 3.10+; `run.sh` creates a private venv
 with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
 
+## Versions and rollback
+
+Everything merged to `main` has passed the merge request pipeline (see Contributing). Known-good
+points are tagged `vMAJOR.MINOR.PATCH`, and each tag gets a GitLab Release listing what changed
+and which agents and skills it touches.
+
+**A change broke something for everyone:** revert it on `main` (in GitLab, open the merged MR and
+click **Revert**, or `git revert <commit>` in a new MR). Developers pick up the fix with the normal
+update command. Do not move tags or force-push `main` to roll back: developers who already pulled
+would not get the rollback.
+
+**You need a working version right now:** pin your own install to the last good release:
+
+```bash
+cd ~/ai_agents && git fetch --tags && git checkout v1.2.0   # the release you want
+./install.sh --harness all --scope user
+```
+
+Skills switch the moment you check out (they are symlinks into the clone); the install re-run
+updates the rendered agents. Return to the latest with `git checkout main && git pull` and re-run
+the install.
+
+**Cutting a release** (maintainers): on the project's **Code > Tags > New tag** page, create
+`vX.Y.Z` from `main`. Leave the **Release notes** box empty: the tag pipeline writes the notes
+and creates the release, and a release that already exists makes that job fail. Or from a clone:
+`git tag v1.3.0 && git push origin v1.3.0`. Bump MAJOR when a change needs developers to do
+something (renamed agent or skill, new install step), MINOR for new agents, skills or rules, PATCH
+for fixes.
+
 ## Adding an agent or skill
 
 1. Skill: create `skills/<name>/SKILL.md` with `name` and `description` frontmatter; keep scripts
@@ -112,7 +141,25 @@ with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VEN
    the system prompt. Add a `README.md` beside it. Neutral tool names map per harness in
    `tools/render.py` (`TOOL_MAP`); Antigravity warns that unknown tool names can hang a subagent,
    so only documented names are emitted.
-3. Run `./install.sh --harness all --target /tmp/check` and inspect the rendered outputs.
+3. Run `./install.sh --harness all` in this repo and commit the updated `AGENTS.md` table, then run
+   the checks below.
+
+## Contributing
+
+Changes go through a merge request. The pipeline (`.gitlab-ci.yml`) runs on every MR and must pass
+before merging. Every job is a script, so you can run the same checks before you push:
+
+```bash
+python3 tools/ci/check_repo.py          # frontmatter, agent->skill references, AGENTS.md in sync
+tools/ci/install_check.sh               # project + user scope installs into temp dirs, then uninstall
+skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
+tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
+```
+
+`smoke.sh` needs PyYAML in the skills' Python for `k8s-rightsize`
+(`~/.cache/astgraph/venv/bin/pip install pyyaml`); without it that one step is skipped locally.
+The pipeline also runs lint: syntax errors, undefined names and shell errors block the MR; the
+wider ruff and shellcheck report is shown but does not block.
 
 ## Development
 
