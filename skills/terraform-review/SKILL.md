@@ -16,6 +16,10 @@ installed, `terraform fmt -check`, `terraform init -backend=false` + `terraform 
 `tflint` and `trivy config`. Every finding has a rule id, severity, `file:line` and a fix hint, so
 two runs on the same code produce the same report. Rule catalogue: `reference/rules.md`;
 GCP conventions the rules encode: `reference/gcp-conventions.md`.
+`init`/`validate` run with a temporary `TF_DATA_DIR`, so nothing is written into the reviewed
+directory: no `.terraform/`, an existing `.terraform.lock.hcl` is only read (`-lockfile=readonly`;
+a lock file that no longer matches the provider constraints fails `init`), and a lock file `init`
+had to create is removed afterwards.
 
 ```bash
 scripts/run.sh [PATH ...] [--config tfreview.json] [--fail-on high|medium|...] [--no-tools] [--json]

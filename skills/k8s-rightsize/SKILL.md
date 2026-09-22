@@ -8,7 +8,7 @@ description: >
   lifecycle fields (Job TTL, deadline, backoffLimit, kube-janitor TTL annotation), and prints a
   diff with the evidence per container. Use after a discovery run, when a namespace shows low
   utilization, or when asked to "right-size this job/manifest/namespace".
-allowed-tools: Bash(python3 */k8s-rightsize/scripts/rightsize.py *), Bash(*/k8s-rightsize/scripts/rightsize.py *), Bash(python3 */gke-cost-discovery/scripts/analyze.py *), Bash(kubectl get *), Read, Write, Edit, Glob
+allowed-tools: Bash(*/k8s-rightsize/scripts/run.sh *), Bash(python3 */k8s-rightsize/scripts/rightsize.py *), Bash(*/k8s-rightsize/scripts/rightsize.py *), Bash(python3 */gke-cost-discovery/scripts/analyze.py *), Bash(kubectl get *), Read, Write, Edit, Glob
 ---
 
 # k8s-rightsize: from evidence to an edited manifest
@@ -39,14 +39,17 @@ scripts/measure.py --namespace test-envs --context minikube --duration 300 --int
 kubectl get jobs,deployments,cronjobs -n teamcity-agents -o yaml > teamcity-agents.yaml   # read-only
 
 # 3. propose, review, apply
-scripts/rightsize.py teamcity-agents.yaml --report report.json --tiers build-tiers.json --lifecycle          # diff
-scripts/rightsize.py teamcity-agents.yaml --report report.json --tiers build-tiers.json --lifecycle --write  # apply to the file
+scripts/run.sh teamcity-agents.yaml --report report.json --tiers build-tiers.json --lifecycle          # diff
+scripts/run.sh teamcity-agents.yaml --report report.json --tiers build-tiers.json --lifecycle --write  # apply to the file
 ../k8s-manifest-review/scripts/run.sh teamcity-agents.yaml --build                                          # must pass
 ```
 
 Options: `--headroom 1.25` (multiplier on p95), `--cpu-limit-factor 2` (cpu limit = request x
 factor; memory limit always equals the request), `--policy k8s-review.json` (tier label,
 annotation, TTL values), `--json`.
+
+`scripts/run.sh` installs PyYAML into the venv shared by the skills (`~/.cache/astgraph/venv`) on
+first use; `scripts/rightsize.py` still works directly with any Python that has PyYAML.
 
 ## What it does, precisely
 

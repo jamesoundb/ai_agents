@@ -156,8 +156,6 @@ skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
 ```
 
-`smoke.sh` needs PyYAML in the skills' Python for `k8s-rightsize`
-(`~/.cache/astgraph/venv/bin/pip install pyyaml`); without it that one step is skipped locally.
 The pipeline also runs lint: syntax errors, undefined names and shell errors block the MR; the
 wider ruff and shellcheck report is shown but does not block.
 

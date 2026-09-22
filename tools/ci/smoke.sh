@@ -8,8 +8,8 @@
 # Review scripts exit 0 (gate PASS), 1 (gate FAIL: findings at/above --fail-on) or 2 (error), so a
 # review step passes when it exits 0 or 1 and prints its Gate line. External tools (terraform,
 # helm) are disabled with --no-tools so results do not depend on what the runner has installed.
-# Needs Python 3.10+ with tree-sitter, tree-sitter-language-pack and PyYAML. In CI (CI=true) a
-# missing PyYAML is an error; locally the k8s-rightsize step is skipped with a warning.
+# Needs Python 3.10+ with tree-sitter and tree-sitter-language-pack. k8s-rightsize is started
+# through its run.sh, which installs PyYAML on first use (the path a new developer hits).
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 S="$REPO/skills"
@@ -41,14 +41,12 @@ review() {  # review "description" command...   (passes on exit 0/1 with a Gate 
 }
 
 echo "== every skill script starts (--help) =="
-HAS_YAML=1; "$PY" -c "import yaml" 2>/dev/null || HAS_YAML=0
 for f in "$S"/*/scripts/*.py; do
-  case "$f" in */yamlload.py) continue ;; esac   # helper module, not a CLI
-  if [ "$HAS_YAML" -eq 0 ] && [ "${f##*/}" = rightsize.py ]; then
-    if [ "${CI:-}" = "true" ]; then echo "  FAIL ${f#"$REPO"/}: PyYAML missing in CI"; fail=1
-    else echo "  skip ${f#"$REPO"/} (PyYAML not installed: pip install pyyaml)"; fi
-    continue
-  fi
+  case "$f" in
+    */yamlload.py) continue ;;                      # helper module, not a CLI
+    */k8s-rightsize/scripts/rightsize.py)           # needs PyYAML: go through its launcher
+      step "${f#"$REPO"/} (via run.sh)" "$S/k8s-rightsize/scripts/run.sh" --help; continue ;;
+  esac
   step "${f#"$REPO"/}" "$PY" "$f" --help
 done
 
@@ -68,6 +66,18 @@ if "$S/terraform-review/scripts/run.sh" "$WORK/modules/demo" --no-tools --fail-o
 else
   echo "  FAIL scaffolded module fails terraform-review: scaffold templates and review rules disagree"
   sed 's/^/       /' "$WORK/out" | tail -n 20; fail=1
+fi
+
+# With terraform installed (developer machines; the CI image has none), run the review WITH tools
+# and check it leaves the reviewed directory exactly as it was (no .terraform/, no lock file).
+if command -v terraform >/dev/null 2>&1; then
+  before="$(cd "$WORK/modules/demo" && find . | sort)"
+  "$S/terraform-review/scripts/run.sh" "$WORK/modules/demo" > "$WORK/out" 2>&1
+  after="$(cd "$WORK/modules/demo" && find . | sort)"
+  if [ "$before" = "$after" ]; then echo "  ok   terraform-review with tools leaves the directory unchanged"
+  else echo "  FAIL terraform-review with tools left files behind:"; diff <(echo "$before") <(echo "$after") | sed 's/^/       /'; fail=1; fi
+else
+  echo "  skip terraform-review with tools (terraform not installed)"
 fi
 
 echo "== gke-cost-discovery -> k8s-guardrails (synthetic cluster data) =="

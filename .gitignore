@@ -17,6 +17,9 @@
 !.github/skills/install-agents
 # Engine artifacts
 .ast-graph/
+# Terraform working files, if terraform is run by hand inside the test fixture
+skills/code-graph/tests/fixture/**/.terraform/
+skills/code-graph/tests/fixture/**/.terraform.lock.hcl
 __pycache__/
 *.pyc
 

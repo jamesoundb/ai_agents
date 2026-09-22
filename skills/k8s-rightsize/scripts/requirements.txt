@@ -1,0 +1,2 @@
+# PyYAML re-serialises the rewritten manifests (and speeds up loading them).
+PyYAML>=6.0

@@ -93,14 +93,14 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 
 | skill | purpose | entry point |
 |---|---|---|
-| `k8s-rightsize` | requests/limits from `analyze.py --json` usage rows (name matching strips generated suffixes, then prefixes); tier cap fallback; `--lifecycle`; PyYAML re-serialisation | `skills/k8s-rightsize/scripts/rightsize.py` |
+| `k8s-rightsize` | requests/limits from `analyze.py --json` usage rows (name matching strips generated suffixes, then prefixes); tier cap fallback; `--lifecycle`; PyYAML re-serialisation (`run.sh` installs PyYAML into the shared venv) | `skills/k8s-rightsize/scripts/rightsize.py` |
 | `k8s-manifest-review` | tier/lifecycle/hygiene rules on manifests (PyYAML or tree-sitter YAML fallback via `yamlload.py`); kubeconform/kubectl validation when available; consumed by helm and teamcity reviews as `HR-*`/`TC005-*` | `skills/k8s-manifest-review/scripts/run.sh` |
 | `k8s-guardrails` | LimitRange/ResourceQuota/janitor templates rendered from `build-tiers.json`; default cpu limit capped at 4x default request (LimitRange ratio); janitor image configurable (`alpine/k8s`) with portable date parsing | `skills/k8s-guardrails/scripts/guardrails.py` |
 | `helm-chart-review` | HC/HV/HG/HL rules + `helm lint`/`helm template` (parent-chart fallback when subcharts are unfetched) + rendered pass | `skills/helm-chart-review/scripts/helmreview.py` |
 | `teamcity-config-review` | text rules over Kotlin DSL/XML; pod templates extracted from cloud images | `skills/teamcity-config-review/scripts/tcreview.py` |
 | `teamcity-build-triage` | REST/offline failure classifier (`CLASSES` table) and recent-failure histogram | `skills/teamcity-build-triage/scripts/tctriage.py` |
 | `gke-cost-discovery` | `collect.sh` (read-only gcloud/kubectl/Cloud Monitoring REST/Cloud Logging/TeamCity REST, every source optional, timeouts everywhere) + `analyze.py` (stdlib; two-bucket waste model, recommendations, tiers) + `synth.py` (demo dataset). Config: `gke-cost-discovery.env` (git-ignored) | `skills/gke-cost-discovery/scripts/` |
-| `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), company policy via `tfreview.json`, optional terraform fmt/validate, tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
+| `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), company policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
 | `terraform-plan-review` | risk model over `terraform show -json` (or `plan -json` stream); stdlib only; exit 1 at `--fail-on` | `skills/terraform-plan-review/scripts/planreview.py` |
 | `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; templates are the company standard | `skills/terraform-module-scaffold/scripts/scaffold.py` |
 | `code-graph` | build/refresh `.ast-graph/graph.json`; `find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
@@ -213,9 +213,12 @@ so the same check runs on a laptop.
   uninstall must leave it clean; user scope into a temp `HOME`; expected counts derived from
   `agents/` and `skills/`), `smoke` (every skill script `--help`; code-graph skeleton;
   terraform-review and k8s-manifest-review on the fixture with `--no-tools`; a freshly scaffolded
-  module must pass terraform-review with no findings; synth -> analyze -> guardrails).
-- Image `python:3.12`; skill dependencies (`requirements.txt` + PyYAML) are pip-installed into the
-  image's python3, which the skills' `run.sh` discovers. Review scripts exit 0 = gate pass,
+  module must pass terraform-review with no findings; where terraform is installed, a tools-mode
+  review must leave that module's directory unchanged; synth -> analyze -> guardrails).
+- Image `$PYTHON_IMAGE` = `mirror.gcr.io/library/python:3.12` (Google's Docker Hub mirror, same digest as
+  Docker Hub's `python:3.12`); tree-sitter (`requirements.txt`) is pip-installed into the image's
+  python3, which the skills' `run.sh` discovers. PyYAML is not pre-installed on purpose:
+  `k8s-rightsize/scripts/run.sh` installs it, exercising the first-run path. Review scripts exit 0 = gate pass,
   1 = gate fail, 2 = error; the smoke test accepts 0/1 plus a `Gate (` line.
 - Release: tags matching `^v\d+\.\d+\.\d+(-suffix)?$` run `release-notes`
   (`release_notes.sh`, full history via `GIT_DEPTH: 0`) and `release`

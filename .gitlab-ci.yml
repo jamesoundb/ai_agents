@@ -13,6 +13,9 @@ workflow:
 stages: [check, test, release]
 
 variables:
+  # Python image from Google's Docker Hub mirror instead of Docker Hub (same image digest; no Docker
+  # Hub rate limits). Point this at a company Artifact Registry remote repository if you have one.
+  PYTHON_IMAGE: mirror.gcr.io/library/python:3.12
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_ROOT_USER_ACTION: ignore
@@ -20,19 +23,20 @@ variables:
   RELEASE_TAG_RE: '/^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/'
 
 default:
-  image: python:3.12           # Debian-based: has git and bash; skills need Python 3.10+
+  image: $PYTHON_IMAGE         # Debian-based: has git and bash; skills need Python 3.10+
   interruptible: true          # a newer push to the same branch cancels the older pipeline
 
-# Python dependencies of the skills (tree-sitter for code-graph/terraform-review/k8s-manifest-review,
-# PyYAML for k8s-rightsize). Installed into the image's python3, which the skills' run.sh picks up.
+# tree-sitter for code-graph/terraform-review/k8s-manifest-review, installed into the image's python3,
+# which the skills' run.sh picks up. PyYAML is deliberately NOT pre-installed: k8s-rightsize's run.sh
+# must install it itself, so every pipeline exercises the first-run path a new developer hits.
 .python-deps:
   cache:
     key:
       prefix: pip-deps
-      files: [skills/code-graph/scripts/requirements.txt]
+      files: [skills/code-graph/scripts/requirements.txt, skills/k8s-rightsize/scripts/requirements.txt]
     paths: [.cache/pip]
   before_script:
-    - pip install --quiet -r skills/code-graph/scripts/requirements.txt pyyaml
+    - pip install --quiet -r skills/code-graph/scripts/requirements.txt
 
 # Pinned lint tools, so a new ruff/shellcheck release cannot turn a green pipeline red by itself.
 .lint-tools:

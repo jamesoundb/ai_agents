@@ -31,6 +31,13 @@ N_SKILLS_NO_BOOT=$((N_SKILLS - 1))  # install-agents is excluded from targets (c
 echo "repo: $N_AGENTS agents, $N_SKILLS skills"
 BEFORE="$(git -C "$REPO" status --porcelain)"   # compared at the end: installs must not touch the checkout
 
+echo "== command line =="
+"$REPO/install.sh" --help > "$WORK/help.txt"
+check "--help lists the options"             grep -q '^  --target DIR' "$WORK/help.txt"
+check "--help prints no script code"         test -z "$(grep -E 'set -euo|REPO=|^usage\(\)' "$WORK/help.txt")"
+# shellcheck disable=SC2016  # single quotes are intended: $0/$1 expand inside bash -c
+check "missing --target gives a clear error" bash -c '! "$0" --harness claude --target "$1/nope" 2>&1 | grep -q "No such file" && ! "$0" --harness claude --target "$1/nope" >/dev/null 2>&1' "$REPO/install.sh" "$WORK"
+
 echo "== project scope =="
 PROJ="$WORK/project"
 mkdir -p "$PROJ" && git -C "$PROJ" init -q

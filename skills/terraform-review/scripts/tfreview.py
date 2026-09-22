@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 
 try:
@@ -437,12 +438,37 @@ def check_gcp_resource(b, rep, ctx):
 # ----------------------------------------------------------------------------------------------
 # External tools (optional)
 # ----------------------------------------------------------------------------------------------
-def run_tool(cmd, cwd, timeout=300):
+def run_tool(cmd, cwd, timeout=300, env=None):
     try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                           env={**os.environ, **env} if env else None)
         return p.returncode, (p.stdout + p.stderr).strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return -1, str(e)
+
+
+def terraform_init_validate(tf, d):
+    """terraform init -backend=false + validate without leaving anything in the reviewed directory.
+
+    .terraform/ goes to a temporary TF_DATA_DIR. An existing .terraform.lock.hcl is only read
+    (-lockfile=readonly, so a committed lock file is never modified); if there is none, init has to
+    create one, and it is removed again afterwards. Returns (init_rc, init_out, validate_rc,
+    validate_out); validate_* are None when init failed.
+    """
+    lock = os.path.join(d, ".terraform.lock.hcl")
+    had_lock = os.path.exists(lock)
+    init = [tf, "init", "-backend=false", "-input=false", "-no-color"] + (["-lockfile=readonly"] if had_lock else [])
+    with tempfile.TemporaryDirectory(prefix="tfreview-") as data_dir:
+        env = {"TF_DATA_DIR": data_dir}
+        try:
+            irc, iout = run_tool(init, d, timeout=600, env=env)
+            if irc != 0:
+                return irc, iout, None, None
+            vrc, vout = run_tool([tf, "validate", "-no-color", "-json"], d, env=env)
+            return irc, iout, vrc, vout
+        finally:
+            if not had_lock and os.path.exists(lock):
+                os.remove(lock)
 
 
 def external_tools(dirs, rep, root):
@@ -455,9 +481,8 @@ def external_tools(dirs, rep, root):
             if rc != 0:
                 for m in re.finditer(r"^([^\s].*\.tf)$", out, flags=re.M):
                     rep.add("TF030", "low", os.path.join(reld, m.group(1)) if not m.group(1).startswith(reld) else m.group(1), 1, "file is not terraform fmt formatted", "run terraform fmt")
-            rc, out = run_tool([tf, "init", "-backend=false", "-input=false", "-no-color"], d, timeout=600)
-            if rc == 0:
-                rc, out = run_tool([tf, "validate", "-no-color", "-json"], d)
+            irc, iout, rc, out = terraform_init_validate(tf, d)
+            if irc == 0:
                 try:
                     data = json.loads(out)
                     ok = data.get("valid", False)
@@ -471,7 +496,7 @@ def external_tools(dirs, rep, root):
                     ok = rc == 0
                 rep.tools.append({"tool": "terraform validate", "dir": reld, "ok": ok, "output": "" if ok else out[:4000]})
             else:
-                rep.tools.append({"tool": "terraform init -backend=false", "dir": reld, "ok": False, "output": out[:4000]})
+                rep.tools.append({"tool": "terraform init -backend=false", "dir": reld, "ok": False, "output": iout[:4000]})
         else:
             rep.tools.append({"tool": "terraform", "dir": reld, "ok": None, "output": "not installed; fmt/validate skipped"})
         for tool, cmd, label in (("tflint", ["tflint", "--format", "compact", "--no-color"], "tflint"),

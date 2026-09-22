@@ -7,6 +7,16 @@
 #   ./install.sh --harness all --copy                # copy instead of symlink (Windows, CI images)
 #   ./install.sh --harness all --uninstall
 #
+# Options:
+#   --harness LIST   claude, codex, gemini, antigravity, copilot (comma list) or all   (required)
+#   --scope S        project (default: files in --target) or user (your home directory)
+#   --target DIR     project to install into (default: current directory; must already exist)
+#   --copy           copy files instead of symlinking them into this clone
+#   --agents LIST    install only these agents (comma list)
+#   --skills LIST    install only these skills (comma list)
+#   --uninstall      remove what an install with the same options added
+#   -h, --help       show this help
+#
 # Harness layouts (project scope | user scope):
 #   claude      .claude/skills/<s>, .claude/agents/<a>.md            | ~/.claude/skills, ~/.claude/agents
 #   codex       .agents/skills/<s>, .agents/skills/<a>/SKILL.md      | ~/.agents/skills
@@ -24,13 +34,15 @@ RENDER="$REPO/tools/render.py"
 
 HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+# Print the comment header (line 2 up to the first line that is not a comment) as the help text.
+usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --harness) HARNESSES="$2"; shift 2 ;;
     --scope) SCOPE="$2"; shift 2 ;;
-    --target) TARGET="$(cd "$2" && pwd)"; shift 2 ;;
+    --target) [ -d "$2" ] || { echo "--target: directory not found: $2 (create it first)" >&2; exit 1; }
+              TARGET="$(cd "$2" && pwd)"; shift 2 ;;
     --copy) MODE="copy"; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --agents) ONLY_AGENTS="$2"; shift 2 ;;
