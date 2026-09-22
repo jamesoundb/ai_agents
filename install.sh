@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # install.sh — install the agents and skills from this repo into an AI coding harness.
 #
-#   ./install.sh --harness all                       # project scope, current directory
+#   ./install.sh --harness antigravity --scope user  # global install (~/.gemini/config/{agents,skills})
+#   ./install.sh --harness antigravity               # project scope, current directory
 #   ./install.sh --harness claude,codex --target ~/work/app
-#   ./install.sh --harness gemini --scope user       # into ~/.gemini/skills
-#   ./install.sh --harness all --copy                # copy instead of symlink (Windows, CI images)
-#   ./install.sh --harness all --uninstall
+#   ./install.sh --harness antigravity --copy        # copy instead of symlink (Windows, CI images)
+#   ./install.sh --harness antigravity --uninstall
 #
 # Options:
 #   --harness LIST   claude, codex, gemini, antigravity, copilot (comma list) or all   (required)

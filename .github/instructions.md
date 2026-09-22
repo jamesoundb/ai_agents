@@ -164,7 +164,7 @@ different one rather than adding vendor-neutral fallbacks.
 
 ## Setup on a new machine
 ```bash
-./install.sh --harness all        # or claude|codex|gemini|antigravity|copilot; --target DIR for another repo
+./install.sh --harness antigravity  # or claude|codex|gemini|copilot|all; --target DIR for another repo
 skills/code-graph/scripts/run.sh build --root .   # first run creates ~/.cache/astgraph/venv
 skills/code-graph/scripts/run.sh query overview
 ```

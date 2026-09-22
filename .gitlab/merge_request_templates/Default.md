@@ -10,7 +10,7 @@
 
 - [ ] Pipeline is green (repo checks, lint, engine tests, install check, smoke test)
 - [ ] Edited the canonical files only (`agents/`, `skills/`, `tools/`), not generated harness folders
-- [ ] Added or renamed an agent or skill: ran `./install.sh --harness all` and committed `AGENTS.md`
+- [ ] Added or renamed an agent or skill: ran `./install.sh --harness antigravity` and committed `AGENTS.md`
 - [ ] Changed `skills/code-graph/scripts/astgraph.py`: added a regression case to the fixture
 - [ ] Tried the changed agent or skill locally (`git checkout <this branch>` in `~/ai_agents`, re-run the install)
 - [ ] README or the skill's `SKILL.md` updated if usage changed

@@ -19,30 +19,35 @@ AGENTS.md, CLAUDE.md, GEMINI.md   repo instructions (CLAUDE.md/GEMINI.md just im
 
 ## Quick start
 
-Install globally: clone once into your home directory and install for your user, so the agents
-and skills are available in every project and in every supported harness.
+Install globally for the harness you use: clone once into your home directory and install for
+your user, so the agents and skills are available in every project.
 
 ```bash
 git clone <this repo> ~/ai_agents
-~/ai_agents/install.sh --harness all --scope user
+~/ai_agents/install.sh --harness antigravity --scope user
 ```
 
-`--harness all` installs into every harness's user folder (Claude Code, Codex, Gemini CLI,
-Antigravity, Copilot), so the same command works whichever tool you use. Skills are symlinked
+`antigravity` covers Google Antigravity, both the IDE and the `agy` CLI; it is currently the only
+harness approved in the company. On another harness use its name instead: `claude`, `codex`,
+`gemini` (the separate Gemini CLI, not Antigravity) or `copilot`. Install only the harness you use;
+`--harness all` (every harness at once) is there if you really use several. Skills are symlinked
 into the clone, so keep `~/ai_agents` where it is.
+
+Check it: `agy agents` lists `ast-treesitter`, `build-pipeline`, `helm`, `kubernetes` and
+`terraform`, and `/skills` inside a session lists the skills.
 
 To update, pull and re-run the installer (skills update with the pull; agents are rendered copies
 and need the re-run):
 
 ```bash
-cd ~/ai_agents && git pull && ./install.sh --harness all --scope user
+cd ~/ai_agents && git pull && ./install.sh --harness antigravity --scope user   # same --harness as your install
 ```
 
 Prefer to let your AI tool do it? Open your harness in `~/ai_agents` and ask it to **install the
 agents globally (user scope)**, or invoke the `install-agents` skill (`/install-agents`,
 `$install-agents`, ...). The skill is pre-linked for every harness, so it is discovered in a fresh
-clone. It installs globally (user scope) by default, like the commands above; ask it for a
-specific project if you want a per-project install instead.
+clone. It installs globally (user scope) for the harness it is running in, like the commands
+above; ask it for a specific project, or for more harnesses, if you want that instead.
 
 ### Per-project install (alternative)
 
@@ -51,7 +56,7 @@ the whole team gets them from that repo, run the installer from that project:
 
 ```bash
 cd /path/to/your/project
-~/ai_agents/install.sh --harness all            # or: claude | codex | gemini | antigravity | copilot
+~/ai_agents/install.sh --harness antigravity    # or: claude | codex | gemini | copilot | all
 echo '.ast-graph/' >> .gitignore                # graph artifact of the code-graph skill
 ```
 
@@ -118,7 +123,7 @@ would not get the rollback.
 
 ```bash
 cd ~/ai_agents && git fetch --tags && git checkout v1.2.0   # the release you want
-./install.sh --harness all --scope user
+./install.sh --harness antigravity --scope user             # same --harness as your install
 ```
 
 Skills switch the moment you check out (they are symlinks into the clone); the install re-run
@@ -142,7 +147,8 @@ for fixes.
    the system prompt. Add a `README.md` beside it. Neutral tool names map per harness in
    `tools/render.py` (`TOOL_MAP`); Antigravity warns that unknown tool names can hang a subagent,
    so only documented names are emitted.
-3. Run `./install.sh --harness all` in this repo and commit the updated `AGENTS.md` table, then run
+3. Run `./install.sh --harness antigravity` in this repo (any harness regenerates the table) and
+   commit the updated `AGENTS.md` table, then run
    the checks below.
 
 ## Contributing

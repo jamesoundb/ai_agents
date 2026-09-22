@@ -19,7 +19,10 @@ Do not hand-copy files or write harness config yourself.
 ## 1. Gather parameters (ask only for what you cannot infer)
 
 - **Harness**: you know which product you are (Claude Code, Codex, Gemini CLI, Antigravity,
-  Copilot). Default to that one. If the developer wants several, use a comma list or `all`.
+  Copilot). **Install for that one only.** Use a comma list or `all` only when the developer
+  explicitly asks for more than one harness. Google Antigravity, IDE or `agy` CLI, is
+  `antigravity`; `gemini` is the separate Gemini CLI. In Antigravity the result is
+  `--harness antigravity --scope user`, which writes `~/.gemini/config/{agents,skills}`.
 - **Scope**: `user` (files in the developer's home directory, available in every project) or
   `project` (files in one repository, e.g. to commit them for that repo's team). **Default `user`**,
   the organization's standard install (README "Quick start"). Use `project` only when the developer
@@ -48,7 +51,8 @@ Add `--uninstall` to remove what a previous run installed. Re-running is idempot
 ## 3. Verify (mandatory)
 
 - List what was created and confirm each path exists (the installer prints every path it wrote):
-  user scope, e.g. `ls -la ~/.claude/skills ~/.claude/agents`; project scope, e.g.
+  user scope, e.g. `ls -la ~/.gemini/config/agents ~/.gemini/config/skills` (Antigravity; then
+  `agy agents` must list the agents) or `ls -la ~/.claude/skills ~/.claude/agents`; project scope, e.g.
   `ls -la <target>/.claude/skills` and `cat <target>/.claude/agents/<agent>.md | head -20`
   (adjust per harness).
 - Project scope only: confirm `AGENTS.md` in the target contains the managed block, and if the

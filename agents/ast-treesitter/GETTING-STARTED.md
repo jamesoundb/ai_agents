@@ -27,7 +27,7 @@ a single `git pull`:
 
 ```bash
 git clone <this repo> ~/ai_agents
-~/ai_agents/install.sh --harness gemini,antigravity --scope user
+~/ai_agents/install.sh --harness antigravity --scope user   # add ,gemini only if you also use Gemini CLI
 git config --global core.excludesFile ~/.config/git/ignore
 echo '.ast-graph/' >> ~/.config/git/ignore      # the graph is a build artifact in every repo
 ```

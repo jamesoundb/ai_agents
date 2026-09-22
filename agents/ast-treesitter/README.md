@@ -80,7 +80,7 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
 
 ## Adoption checklist for a repository
 
-1. From a clone of this repo: `./install.sh --harness all --target /path/to/your/repo`
+1. From a clone of this repo: `./install.sh --harness antigravity --target /path/to/your/repo` (or your harness)
    (add `--copy` if symlinks are not an option, e.g. Windows without developer mode).
 2. Add `.ast-graph/` to the repo's `.gitignore`.
    Claude Code: the subagent runs with `permissionMode: default` and skills preloaded through a

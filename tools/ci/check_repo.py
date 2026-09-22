@@ -93,7 +93,7 @@ def check_agents_md():
     if not m:
         problems.append("AGENTS.md: managed block not found")
     elif m.group(0).strip("\n") != expected:
-        problems.append("AGENTS.md: managed block is out of date; run ./install.sh --harness all and commit AGENTS.md")
+        problems.append("AGENTS.md: managed block is out of date; run ./install.sh --harness antigravity (any harness) and commit AGENTS.md")
 
 
 def main():

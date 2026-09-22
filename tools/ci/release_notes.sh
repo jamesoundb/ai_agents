@@ -36,7 +36,7 @@ cat <<EOF
 
 \`\`\`bash
 cd ~/ai_agents && git fetch --tags && git checkout $TAG
-./install.sh --harness all --scope user
+./install.sh --harness antigravity --scope user   # same --harness as your install
 \`\`\`
 
 Go back to the latest version with \`git checkout main && git pull\`, then re-run the install.
