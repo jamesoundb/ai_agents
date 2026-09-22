@@ -70,6 +70,12 @@ Other options: `--copy` to copy instead of symlink (Windows, CI images), `--targ
 somewhere other than the current directory (the directory must already exist), `--uninstall` to
 remove.
 
+The installer never destroys work it did not create. If a skill or agent of yours already sits
+where one of ours would go, it stops and names the path instead of overwriting it; `--force`
+replaces it deliberately. Likewise `--uninstall` removes only what the installer wrote (a symlink
+into this clone, a copy it marked, or an agent file it rendered) and keeps anything else, saying
+so. Your own unrelated skills in the same folder are never touched either way.
+
 | harness | where things land (project scope) | how to invoke |
 |---|---|---|
 | Claude Code | `.claude/agents/<a>.md`, `.claude/skills/<s>/`, `CLAUDE.md` → `@AGENTS.md` | subagent auto-delegation or `/skill` |

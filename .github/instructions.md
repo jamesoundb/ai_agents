@@ -38,6 +38,15 @@ Generated, git-ignored: everything under `.claude/`, `.agents/`, `.gemini/`, `.g
 `install-agents` into target projects unless named with `--skills`. Never edit generated files;
 edit the canonical ones and re-run the installer (or the `install-agents` skill).
 
+## Install safety (ownership)
+`install.sh` only replaces or removes paths it created. Ownership is proven from the files, with no
+state stored anywhere: a skill is ours when it is a symlink resolving into the repo, or a copy
+containing `.installed-by-ai-agents`; a rendered agent is ours when it ends with the `MARKER`
+comment line, or (installs predating the marker) when its content equals what `render.py` produces
+now. A conflict aborts the run with `refusing to replace <path>`; `--force` overrides. Installs run
+a pre-flight pass (`DRY=1`) over every destination first, so a conflict cannot leave a half-written
+install. `--uninstall` keeps anything it does not own and logs `kept <path>`.
+
 ## Harness mapping (what install.sh emits)
 | harness | project scope | user scope | agent representation |
 |---|---|---|---|

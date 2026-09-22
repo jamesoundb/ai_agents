@@ -15,6 +15,7 @@
 #   --agents LIST    install only these agents (comma list)
 #   --skills LIST    install only these skills (comma list)
 #   --uninstall      remove what an install with the same options added
+#   --force          overwrite (or remove) paths this installer did not create
 #   -h, --help       show this help
 #
 # Harness layouts (project scope | user scope):
@@ -32,7 +33,7 @@ SKILLS_SRC="$REPO/skills"
 AGENTS_SRC="$REPO/agents"
 RENDER="$REPO/tools/render.py"
 
-HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""
+HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0
 
 # Print the comment header (line 2 up to the first line that is not a comment) as the help text.
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
@@ -45,6 +46,7 @@ while [ $# -gt 0 ]; do
               TARGET="$(cd "$2" && pwd)"; shift 2 ;;
     --copy) MODE="copy"; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --force) FORCE=1; shift ;;
     --agents) ONLY_AGENTS="$2"; shift 2 ;;
     --skills) ONLY_SKILLS="$2"; shift 2 ;;
     -h|--help) usage ;;
@@ -72,19 +74,87 @@ done
 
 log() { printf '  %s\n' "$*"; }
 
+# ---------------------------------------------------------------------------------------------
+# Ownership: this installer only replaces or removes paths it created itself, so a developer's own
+# skills and agents are never destroyed. Ownership is proven from the files themselves, with no
+# state kept anywhere: a skill is ours when it is a symlink into this repo or a copy carrying our
+# marker file; a rendered agent is ours when it carries the marker line (or, for installs made
+# before markers existed, when its content is exactly what we render now). --force overrides.
+MARKER="<!-- installed by ai_agents install.sh; edit the repo and re-run the installer instead -->"
+MARKER_FILE=".installed-by-ai-agents"
+
+marked_dir() {  # a copied skill directory we wrote
+  [ -d "$1" ] && [ -f "$1/$MARKER_FILE" ]
+}
+marked_file() {  # a rendered file we wrote
+  [ -f "$1" ] && grep -qxF "$MARKER" "$1" 2>/dev/null
+}
+symlink_into_repo() {
+  [ -L "$1" ] || return 1
+  case "$(readlink -f "$1" 2>/dev/null)" in "$REPO"/*) return 0 ;; *) return 1 ;; esac
+}
+ours_skill() {  # <path> to an installed skill (symlink, or copied directory)
+  symlink_into_repo "$1" || marked_dir "$1"
+}
+ours_agent() {  # <renderer> <agent> <file> [prefix]
+  marked_file "$3" && return 0
+  [ -f "$3" ] || return 1
+  { python3 "$RENDER" "$1" "$AGENTS_SRC/$2/AGENT.md" ${4:+"$4"} 2>/dev/null; } | cmp -s - "$3"
+}
+refuse() {
+  echo "refusing to replace $1" >&2
+  echo "  it was not installed by this tool, so overwriting it could destroy your own work." >&2
+  echo "  move it aside, or re-run with --force to replace it." >&2
+  exit 1
+}
+guard_skill() {  # stop before replacing a skill path we did not create
+  { [ -e "$1" ] || [ -L "$1" ]; } || return 0
+  ours_skill "$1" && return 0
+  [ "$FORCE" = 1 ] && { log "force  replacing $1 (not installed by this tool)"; return 0; }
+  refuse "$1"
+}
+guard_agent() {  # <renderer> <agent> <file> [prefix]
+  { [ -e "$3" ] || [ -L "$3" ]; } || return 0
+  ours_agent "$1" "$2" "$3" ${4:+"$4"} && return 0
+  [ "$FORCE" = 1 ] && { log "force  replacing $3 (not installed by this tool)"; return 0; }
+  refuse "$3"
+}
+DRY=0   # 1 = check destinations only, write nothing (pre-flight pass)
+
 place_skill() {  # place_skill <skill> <dest_dir>
   local s="$1" dest="$2/$1"
   mkdir -p "$2"
+  guard_skill "$dest"
+  [ "$DRY" = 1 ] && return 0
   rm -rf "$dest"
-  if [ "$MODE" = "copy" ]; then cp -R "$SKILLS_SRC/$s" "$dest"; else ln -s "$SKILLS_SRC/$s" "$dest"; fi
+  if [ "$MODE" = "copy" ]; then
+    cp -R "$SKILLS_SRC/$s" "$dest"
+    printf '%s\n' "$REPO" > "$dest/$MARKER_FILE"   # proves we wrote this copy
+  else
+    ln -s "$SKILLS_SRC/$s" "$dest"
+  fi
   log "skill  $dest  <- $( [ "$MODE" = copy ] && echo copy || echo symlink )"
 }
 
-remove_path() { [ -e "$1" ] || [ -L "$1" ] || return 0; rm -rf "$1"; log "removed $1"; }
+remove_path() {  # remove an installed skill; anything we did not create is left alone
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  if ours_skill "$1" || [ "$FORCE" = 1 ]; then rm -rf "$1"; log "removed $1"
+  else log "kept   $1 (not installed by this tool)"; fi
+}
+
+remove_agent() {  # remove_agent <renderer> <agent> <path> [prefix]; <path> is the rendered file or
+  # the directory holding it (Antigravity). Only a file we wrote is removed.
+  local file="$3"
+  case "$3" in *.md) ;; *) file="$3/agent.md" ;; esac
+  if ours_agent "$1" "$2" "$file" ${4:+"$4"} || [ "$FORCE" = 1 ]; then rm -rf "$3"; log "removed $3"
+  else log "kept   $3 (not installed by this tool)"; fi
+}
 
 write_rendered() {  # write_rendered <renderer> <agent> <out_file> [extra renderer arg]
   mkdir -p "$(dirname "$3")"
-  python3 "$RENDER" "$1" "$AGENTS_SRC/$2/AGENT.md" ${4:+"$4"} > "$3"
+  guard_agent "$1" "$2" "$3" ${4:+"$4"}
+  [ "$DRY" = 1 ] && return 0
+  { python3 "$RENDER" "$1" "$AGENTS_SRC/$2/AGENT.md" ${4:+"$4"}; printf '%s\n' "$MARKER"; } > "$3"
   log "agent  $3  <- rendered ($1)"
 }
 
@@ -144,64 +214,72 @@ remove_empty_dirs() {  # remove_empty_dirs <dir>...  (leave no empty harness fol
   for d in "$@"; do [ -d "$d" ] && [ -z "$(ls -A "$d" 2>/dev/null)" ] && rmdir "$d" 2>/dev/null && log "removed empty $d"; done; return 0
 }
 
-for h in ${HARNESSES//,/ }; do
-  echo "[$h] scope=$SCOPE target=$TARGET"
-  case "$h" in
-    claude)
-      if [ "$SCOPE" = user ]; then SK="$HOME/.claude/skills"; AG="$HOME/.claude/agents"; else SK="$TARGET/.claude/skills"; AG="$TARGET/.claude/agents"; fi
-      if [ $UNINSTALL = 1 ]; then
-        for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$AG/$a.md"; done
-        [ "$SCOPE" = project ] && remove_import "$TARGET/CLAUDE.md" "@AGENTS.md"
-        remove_empty_dirs "$SK" "$AG" "$(dirname "$SK")"
-      else
-        for s in $SKILLS; do place_skill "$s" "$SK"; done
-        for a in $AGENTS; do write_rendered claude "$a" "$AG/$a.md"; done
-        [ "$SCOPE" = project ] && ensure_import "$TARGET/CLAUDE.md" "@AGENTS.md"
-      fi ;;
-    codex)
-      if [ "$SCOPE" = user ]; then SK="$HOME/.agents/skills"; else SK="$TARGET/.agents/skills"; fi
-      if [ $UNINSTALL = 1 ]; then
-        for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$SK/$a"; done
-        remove_empty_dirs ${AG:+"$AG"} "$SK" "$(dirname "$SK")"
-      else
-        for s in $SKILLS; do place_skill "$s" "$SK"; done
-        for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
-      fi ;;
-    antigravity)
-      # Native custom agents: .agents/agents/<a>/agent.md; `skills:` entries are paths to the
-      # installed skill folders (workspace-relative for project scope, absolute for user scope).
-      if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/config/skills"; AG="$HOME/.gemini/config/agents"; PREFIX="$SK"
-      else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi
-      if [ $UNINSTALL = 1 ]; then
-        for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$AG/$a"; done
-        remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
-      else
-        for s in $SKILLS; do place_skill "$s" "$SK"; done
-        for a in $AGENTS; do write_rendered antigravity "$a" "$AG/$a/agent.md" "$PREFIX"; done
-      fi ;;
-    gemini)
-      if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi
-      if [ $UNINSTALL = 1 ]; then
-        for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$SK/$a"; done
-        [ "$SCOPE" = project ] && remove_import "$TARGET/GEMINI.md" "@AGENTS.md"
-        remove_empty_dirs "$SK" "$(dirname "$SK")"
-      else
-        for s in $SKILLS; do place_skill "$s" "$SK"; done
-        for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
-        [ "$SCOPE" = project ] && ensure_import "$TARGET/GEMINI.md" "@AGENTS.md"
-      fi ;;
-    copilot)
-      if [ "$SCOPE" = user ]; then SK="$HOME/.copilot/skills"; AG="$HOME/.copilot/agents"; else SK="$TARGET/.github/skills"; AG="$TARGET/.github/agents"; fi
-      if [ $UNINSTALL = 1 ]; then
-        for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_path "$AG/$a.agent.md"; done
-        remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
-      else
-        for s in $SKILLS; do place_skill "$s" "$SK"; done
-        for a in $AGENTS; do write_rendered copilot "$a" "$AG/$a.agent.md"; done
-      fi ;;
-    *) echo "unknown harness: $h" >&2; exit 1 ;;
-  esac
-done
+run_harnesses() {
+  for h in ${HARNESSES//,/ }; do
+    echo "[$h] scope=$SCOPE target=$TARGET"
+    case "$h" in
+      claude)
+        if [ "$SCOPE" = user ]; then SK="$HOME/.claude/skills"; AG="$HOME/.claude/agents"; else SK="$TARGET/.claude/skills"; AG="$TARGET/.claude/agents"; fi
+        if [ $UNINSTALL = 1 ]; then
+          for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent claude "$a" "$AG/$a.md"; done
+          [ "$SCOPE" = project ] && remove_import "$TARGET/CLAUDE.md" "@AGENTS.md"
+          remove_empty_dirs "$SK" "$AG" "$(dirname "$SK")"
+        else
+          for s in $SKILLS; do place_skill "$s" "$SK"; done
+          for a in $AGENTS; do write_rendered claude "$a" "$AG/$a.md"; done
+          [ "$SCOPE" = project ] && ensure_import "$TARGET/CLAUDE.md" "@AGENTS.md"
+        fi ;;
+      codex)
+        if [ "$SCOPE" = user ]; then SK="$HOME/.agents/skills"; else SK="$TARGET/.agents/skills"; fi
+        if [ $UNINSTALL = 1 ]; then
+          for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true; done
+          remove_empty_dirs ${AG:+"$AG"} "$SK" "$(dirname "$SK")"
+        else
+          for s in $SKILLS; do place_skill "$s" "$SK"; done
+          for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
+        fi ;;
+      antigravity)
+        # Native custom agents: .agents/agents/<a>/agent.md; `skills:` entries are paths to the
+        # installed skill folders (workspace-relative for project scope, absolute for user scope).
+        if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/config/skills"; AG="$HOME/.gemini/config/agents"; PREFIX="$SK"
+        else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi
+        if [ $UNINSTALL = 1 ]; then
+          for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent antigravity "$a" "$AG/$a" "$PREFIX"; done
+          remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
+        else
+          for s in $SKILLS; do place_skill "$s" "$SK"; done
+          for a in $AGENTS; do write_rendered antigravity "$a" "$AG/$a/agent.md" "$PREFIX"; done
+        fi ;;
+      gemini)
+        if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi
+        if [ $UNINSTALL = 1 ]; then
+          for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true; done
+          [ "$SCOPE" = project ] && remove_import "$TARGET/GEMINI.md" "@AGENTS.md"
+          remove_empty_dirs "$SK" "$(dirname "$SK")"
+        else
+          for s in $SKILLS; do place_skill "$s" "$SK"; done
+          for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
+          [ "$SCOPE" = project ] && ensure_import "$TARGET/GEMINI.md" "@AGENTS.md"
+        fi ;;
+      copilot)
+        if [ "$SCOPE" = user ]; then SK="$HOME/.copilot/skills"; AG="$HOME/.copilot/agents"; else SK="$TARGET/.github/skills"; AG="$TARGET/.github/agents"; fi
+        if [ $UNINSTALL = 1 ]; then
+          for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent copilot "$a" "$AG/$a.agent.md"; done
+          remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
+        else
+          for s in $SKILLS; do place_skill "$s" "$SK"; done
+          for a in $AGENTS; do write_rendered copilot "$a" "$AG/$a.agent.md"; done
+        fi ;;
+      *) echo "unknown harness: $h" >&2; exit 1 ;;
+    esac
+  done
+  return 0   # the last branch may end on a false test (e.g. [ "$SCOPE" = project ]); that is not a failure
+}
+
+# Pre-flight: check every destination before writing anything, so a clash cannot leave a
+# half-finished install behind.
+if [ $UNINSTALL = 0 ]; then DRY=1; run_harnesses > /dev/null; DRY=0; fi
+run_harnesses
 
 if [ "$SCOPE" = project ]; then
   if [ $UNINSTALL = 1 ]; then remove_agents_md_block; else update_agents_md; fi

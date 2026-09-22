@@ -68,6 +68,28 @@ check "HOME/.gemini/config/agents = $N_AGENTS"   test "$(count "$FAKE_HOME/.gemi
 check "no AGENTS.md written into HOME"        test ! -e "$FAKE_HOME/AGENTS.md"
 check "rendered agents are non-empty"         test -s "$FAKE_HOME/.claude/agents/terraform.md"
 
+echo "== a developer's own files are never destroyed =="
+OWN="$WORK/own"
+mkdir -p "$OWN/.claude/skills/code-graph" "$OWN/.claude/agents"
+echo "THEIRS" > "$OWN/.claude/skills/code-graph/SKILL.md"
+echo "THEIRS" > "$OWN/.claude/agents/terraform.md"
+HOME="$OWN" "$REPO/install.sh" --harness claude --scope user > "$WORK/clash.log" 2>&1 && clash_rc=0 || clash_rc=$?
+check "install refuses to replace a foreign skill"  test "$clash_rc" -ne 0
+check "the refusal explains itself"                 grep -q 'refusing to replace' "$WORK/clash.log"
+check "their skill is untouched"                    grep -qx THEIRS "$OWN/.claude/skills/code-graph/SKILL.md"
+check "their agent is untouched"                    grep -qx THEIRS "$OWN/.claude/agents/terraform.md"
+check "nothing was written before the refusal"      test "$(count "$OWN/.claude/skills")" -eq 1
+HOME="$OWN" "$REPO/install.sh" --harness claude --scope user --force > "$WORK/force.log" 2>&1
+check "--force replaces it"                         test -L "$OWN/.claude/skills/code-graph"
+check "rendered agents carry the ownership marker"  grep -q 'installed by ai_agents install.sh' "$OWN/.claude/agents/terraform.md"
+# put a foreign directory back where an installed skill was: uninstall must leave it alone
+rm -rf "$OWN/.claude/skills/code-graph"; mkdir -p "$OWN/.claude/skills/code-graph"
+echo "THEIRS" > "$OWN/.claude/skills/code-graph/SKILL.md"
+HOME="$OWN" "$REPO/install.sh" --harness claude --scope user --uninstall > "$WORK/unin.log" 2>&1
+check "uninstall keeps a foreign path"              grep -qx THEIRS "$OWN/.claude/skills/code-graph/SKILL.md"
+check "uninstall says what it kept"                 grep -q 'kept .*not installed by this tool' "$WORK/unin.log"
+check "uninstall removed its own skills"            test "$(count "$OWN/.claude/skills")" -eq 1
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then
