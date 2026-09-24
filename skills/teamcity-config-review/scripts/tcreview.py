@@ -80,7 +80,6 @@ def kotlin_blocks(text):
 
 
 def review_kotlin(path, text, rep):
-    P = rep.policy
     seen_any = False
     for name, kind, body, pos in kotlin_blocks(text):
         seen_any = True

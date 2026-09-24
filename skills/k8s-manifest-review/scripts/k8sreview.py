@@ -108,7 +108,6 @@ def review_doc(doc, file, line, rep, is_build):
     ps = pod_spec_of(doc)
     if ps is None:
         return
-    containers = (ps.get("containers") or []) + (ps.get("initContainers") or [])
     tier_name = labels.get(P["tier_label"]) or P["default_tier"]
     tier = P["tiers"].get(tier_name)
     total_cpu, total_mem = 0.0, 0.0
@@ -193,7 +192,7 @@ def review_text(text, file, rep, is_build):
         rep.add("COR000", "high", file, 1, "-", f"YAML parse error: {e}", "fix the YAML; if this is a Helm template, render it first (helm template)")
         return 0
     count = 0
-    for doc, line in zip(docs, lines):
+    for doc, line in zip(docs, lines, strict=False):
         if isinstance(doc, dict) and doc.get("kind") == "List":
             for it in doc.get("items") or []:
                 review_doc(it, file, line, rep, is_build)

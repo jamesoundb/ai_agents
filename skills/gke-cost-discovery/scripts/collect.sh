@@ -45,7 +45,11 @@ if have kubectl; then
     "${K[@]}" get pdb -A -o json > "$OUT/pdb.json" 2>/dev/null && ok "pdb.json"
     "${K[@]}" get resourcequota,limitrange -A -o json > "$OUT/quotas.json" 2>/dev/null && ok "quotas.json"
     "${K[@]}" get events -A -o json > "$OUT/events.json" 2>/dev/null && ok "events.json"
-    "${K[@]}" top pods -A --containers --no-headers > "$OUT/top.txt" 2>/dev/null && ok "top.txt (point-in-time usage)" || note "top" "metrics-server not available"
+    if "${K[@]}" top pods -A --containers --no-headers > "$OUT/top.txt" 2>/dev/null; then
+      ok "top.txt (point-in-time usage)"
+    else
+      note "top" "metrics-server not available"
+    fi
   else
     rm -f "$OUT/nodes.json"; note "kubectl" "kubectl context '$CTX' unreachable or unset (run: gcloud container clusters get-credentials ...)"
   fi
@@ -57,9 +61,11 @@ fi
 if have gcloud && have curl && [ -n "${GCP_PROJECT:-}" ] && [ -n "${GKE_CLUSTER:-}" ]; then
   TOKEN="$(timeout 60 gcloud auth print-access-token 2>/dev/null)"
   if [ -n "$TOKEN" ]; then
-    END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; START="$(date -u -d "-${DAYS} days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-${DAYS}d +%Y-%m-%dT%H:%M:%SZ)"
+    END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; START="$(date -u -d "-${DAYS} days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-"${DAYS}"d +%Y-%m-%dT%H:%M:%SZ)"
     ts() {  # ts <name> <metric> <aligner> <reducer> <groupby>
-      local name="$1" metric="$2" aligner="$3" reducer="$4" group="$5" page="" first=1
+      local name="$1" metric="$2" aligner="$3" reducer="$4" group="$5" page="" g
+      local -a gflags=()
+      for g in ${group//,/ }; do gflags+=(--data-urlencode "aggregation.groupByFields=$g"); done
       : > "$OUT/ts_$name.json"
       while :; do
         resp="$(timeout 120 curl -sS -G "https://monitoring.googleapis.com/v3/projects/$GCP_PROJECT/timeSeries" \
@@ -68,7 +74,7 @@ if have gcloud && have curl && [ -n "${GCP_PROJECT:-}" ] && [ -n "${GKE_CLUSTER:
           --data-urlencode "interval.startTime=$START" --data-urlencode "interval.endTime=$END" \
           --data-urlencode "aggregation.alignmentPeriod=3600s" --data-urlencode "aggregation.perSeriesAligner=$aligner" \
           --data-urlencode "aggregation.crossSeriesReducer=$reducer" \
-          $(for g in ${group//,/ }; do printf -- '--data-urlencode aggregation.groupByFields=%s ' "$g"; done) \
+          "${gflags[@]}" \
           ${page:+--data-urlencode "pageToken=$page"})"
         printf '%s\n' "$resp" >> "$OUT/ts_$name.json"
         page="$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("nextPageToken",""))' 2>/dev/null)"
@@ -100,7 +106,7 @@ fi
 
 # ---- TeamCity REST -------------------------------------------------------------------------------
 if have curl && [ -n "${TEAMCITY_URL:-}" ] && [ -n "${TEAMCITY_TOKEN:-}" ]; then
-  SINCE="$(date -u -d "-${DAYS} days" +%Y%m%dT%H%M%S%z 2>/dev/null || date -u -v-${DAYS}d +%Y%m%dT%H%M%S%z)"
+  SINCE="$(date -u -d "-${DAYS} days" +%Y%m%dT%H%M%S%z 2>/dev/null || date -u -v-"${DAYS}"d +%Y%m%dT%H%M%S%z)"
   H=(-H "Authorization: Bearer $TEAMCITY_TOKEN" -H "Accept: application/json")
   if timeout 120 curl -sS "${H[@]}" "$TEAMCITY_URL/app/rest/builds?locator=sinceDate:${SINCE},state:finished,count:5000&fields=count,build(id,buildTypeId,status,queuedDate,startDate,finishDate,agent(name))" > "$OUT/teamcity_builds.json"; then
     ok "teamcity_builds.json"
@@ -111,4 +117,8 @@ else
   note "teamcity" "needs TEAMCITY_URL and TEAMCITY_TOKEN (read-only token)"
 fi
 echo "done: $OUT"
-ls "$OUT" | grep -c '^MISSING-' | xargs -I{} echo "{} input(s) still missing; run analyze.py for the report anyway"
+missing=0
+for f in "$OUT"/MISSING-*; do [ -e "$f" ] && missing=$((missing + 1)); done
+if [ "$missing" -gt 0 ]; then
+  echo "$missing input(s) still missing; run analyze.py for the report anyway"
+fi

@@ -66,7 +66,7 @@ class Graph:
 
 def test_resolution(root):
     print("# receiver-aware resolution")
-    out = build(root, "--full")
+    build(root, "--full")
     G = Graph(load(root))
     langs = G.g["stats"]["languages"]
     for lang in ("go", "python", "javascript", "typescript", "java", "rust", "kotlin", "hcl", "yaml"):
@@ -402,7 +402,7 @@ def test_resolution(root):
     small = run("query", "--graph", gp, "trace-deps", "PaymentRequest", "--max-rows", "1")
     check("exceed --max-rows 1" in small and "| Directory |" in small, "trace-deps degrades to summary above --max-rows")
     card = run("query", "--graph", gp, "symbol", "Repo.save" if False else "models.py:Repo.save", "--limit", "1")
-    check("showing 1" in card and "more" in card, f"symbol --limit caps the card and summarises the rest")
+    check("showing 1" in card and "more" in card, "symbol --limit caps the card and summarises the rest")
     full = run("query", "--graph", gp, "symbol", "models.py:Repo.save", "--all")
     check("showing" not in full, "symbol --all removes caps")
     for target in ("handler.go:Handler", "store.rs:Store", "payment.ts:Gateway", "PaymentOrchestrator.java:PaymentOrchestrator", "models.py:Repo"):

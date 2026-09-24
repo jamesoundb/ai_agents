@@ -164,7 +164,7 @@ KOTLIN_STDLIB_MEMBERS = {"apply", "let", "also", "run", "with", "takeIf", "takeU
                          "removeIf", "addAll", "removeAll", "add", "remove", "put", "clear", "get", "set", "invoke",
                          "collect", "emit", "launch", "async", "await", "cancel", "use", "lines", "format", "chunked",
                          "windowed", "fold", "reduce", "onEach", "partition", "withIndex", "asSequence", "asIterable",
-                         "coerceAtLeast", "coerceAtMost", "coerceIn", "ifEmpty", "ifBlank", "also", "print", "println"}
+                         "coerceAtLeast", "coerceAtMost", "coerceIn", "ifEmpty", "ifBlank", "print", "println"}
 
 LANG_FAMILY = {"python": "py", "javascript": "js", "typescript": "js", "tsx": "js", "go": "go", "java": "jvm",
                "kotlin": "jvm", "rust": "rust", "hcl": "hcl", "yaml": "yaml"}
@@ -268,7 +268,7 @@ class Ctx:
         """`x = a.b(...)`: remember the callee so the linker can type x from the callee's return type.
         The receiver root's declared type (if in scope) rides along, since scope is gone at link time."""
         expr = expr.strip()
-        root = re.split(r"[.(:]", expr, 1)[0].strip()
+        root = re.split(r"[.(:]", expr, maxsplit=1)[0].strip()
         root_type = self.lookup(root) if root and not root[0].isupper() else None
         if self.scopes and name:
             self.scopes[-1][name] = ("<call?>" if unwrap else "<call>") + expr + "|" + (root_type or "")
@@ -377,7 +377,7 @@ class Ctx:
                             t = ctext.split("(", 1)[0].strip()   # `Order("2")`: a constructor call
                         elif c.type in ("call", "call_expression", "method_invocation") and "(" in ctext:
                             callee = ctext.split("(", 1)[0].strip()
-                            root = re.split(r"[.(:]", callee, 1)[0].strip()
+                            root = re.split(r"[.(:]", callee, maxsplit=1)[0].strip()
                             root_type = self.lookup(root) if root and not root[0].isupper() else None
                             t = "<call>" + callee + "|" + (root_type or "")
                         elif c.type in ("attribute", "member_expression", "field_access", "field_expression", "navigation_expression", "selector_expression") \
@@ -1069,7 +1069,7 @@ def go_short_var(ctx, n):
         return False
     names = [ctx.text(c) for c in left.named_children if c.type == "identifier"]
     vals = list(right.named_children)
-    for nm, v in zip(names, vals):
+    for nm, v in zip(names, vals, strict=False):
         if v.type == "unary_expression" and v.named_children:
             v = v.named_children[0]
         if v.type == "composite_literal" and v.child_by_field_name("type") is not None:
@@ -1527,7 +1527,6 @@ def kt_class(ctx, n):
     kw = [c.type for c in n.children if not c.is_named]
     kind = "interface" if "interface" in kw else "enum" if "enum" in kw else "class"
     tp = next((c for c in n.named_children if c.type == "type_parameters"), None)
-    mods = " ".join(ctx.text(m) for m in n.named_children if m.type == "modifiers" and ctx.text(m) in ("data", "sealed", "abstract", "open", "enum", "annotation", "value", "inner"))
     sig = f"{kind if kind != 'enum' else 'enum class'} {name}{ctx.text(tp) if tp is not None else ''}"
     node = ctx.add_node(kind, name, n, signature=sig, annotations=kt_annotations(ctx, n))
     ctx.push(node)
@@ -2587,7 +2586,7 @@ def load_graph(path):
 def terraform_module_map(root_dir):
     """Map module keys -> directories from every .terraform/modules/modules.json found."""
     out = {}
-    for dirpath, dirnames, filenames in os.walk(root_dir):
+    for dirpath, dirnames, _filenames in os.walk(root_dir):
         dirnames[:] = [d for d in dirnames if d not in (DEFAULT_EXCLUDE_DIRS - {".terraform"})]
         if os.path.basename(dirpath) == ".terraform":
             mj = os.path.join(dirpath, "modules", "modules.json")
@@ -3452,7 +3451,7 @@ def link_graph(root_dir, files, tf_modules):
         return n if n is not None and n["kind"] in CONTAINER_KINDS else None
 
     overload_stub = set()   # ids of @overload-annotated definitions that have a real implementation in their file
-    for name_, group in by_name.items():
+    for _name, group in by_name.items():
         stubs = [c for c in group if c["kind"] in ("function", "method") and any(a.split(".")[-1].startswith("overload") for a in c.get("annotations", []))]
         for st in stubs:
             if any(c is not st and c["kind"] == st["kind"] and c["file"] == st["file"] and c.get("parent") == st.get("parent")
@@ -3986,7 +3985,7 @@ def link_graph(root_dir, files, tf_modules):
                     if m:
                         out.setdefault(m.group(1), m.group(2).strip())
                     else:
-                        out.setdefault(re.split(r"[\s:=]", it, 1)[0], None)
+                        out.setdefault(re.split(r"[\s:=]", it, maxsplit=1)[0], None)
             w = re.search(r"\bwhere\b(.*)$", txt)
             if w:
                 for it in w.group(1).split(","):
@@ -4709,7 +4708,7 @@ def ensure_one(g, query, kinds=None):
     matches = g.resolve(query, kinds)
     if not matches:
         bare = re.split(r"[.:/]", query.strip())[-1] or query
-        sys.exit(f"no symbol or file matches '{query}'. Try: query find {bare}" + (f" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
+        sys.exit(f"no symbol or file matches '{query}'. Try: query find {bare}" + (" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
     if len(matches) > 1 and not all(m["id"] == matches[0]["id"] for m in matches):
         qn = query.split(":", 1)[1] if ":" in query and "::" not in query else query
         exact = [m for m in matches if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower() or m["file"] == query]
@@ -5001,7 +5000,7 @@ def q_callers(g, args, direction="in"):
     per_file = defaultdict(lambda: {"level": 99, "rows": 0})
     per_sym = defaultdict(lambda: [0, 99, None])
     mix = defaultdict(int)
-    for a, e, b, lvl in hops:
+    for _a, e, b, lvl in hops:
         other = g.nodes[b]
         f = other["file"] or other["name"]
         per_file[f]["level"] = min(per_file[f]["level"], lvl)
@@ -5118,7 +5117,7 @@ def q_trace_deps(g, args):
             print(f"| ... {len(by_dir) - args.top} more directories | | | |")
         sym_rows = defaultdict(lambda: [0, 99, None])
         for i in per_file.values():
-            for lvl, dep, e, tgt in i["items"]:
+            for lvl, dep, _e, _tgt in i["items"]:
                 r = sym_rows[dep["id"]]
                 r[0] += 1
                 r[1] = min(r[1], lvl)
@@ -5129,7 +5128,7 @@ def q_trace_deps(g, args):
             print(f"  {cnt:4d}  hop {lvl}  {dep['qname']}  (defined at {dep['file']}:{dep['line']})")
         mix = defaultdict(int)
         for i in per_file.values():
-            for lvl, dep, e, tgt in i["items"]:
+            for _lvl, _dep, e, _tgt in i["items"]:
                 mix[(e["type"], e["confidence"])] += 1
         print("Relationship mix: " + ", ".join(f"{t}/{c}={v}" for (t, c), v in sorted(mix.items(), key=lambda kv: -kv[1])))
     print()

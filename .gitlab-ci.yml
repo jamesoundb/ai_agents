@@ -67,9 +67,10 @@ lint-advisory:
   allow_failure: true                     # reported on the MR, never blocks; tighten over time
   script:
     - rc=0
-    # E501 (line length) is excluded on purpose: the repo writes long lines deliberately, and 800+
-    # style findings would keep this job permanently yellow, which trains everyone to ignore it.
-    - ruff check --isolated --select E,F,W,B --ignore E501 --exclude skills/code-graph/tests/fixture --statistics . || rc=1
+    # Excluded on purpose, all deliberate style in this repo, and 900+ findings would keep the job
+    # permanently yellow (which trains everyone to ignore it): E501 long lines, E702 compact
+    # semicolon lines (argparse tables), E741 short names like `l` for label/line.
+    - ruff check --isolated --select E,F,W,B --ignore E501,E702,E741 --exclude skills/code-graph/tests/fixture --statistics . || rc=1
     - shellcheck $(git ls-files '*.sh') || rc=1
     - exit $rc
 

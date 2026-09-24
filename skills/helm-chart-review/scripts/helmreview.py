@@ -148,7 +148,7 @@ def review_chart(chart_dir, rep, values_glob):
             rep.add("HV003", "medium", vf, 1, name, "values.yaml sets no resources.requests defaults", "give every chart a small, explicit default; environments override upward")
         secrets = []
         walk_secrets(vals, "", secrets)
-        for p, v in secrets:
+        for p, _v in secrets:
             rep.add("HV004", "critical", vf, 1, name, f"secret-looking value in values.yaml: {p}", "use existingSecret/external-secrets; never commit secrets in values")
     return name, vals
 
@@ -173,7 +173,7 @@ def review_values_files(chart_dir, base_vals, rep, values_glob, name):
         layers[os.path.basename(f)] = merged
         secrets = []
         walk_secrets(v, "", secrets)
-        for p, val in secrets:
+        for p, _val in secrets:
             rep.add("HV004", "critical", f, 1, name, f"secret-looking value in {os.path.basename(f)}: {p}", "move to a Secret managed outside Git (external-secrets, sealed-secrets, Secret Manager)")
         for key in flatten(v):
             top = key.split(".")[0]
@@ -203,7 +203,7 @@ def review_gitops(paths, rep, chart_dir):
         except Exception as e:  # noqa: BLE001
             rep.add("HG000", "high", f, 1, "-", f"YAML parse error: {e}", None)
             continue
-        for doc, line in zip(docs, lines):
+        for doc, line in zip(docs, lines, strict=False):
             if not isinstance(doc, dict):
                 continue
             kind, api = doc.get("kind"), str(doc.get("apiVersion", ""))
@@ -286,7 +286,8 @@ def tools(chart_dir, rep, env_values, name):
         rc, out, stdout = run(cmd)
         if rc != 0 and "missing in charts/ directory" in out:
             # subcharts not fetched (no network / no Chart.lock): render the parent chart alone
-            import shutil as _sh, tempfile
+            import shutil as _sh
+            import tempfile
             tmp = tempfile.mkdtemp(prefix="helmreview-")
             render_dir = os.path.join(tmp, os.path.basename(chart_dir))
             _sh.copytree(chart_dir, render_dir)

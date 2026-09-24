@@ -62,9 +62,9 @@ esac
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 
 # Which agents/skills to install: explicit lists or everything in the repo.
-if [ -n "$ONLY_AGENTS" ]; then AGENTS="${ONLY_AGENTS//,/ }"; else AGENTS="$(ls "$AGENTS_SRC" | tr "\n" " ")"; fi
+if [ -n "$ONLY_AGENTS" ]; then AGENTS="${ONLY_AGENTS//,/ }"; else AGENTS="$(for d in "$AGENTS_SRC"/*/; do basename "$d"; done | tr "\n" " ")"; fi
 # install-agents is the bootstrap skill of this repo; it is only installed when named explicitly.
-if [ -n "$ONLY_SKILLS" ]; then SKILLS="${ONLY_SKILLS//,/ }"; else SKILLS="$(ls "$SKILLS_SRC" | grep -v '^install-agents$' | tr "\n" " ")"; fi
+if [ -n "$ONLY_SKILLS" ]; then SKILLS="${ONLY_SKILLS//,/ }"; else SKILLS="$(for d in "$SKILLS_SRC"/*/; do n="$(basename "$d")"; [ "$n" = install-agents ] || printf '%s ' "$n"; done)"; fi
 # Agents declare the skills they need; make sure those are included.
 for a in $AGENTS; do
   for s in $(sed -n 's/^skills: *\[\(.*\)\]/\1/p' "$AGENTS_SRC/$a/AGENT.md" | tr ',' ' '); do

@@ -185,7 +185,8 @@ def check_directory(dir_path, abs_dir, files, rep):
     providers = [b for fn, b in all_blocks if b.type == "provider"]
     backends = [bb for b in tf_blocks for bb in b.find("backend")]
     is_root = bool(providers or backends or any(fn.endswith(".tfvars") for fn in files) or "backend.tf" in files)
-    rel = lambda fn: fn if dir_path == "." else os.path.join(dir_path, fn)
+    def rel(fn):
+        return fn if dir_path == "." else os.path.join(dir_path, fn)
 
     if is_root:
         if not backends:
