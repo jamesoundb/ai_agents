@@ -217,7 +217,8 @@ so the same check runs on a laptop.
 - `check` stage: `repo-checks` (`check_repo.py`: Agent Skills name/description rules, name == folder,
   agent `skills:`/`tools:` references, AGENTS.md managed block equals `render.py agents-md`),
   `lint` (blocking: ruff `E9,F63,F7,F82`, `shellcheck --severity=error`), `lint-advisory`
-  (`allow_failure`: ruff `E,F,W,B`, full shellcheck). Lint tool versions are pinned.
+  (`allow_failure`: ruff `E,F,W,B` minus `E501` (line length: deliberate style here, and 800+ findings
+  would make the job permanently yellow), full shellcheck). Lint tool versions are pinned.
 - `test` stage: `engine-tests` (`run_tests.sh`), `install-check` (project scope into a temp repo +
   uninstall must leave it clean; user scope into a temp `HOME`; expected counts derived from
   `agents/` and `skills/`), `smoke` (every skill script `--help`; code-graph skeleton;
