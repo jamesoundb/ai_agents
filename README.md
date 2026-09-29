@@ -170,6 +170,7 @@ before merging. Every job is a script, so you can run the same checks before you
 
 ```bash
 python3 tools/ci/check_repo.py          # frontmatter, agent->skill references, AGENTS.md in sync
+python3 evals/validate.py               # eval cases are structurally valid (the pipeline runs this too)
 tools/ci/install_check.sh               # project + user scope installs into temp dirs, then uninstall
 skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
