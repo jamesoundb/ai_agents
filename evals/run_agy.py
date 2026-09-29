@@ -61,7 +61,33 @@ def load_frontmatter(path):
 
 
 # ---------------------------------------------------------------- running one turn
-def run_case_once(case_dir, fm, prompt, timeout, keep):
+def isolated_home(base):
+    """A HOME with the installed skills and credentials but WITHOUT the operator's GEMINI.md.
+
+    Antigravity loads `~/.gemini/GEMINI.md` into every session, so an eval run measures the
+    operator's personal instructions as much as the skills. That is not hypothetical: two graders
+    in this suite failed on it -- one on the "confirm you have read these instructions" preamble
+    and the resulting `.github/instructions.md` writes, one on "verifying your results empirically
+    is also mandatory", which inflated the tool count on a two-line file.
+
+    Everything else under ~/.gemini is symlinked, so credentials and config still work; only the
+    instruction file is left out. Verified: `agy agents` lists all five agents under this HOME.
+    """
+    home = os.path.join(base, "home")
+    gem = os.path.join(home, ".gemini")
+    os.makedirs(gem, exist_ok=True)
+    real = os.path.expanduser("~/.gemini")
+    if os.path.isdir(real):
+        for entry in os.listdir(real):
+            if entry == "GEMINI.md":
+                continue          # the whole point
+            src, dst = os.path.join(real, entry), os.path.join(gem, entry)
+            if not os.path.exists(dst):
+                os.symlink(src, dst)
+    return home
+
+
+def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
     """Set up a throwaway workspace, run one agy turn in it, return the parsed trace."""
     ws = tempfile.mkdtemp(prefix="agyeval-")
     cfg = {}
@@ -90,9 +116,13 @@ def run_case_once(case_dir, fm, prompt, timeout, keep):
            "--print-timeout", f"{timeout}s", f"--print={prompt}"]
     if fm.get("model"):
         cmd += ["--model", fm["model"]]
+    env = dict(os.environ)
+    if isolate:
+        env["HOME"] = isolated_home(ws)
     started = time.time()
     try:
-        proc = subprocess.run(cmd, cwd=ws, capture_output=True, text=True, timeout=timeout + 120)
+        proc = subprocess.run(cmd, cwd=ws, capture_output=True, text=True, timeout=timeout + 120,
+                              env=env)
     except subprocess.TimeoutExpired:
         if not keep:
             shutil.rmtree(ws, ignore_errors=True)
@@ -275,6 +305,9 @@ def main():
     ap.add_argument("--timeout", type=int, default=420, help="per-turn seconds (default 420)")
     ap.add_argument("--no-judge", action="store_true", help="skip llm graders instead of spending a judge call")
     ap.add_argument("--keep-temp", action="store_true", help="leave workspaces on disk for inspection")
+    ap.add_argument("--use-global-context", action="store_true",
+                    help="load the operator's ~/.gemini/GEMINI.md too (default: isolated, so the "
+                         "run measures the skills rather than personal instructions)")
     ap.add_argument("--json", dest="json_out", help="write structured results here")
     args = ap.parse_args()
 
@@ -292,9 +325,10 @@ def main():
         return 1
 
     gemini_md = os.path.expanduser("~/.gemini/GEMINI.md")
-    if os.path.exists(gemini_md):
-        print(f"note: {gemini_md} is in effect; personal global instructions add behavior "
-              f"(extra files, preambles) that is not attributable to the skills under test.\n")
+    if os.path.exists(gemini_md) and args.use_global_context:
+        print(f"note: --use-global-context is set, so {gemini_md} is loaded. Personal instructions "
+              f"add behaviour (preambles, extra files, extra verification steps) that is not "
+              f"attributable to the skills under test.\n")
 
     report, failed = {"cases": []}, 0
     for case in cases:
@@ -310,7 +344,8 @@ def main():
         crec = {"name": case, "runs": []}
 
         for i in range(1, runs + 1):
-            run = run_case_once(cdir, fm, prompt, args.timeout, args.keep_temp)
+            run = run_case_once(cdir, fm, prompt, args.timeout, args.keep_temp,
+                                isolate=not args.use_global_context)
             if run.get("error"):
                 print(f"  run {i}: ERROR {run['error']}")
                 crec["runs"].append({"run": i, "error": run["error"]})
