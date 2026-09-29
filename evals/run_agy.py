@@ -72,19 +72,89 @@ def isolated_home(base):
 
     Everything else under ~/.gemini is symlinked, so credentials and config still work; only the
     instruction file is left out. Verified: `agy agents` lists all five agents under this HOME.
+
+    `config/skills` and `config/agents` are the exception: they are *copied* with symlinks
+    resolved rather than symlinked. Installed skills normally point back at this checkout
+    (`~/.gemini/config/skills/helm-chart-review -> /home/james/ai_agents/skills/...`), and a
+    tool that prints the resolved path hands the agent a route into the repository. Four runs of
+    twelve in the first agent-case measurement took it: they read `evals/agent-*/graders/*.md`
+    -- the assertions they were about to be scored against -- and two of those runs then passed
+    every grader. Copying costs about a megabyte and removes the trail; `repo_leaks()` still
+    checks, because the copy is a fence and not a proof.
+
+    ~/.cache/astgraph is linked in as well. The scaffold warms the tree-sitter venv under the
+    *real* HOME, so without this every isolated run pip-installs a 21 MB dependency tree again.
     """
     home = os.path.join(base, "home")
     gem = os.path.join(home, ".gemini")
     os.makedirs(gem, exist_ok=True)
     real = os.path.expanduser("~/.gemini")
+    # Per-session memory: transcripts, conversation summaries, per-step outputs and scratch from
+    # every previous agy session, including previous eval runs. Symlinking these gave each run
+    # the transcripts of the ones before it -- and those transcripts name this checkout, which is
+    # how runs kept finding `evals/*/graders/` after the skills and project records were cleaned.
+    # A behavioural measurement has to start from nothing remembered, so each of these is a fresh
+    # empty directory; everything else under antigravity*/ (bin, builtin, installation_id,
+    # settings, updater, caches) is still linked so the CLI starts normally.
+    session_state = {"brain", "conversations", "conversation_summaries.db", "annotations",
+                     "implicit", "knowledge", "crashes", "scratch", "history.jsonl", "presence",
+                     "agyhub_summaries_proto.pb", "jetbox_summaries_proto.pb", "log", "cli.log"}
     if os.path.isdir(real):
         for entry in os.listdir(real):
             if entry == "GEMINI.md":
                 continue          # the whole point
             src, dst = os.path.join(real, entry), os.path.join(gem, entry)
-            if not os.path.exists(dst):
+            if os.path.exists(dst):
+                continue
+            if entry == "config" and os.path.isdir(src):
+                os.makedirs(dst, exist_ok=True)
+                for sub in os.listdir(src):
+                    s, d = os.path.join(src, sub), os.path.join(dst, sub)
+                    if sub in ("skills", "agents") and os.path.isdir(s):
+                        shutil.copytree(s, d, symlinks=False,
+                                        ignore=shutil.ignore_patterns("__pycache__", ".git", "tests"))
+                    elif sub == "projects" and os.path.isdir(s):
+                        # Antigravity records every project root it has seen here, this checkout
+                        # among them ("file:///home/james/ai_agents"). Copying the skills cut the
+                        # symlink trail but not this one: five runs of six still reached the repo,
+                        # one of them opening with `grep -rn "helm-api" .../evals/` -- a fixture
+                        # name that appears nowhere in its workspace. A run must not start knowing
+                        # where the answer key lives, and prior-session state is a confound for a
+                        # behavioural measurement anyway. Only the pathless default is kept.
+                        os.makedirs(d, exist_ok=True)
+                        keep_file = os.path.join(s, "default-cli-project.json")
+                        if os.path.exists(keep_file):
+                            shutil.copy2(keep_file, os.path.join(d, "default-cli-project.json"))
+                    else:
+                        os.symlink(s, d)
+            elif entry.startswith("antigravity") and os.path.isdir(src):
+                os.makedirs(dst, exist_ok=True)
+                for sub in os.listdir(src):
+                    s, d = os.path.join(src, sub), os.path.join(dst, sub)
+                    if sub in session_state:
+                        if os.path.isdir(s):
+                            os.makedirs(d, exist_ok=True)
+                    else:
+                        os.symlink(s, d)
+            else:
                 os.symlink(src, dst)
+    cache = os.path.expanduser("~/.cache/astgraph")
+    if os.path.isdir(cache):
+        os.makedirs(os.path.join(home, ".cache"), exist_ok=True)
+        link = os.path.join(home, ".cache", "astgraph")
+        if not os.path.exists(link):
+            os.symlink(cache, link)
     return home
+
+
+def repo_leaks(tools):
+    """Tool calls that reached this checkout -- i.e. the case files and the answer key.
+
+    A run that read its own graders cannot be scored: green proves nothing (it may have been
+    written to the assertions) and red proves nothing either. Such a run is reported as an
+    error, which keeps it out of the pass count instead of quietly inflating it.
+    """
+    return [f"{n} {a}" for n, a in tools if REPO + os.sep in a]
 
 
 def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
@@ -112,8 +182,22 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
             shutil.rmtree(ws, ignore_errors=True)
             return {"error": f"scaffold failed: {r.stderr.strip()[:300]}"}
 
-    cmd = ["agy", "--output-format", "stream-json", "--dangerously-skip-permissions",
-           "--print-timeout", f"{timeout}s", f"--print={prompt}"]
+    # Defence in depth on top of the isolated HOME: bind an empty directory over the checkout so
+    # the repository is not merely unreferenced but unreachable. Two rounds of "found the leak"
+    # were wrong -- first the skill symlinks, then the project records -- while runs kept walking
+    # in through something else (`ls /home/james`, then a remembered path). A fence that does not
+    # depend on having enumerated every source of the path is worth its ~1ms. bwrap is optional:
+    # without it the run proceeds and `repo_leaks()` still refuses to score a run that got in.
+    sandbox = []
+    if shutil.which("bwrap"):
+        empty = tempfile.mkdtemp(prefix="agyeval-norepo-")   # outside ws: never seen by the agent
+        sandbox = ["bwrap", "--dev-bind", "/", "/", "--ro-bind", empty, REPO, "--"]
+
+    # `agy` bounds a turn by wall clock only -- it has no equivalent of max_turns, so a case's
+    # `max_turns:` is honoured by `claude plugin eval` and ignored here. timeout_seconds is the
+    # only budget that bites on this runner, which is why it has to be per case.
+    cmd = sandbox + ["agy", "--output-format", "stream-json", "--dangerously-skip-permissions",
+                     "--print-timeout", f"{timeout}s", f"--print={prompt}"]
     # Without --agent, agy runs its default persona and none of this repo's AGENT.md files are
     # loaded -- verified by asking a loaded session whether a read-only persona was in effect
     # ("NONE" without the flag, the ast-treesitter mandate with it). A case that omits `agent:`
@@ -139,6 +223,20 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
     out["workspace"] = ws
     if out.get("error") is None and proc.returncode != 0:
         out["error"] = f"agy exit {proc.returncode}: {proc.stderr.strip()[:300]}"
+    # `agy --print-timeout` ends the turn cleanly: exit 0, a result event, and no response. The
+    # trace is intact, so tool_used graders still pass while every last_message grader reports
+    # "pattern NOT found" -- a truncated run reads exactly like a misbehaving agent. It is not
+    # gradeable, so say so. (First agent-case run: 4 of 12 runs were this, and the report
+    # blamed 13 assertions.)
+    if out.get("error") is None and not (out.get("last_message") or "").strip():
+        out["error"] = (f"no final message after {out['elapsed']:.0f}s of a {timeout}s turn "
+                        f"({len(out['tools'])} tool calls): the turn was cut off, so assertions "
+                        f"on last_message cannot be graded. Raise the case's timeout_seconds.")
+    leaks = repo_leaks(out["tools"])
+    if out.get("error") is None and leaks:
+        out["error"] = (f"run reached the repo checkout ({len(leaks)} call(s), first: "
+                        f"{leaks[0][:120]!r}) -- it can read its own graders, so this run is "
+                        f"not gradeable in either direction")
     # Record created files before the workspace goes away.
     out["files"] = sorted(
         os.path.relpath(os.path.join(dp, f), ws)
@@ -308,7 +406,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--case", action="append", help="glob of case names (repeatable)")
     ap.add_argument("--runs", type=int, help="override the per-case runs:")
-    ap.add_argument("--timeout", type=int, default=420, help="per-turn seconds (default 420)")
+    ap.add_argument("--timeout", type=int, help="per-turn seconds, overriding each case's "
+                                                "timeout_seconds (default: the case's value, else 420)")
     ap.add_argument("--no-judge", action="store_true", help="skip llm graders instead of spending a judge call")
     ap.add_argument("--keep-temp", action="store_true", help="leave workspaces on disk for inspection")
     ap.add_argument("--use-global-context", action="store_true",
@@ -350,7 +449,11 @@ def main():
         crec = {"name": case, "runs": []}
 
         for i in range(1, runs + 1):
-            run = run_case_once(cdir, fm, prompt, args.timeout, args.keep_temp,
+            # `timeout_seconds:` was read by validate.py and documented in the README, but the
+            # runner passed args.timeout unconditionally -- so every case ran on the 420s default
+            # however long it declared, which is what cut the helm and kubernetes cases off.
+            timeout = args.timeout or fm.get("timeout_seconds", 420)
+            run = run_case_once(cdir, fm, prompt, timeout, args.keep_temp,
                                 isolate=not args.use_global_context)
             if run.get("error"):
                 print(f"  run {i}: ERROR {run['error']}")
