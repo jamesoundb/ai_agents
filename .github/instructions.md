@@ -186,7 +186,7 @@ different one rather than adding vendor-neutral fallbacks.
   not per line, and applies a never-worse guard: a file no larger than its own skeleton is
   printed as source instead, and a run that saves nothing says so rather than reporting a
   negative percentage.
-- Engine regression tests: `skills/code-graph/tests/run_tests.sh` copies the nine-language fixture
+- Engine regression tests: `skills/code-graph/tests/run_tests.sh` copies the eleven-language fixture
   (C/C++, Python, JavaScript, TypeScript, Go, Java, Kotlin, Rust, HCL, Kubernetes YAML) from
   `skills/code-graph/tests/fixture/` to a temp dir, builds it there and asserts resolution
   confidence per language, overload and return-type choices, test-file detection, query output
@@ -243,8 +243,10 @@ Two families, separated by one frontmatter field:
 - **skill cases** omit `agent:`; they load no persona, so they measure `SKILL.md` alone.
 - **agent cases** (`agent-*`) set `agent: <name>`, which makes `run_agy.py` pass `--agent`. One
   per persona, two for `ast-treesitter` since it is the one offered to developers first: a
-  Python direct lookup (fast path) and a Kotlin lookup past a same-named method on an unrelated
-  class (resolution that text search gets wrong); then `terraform` (merge gate),
+  Python direct lookup (fast path), a Kotlin lookup past a same-named method on an unrelated
+  class, and a Python lookup whose callers are reachable only through a re-export alias and a
+  factory's return annotation (the last two measure resolution, which text search gets wrong);
+  then `terraform` (merge gate),
   `kubernetes` (right-size without applying), `helm` (fix the environment values layer, not the
   chart defaults), `build-pipeline` (name the failure class instead of rerunning).
 

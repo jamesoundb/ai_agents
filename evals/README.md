@@ -1,7 +1,7 @@
 # evals/ — behavioral tests for the agents and skills
 
-`skills/code-graph/tests/` proves the **engine** is correct: 229 assertions over a
-nine-language fixture. Nothing there touches the layer users actually meet — whether
+`skills/code-graph/tests/` proves the **engine** is correct: 285 assertions over an
+eleven-language fixture. Nothing there touches the layer users actually meet — whether
 a model reading `SKILL.md` reaches for the right tool and then uses the result
 properly. `tools/ci/smoke.sh` runs `--help` on each script, which proves the script
 starts, not that the skill works.
@@ -265,9 +265,12 @@ from documentation, not from a run.
 
 Be clear about what that does and does not put at risk:
 
-- **The case files themselves are proven**, because `run_agy.py` reads the same
-  `prompt.md` / `graders/` / `case.yaml` and runs them green. Whatever else is uncertain,
-  the prompts, graders and fixtures are not.
+- **Most case files are proven**, because `run_agy.py` reads the same
+  `prompt.md` / `graders/` / `case.yaml` and runs them green. Ten of the twelve have run
+  green; the exceptions are `agent-helm-oversized` and `agent-k8s-rightsize`, whose graders
+  have never been evaluated on a completed, uncontaminated run (see Measurement status).
+  Their fixtures *are* proven — every rule id they assert on came from a real run of the
+  skill's script — but their prompts and graders have not faced a model.
 - **`validate.py` checks against this repo's model of the schema, not the real one.** It
   catches a typo, a bad regex, a wrong field type or an unknown grader type — but if a
   field is genuinely named something else in `claude plugin eval`, validate.py will

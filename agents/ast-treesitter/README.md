@@ -230,9 +230,9 @@ After the same round, the Python repos: pandas 16,611 typed / 28,307 ambiguous /
 17s), TensorFlow 78,698 typed / 65,120 ambiguous / 0 unique (build 34s). Return-type inference
 adds roughly a third to build time on Python-heavy repos.
 
-Fixture (`skills/code-graph/tests/fixture`, 69 indexed source files across nine languages plus
+Fixture (`skills/code-graph/tests/fixture`, 76 indexed source files across eleven languages plus
 build metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json`; the suite has
-211 check sites; 2026-09-16):
+234 check sites, 285 executed assertions; counts re-verified 2026-09-29):
 
 - Full build well under a second; incremental rebuild re-parses only changed files (1 of 69 after
   a one-line edit) and yields the same node and edge sets as a full build.
@@ -240,6 +240,24 @@ build metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json
   `processTransaction` calls resolved as `typed`; changing `PaymentRequest` lists the interface
   and class API contracts, the gateway client, the audit logger and the test.
 - Skeleton of a 2,000-line Python file: ~26.9k raw tokens vs ~3.9k skeleton tokens (86% saved).
+
+### Behaviour of the agent, not the engine
+
+Everything above measures the graph. These measure whether the agent *uses* it well, which is a
+separate claim and needs a model in the loop. Cases live in [`evals/`](../../evals); each was run
+three times on Antigravity (2026-09-29), in a workspace isolated from this checkout.
+
+| case | asserts | result |
+|---|---|---|
+| `agent-direct-lookup` | a one-line question takes the fast path (build + one query), no `overview`, no grep | 12/12 |
+| `agent-python-resolution` | callers reachable only through a re-export alias and a factory's return annotation, excluding a same-named decoy | 21/21 |
+| `agent-kotlin-lookup` | the same in Kotlin, past a same-named method on an unrelated class | 18/18 |
+
+7-9 tool calls, 33-51s and 44k-69k tokens per question, with the same trace shape every run:
+read the skill, `build`, `query callers`, `query symbol`, then open only the lines it is about to
+cite. The two resolution cases matter more than the pass rate suggests — their fixtures are built
+so that `grep` returns both false negatives and a false positive, so they assert that the answer
+is *correct*, not merely that it was cheap.
 
 ## Related agents
 

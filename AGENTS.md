@@ -17,7 +17,7 @@ invoke the agents. If skills are unavailable in your harness, run
 - Skill scripts must stay self-contained inside their skill folder and reference sibling skills
   only by relative path (`../code-graph/...`), never by harness-specific variables.
 - Engine changes to `skills/code-graph/scripts/astgraph.py` must pass
-  `skills/code-graph/tests/run_tests.sh` (9-language fixture in `skills/code-graph/tests/fixture/`);
+  `skills/code-graph/tests/run_tests.sh` (11-language fixture in `skills/code-graph/tests/fixture/`);
   extend the fixture with a regression case for every linker fix.
 - Behavioral tests for the skills themselves live in `evals/` (does the right skill fire, and is
   its output used correctly?). `python3 evals/validate.py` checks the suite structurally and runs
