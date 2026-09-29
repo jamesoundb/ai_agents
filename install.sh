@@ -89,9 +89,20 @@ marked_dir() {  # a copied skill directory we wrote
 marked_file() {  # a rendered file we wrote
   [ -f "$1" ] && grep -qxF "$MARKER" "$1" 2>/dev/null
 }
+resolve_link() {  # portable `readlink -f`: macOS readlink has no -f. Plain readlink only.
+  local target="$1" dir
+  while [ -L "$target" ]; do
+    dir="$(dirname "$target")"
+    target="$(readlink "$target")" || return 1
+    case "$target" in /*) ;; *) target="$dir/$target" ;; esac
+  done
+  printf '%s\n' "$target"
+}
 symlink_into_repo() {
   [ -L "$1" ] || return 1
-  case "$(readlink -f "$1" 2>/dev/null)" in "$REPO"/*) return 0 ;; *) return 1 ;; esac
+  # Without this being portable, macOS silently fails the ownership test and the installer
+  # treats its own symlinks as foreign: it then refuses to replace them without --force.
+  case "$(resolve_link "$1" 2>/dev/null)" in "$REPO"/*) return 0 ;; *) return 1 ;; esac
 }
 ours_skill() {  # <path> to an installed skill (symlink, or copied directory)
   symlink_into_repo "$1" || marked_dir "$1"

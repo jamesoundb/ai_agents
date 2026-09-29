@@ -61,7 +61,37 @@ Add `--uninstall` to remove what a previous run installed. Re-running is idempot
 - User scope: remind the developer to keep the `~/ai_agents` clone where it is (skills are
   symlinks into it) and that updating is `cd ~/ai_agents && git pull` plus re-running the install.
 
-## 4. Tell the developer how to invoke
+## 4. Test that the engine actually runs here (mandatory on a new machine)
+
+Installing only creates files. Before telling the developer it works, prove the engine runs on
+*this* machine — it needs Python 3.10+ and a tree-sitter wheel for this OS and CPU, and the first
+call builds a venv under `~/.cache/astgraph` (~30s, needs network).
+
+```bash
+uname -sm; bash --version | head -1; python3 -V     # record these; they go in the report
+<repo>/skills/code-graph/tests/run_tests.sh          # 285 assertions, ~8s, no network
+```
+
+Then one functional check, because a green suite still runs on a copied fixture rather than on
+the developer's own code. Build a graph on the checkout itself and ask it something:
+
+```bash
+<repo>/skills/code-graph/scripts/run.sh build --root <repo>
+<repo>/skills/code-graph/scripts/run.sh query --root <repo> stats   # languages and file counts
+<repo>/skills/code-graph/scripts/run.sh skeleton <repo>/skills/code-graph/scripts/astgraph.py
+```
+
+`query stats` must list the languages you expect for that repository, and the skeleton must print
+a structure with line numbers rather than an error.
+
+**If `uname -s` is not `Linux`, say so prominently.** As of 2026-09-29 every layer of this
+repository — engine suite, evals, installer — has only ever been run on Linux, so a macOS or
+Windows session is the first evidence either way. Report the three version lines above, the
+suite's pass/fail count, and the `query stats` output back to the platform team **whether it
+passes or fails**: a pass is the result we do not have yet, and a failure is a bug worth fixing
+that day. Do not paper over a failure by falling back to grep or by skipping the step.
+
+## 5. Tell the developer how to invoke
 
 | harness | agents | skills |
 |---|---|---|
@@ -71,7 +101,8 @@ Add `--uninstall` to remove what a previous run installed. Re-running is idempot
 | Antigravity | `/agents` picker, `agy --agent <name>`, or `invoke_subagent` | automatic by description |
 | GitHub Copilot | custom agent picker (`.github/agents/*.agent.md`) | automatic by description |
 
-Finish with the exact install command you ran so the developer can repeat it without an LLM.
+Finish with the exact install command you ran so the developer can repeat it without an LLM,
+and the results of step 4.
 
 ## Notes
 
