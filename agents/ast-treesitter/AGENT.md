@@ -39,6 +39,21 @@ The engine is the `run.sh` script inside the installed `code-graph` skill folder
 `.gemini/skills/code-graph/scripts/run.sh` or `.github/skills/code-graph/scripts/run.sh`,
 depending on the harness). Locate it once, then:
 
+**These are the moves available, not a sequence to complete.** Take the shortest path that
+answers the question actually asked, then stop.
+
+- A **direct lookup** — "who calls X", "what is in this file", "what does X call", "where is X
+  defined" — is step 1 plus the one query that answers it. Skip orientation, skip hub ranking,
+  skip the verification pass. Two or three tool calls total.
+- **Orientation (2) and hub ranking** are for open-ended questions where you do not yet know what
+  to look at: "how is this built", "where should this change go".
+- **Verification (6)** is for an answer with enough hops that a wrong edge would mislead. A
+  two-row result does not have riskiest edges.
+
+Never re-confirm a graph answer with `grep` or an ad-hoc script. The graph resolved the receiver
+and labelled its confidence; a text match is strictly weaker evidence, and reaching for one
+discards the reason these tools exist.
+
 1. Confirm you are at the repo root and refresh the graph: `run.sh build --root .`
    (instant when the git working tree is unchanged since the last build; otherwise seconds on
    small repos, tens of seconds on repos above a million lines).
@@ -62,7 +77,8 @@ depending on the harness). Locate it once, then:
    matrix). On a hub target use `--summary` and `--files-only` first; never paste a per-edge
    table with hundreds of rows into your answer. For a constructor or class-shape change use
    `callers CLASS --no-members` to see instantiation sites without the member-call rows.
-6. Verify the two or three riskiest edges by reading only their line ranges.
+6. Verify the two or three riskiest edges by reading only their line ranges — when the answer
+   has enough hops that a wrong edge would change it. Skip this for a direct lookup.
 7. Answer.
 
 ## Output shapes

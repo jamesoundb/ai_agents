@@ -38,7 +38,7 @@ GRADER_TYPES = {
 TARGETS = {"last_message", "trace", "files", "mock_calls"}
 MATCH_MODES = {"contains", "not_contains"}          # plus "count:N"
 PROMPT_FIELDS = {
-    "name": str, "tags": list, "plugins": list, "runs": int, "max_turns": int,
+    "name": str, "agent": str, "tags": list, "plugins": list, "runs": int, "max_turns": int,
     "timeout_seconds": int, "allowed_tools": list, "model": str,
     "append_system_prompt": str, "env": dict,
 }

@@ -114,6 +114,12 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
 
     cmd = ["agy", "--output-format", "stream-json", "--dangerously-skip-permissions",
            "--print-timeout", f"{timeout}s", f"--print={prompt}"]
+    # Without --agent, agy runs its default persona and none of this repo's AGENT.md files are
+    # loaded -- verified by asking a loaded session whether a read-only persona was in effect
+    # ("NONE" without the flag, the ast-treesitter mandate with it). A case that omits `agent:`
+    # therefore tests the skills only, which is what every case did before this was added.
+    if fm.get("agent"):
+        cmd += ["--agent", fm["agent"]]
     if fm.get("model"):
         cmd += ["--model", fm["model"]]
     env = dict(os.environ)
