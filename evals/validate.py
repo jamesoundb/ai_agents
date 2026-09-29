@@ -20,7 +20,10 @@ import os
 import re
 import sys
 
-import yaml
+try:
+    import yaml
+except ImportError:                                    # pragma: no cover - environment guard
+    sys.exit("evals/validate.py needs PyYAML to parse case frontmatter: pip install pyyaml")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

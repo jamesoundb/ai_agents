@@ -3117,6 +3117,25 @@ def file_hash(data):
     return hashlib.sha1(data).hexdigest()
 
 
+def legacy_graph_note(graph_path):
+    """A one-line note when a pre-SQLite `graph.json` is still sitting beside the new artifact.
+
+    Storage moved to SQLite in GRAPH_VERSION 8. The old file is never read again, and on a large
+    repo it is not small -- TensorFlow's was 1.3 GB -- so silently leaving it costs real disk and
+    makes "I already have a graph" look like a bug. Reported, never deleted: the engine does not
+    remove files on a developer's behalf."""
+    legacy = os.path.join(os.path.dirname(graph_path), "graph.json")
+    if not os.path.exists(legacy):
+        return None
+    total = os.path.getsize(legacy)
+    for extra in (legacy + ".cache", legacy + ".stamp"):
+        if os.path.exists(extra):
+            total += os.path.getsize(extra)
+    size = f"{total / 1e9:.1f} GB" if total >= 1e9 else f"{total / 1e6:.0f} MB"
+    return (f"note: {legacy} is from an older version ({size} including its sidecars). Storage is "
+            f"SQLite now; that file is no longer read and can be deleted.")
+
+
 def load_graph(path, with_cache=False):
     """Read a stored graph back as a plain dict. Only `build` uses this -- it needs the previous
     run's parse cache to decide what to re-parse. Queries go through Store, which never
@@ -3674,6 +3693,9 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
             json.dump({"version": GRAPH_VERSION, "stamp": stamp, "stats": graph["stats"], "built_at": graph["built_at"]}, f)
     elif os.path.exists(stamp_path):
         os.remove(stamp_path)
+    note = legacy_graph_note(out_path)
+    if note and not quiet:
+        print(note, file=sys.stderr)
     if not quiet:
         s = graph["stats"]
         print(f"graph written to {out_path}: {s['files']} files ({changed} parsed, {reused} unchanged), "
@@ -4468,10 +4490,25 @@ def link_graph(root_dir, files, tf_modules):
         nodes_ = [d for d in defs_in(name, fset) if d["kind"] in kinds and d["id"] not in overload_stub]
         return (by_arity(nodes_)[:1], "import") if nodes_ else ([], None)
 
+    def admits_argc(c):
+        """Could this candidate accept the call's argument count?
+
+        Only consulted when the receiver's type is unknown, where the match rests on the name
+        alone. A candidate that cannot even take the arguments is not a weak guess, it is a wrong
+        one: in TensorFlow, `body_fn.getArgument(promise_index)` on an MLIR FuncOp was resolved to
+        a same-file `AsyncWhilePass::getArgument()` that takes none.
+        """
+        argc = _cur.get("argc")
+        if argc is None or c["kind"] not in ("function", "method", "constructor"):
+            return True
+        ar = arity(c)
+        return ar is None or (ar[0] <= argc and (ar[1] is None or argc <= ar[1]))
+
     def lead_pick(cands, rel):
         """Receiver of unknown type: a same-file definition is plausible; otherwise a few same-language leads."""
         cands = same_family(cands, rel)
         cands = [c for c in cands if c["id"] != _cur.get("src")]   # `self._pool.handle_request()` is not a self-call
+        cands = [c for c in cands if admits_argc(c)] or []
         if not is_test_file(rel):
             cands = [c for c in cands if not is_test_file(c["file"])]   # main code never leads into a test helper
         if not cands:
@@ -5346,33 +5383,70 @@ def _row_to_edge(r):
 _EDGE_SELECT = "SELECT src,dst,type,line,confidence,name FROM edges"
 
 
+def replace_with_retry(src, dst, attempts=10, delay=0.15):
+    """Move `src` onto `dst`, retrying briefly on a Windows sharing violation.
+
+    On POSIX this is one atomic rename and a reader holding the old file keeps reading it. On
+    Windows os.replace raises PermissionError while another process has the destination open, so
+    a query running at the wrong moment would fail a rebuild. Queries open and close the database
+    quickly, so a short backoff covers it; the final attempt is allowed to raise.
+
+    NOT VERIFIED ON WINDOWS -- written from the documented behaviour, no Windows machine here.
+    """
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
 def write_store(path, graph, files):
-    """Write nodes, edges, meta and the per-file parse cache to a fresh database."""
-    tmp = path + ".tmp"
-    for p in (tmp, tmp + "-journal"):
-        if os.path.exists(p):
-            os.remove(p)
+    """Write nodes, edges, meta and the per-file parse cache to a fresh database.
+
+    Built under a name unique to this process, then moved into place. Two builds on the same root
+    used to share `graph.db.tmp`, so whichever renamed first pulled the file out from under the
+    other, which died with FileNotFoundError. Distinct names let both finish; the last os.replace
+    wins, and that rename is atomic, so a reader never sees a half-written database.
+    """
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
-    con = sqlite3.connect(tmp)
-    con.executescript(SCHEMA)
-    con.executemany(
-        "INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [(n["id"], n["kind"], n["name"], n["name"].lower(), n["qname"], n["qname"].lower(),
-          n["file"], n["line"], n["end_line"], n["signature"],
-          json.dumps(n.get("annotations") or []), n.get("parent"),
-          json.dumps(n.get("extra") or {})) for n in graph["nodes"]])
-    con.executemany(
-        "INSERT INTO edges VALUES (?,?,?,?,?,?)",
-        [(e["src"], e["dst"], e["type"], e.get("line"), e.get("confidence"), e.get("name"))
-         for e in graph["edges"]])
-    con.executemany("INSERT OR REPLACE INTO parsed VALUES (?,?)",
-                    [(rel, json.dumps(info, separators=(",", ":"))) for rel, info in files.items()])
-    con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",
-                    [(k, json.dumps(graph.get(k))) for k in ("version", "engine", "root", "built_at", "stats")])
-    con.executescript(INDEXES)
-    con.commit()
-    con.close()
-    os.replace(tmp, path)
+    tmp = f"{path}.{os.getpid()}.{int(time.time() * 1000) % 100000:05d}.tmp"
+    try:
+        con = sqlite3.connect(tmp)
+        try:
+            con.executescript(SCHEMA)
+            con.executemany(
+                "INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [(n["id"], n["kind"], n["name"], n["name"].lower(), n["qname"], n["qname"].lower(),
+                  n["file"], n["line"], n["end_line"], n["signature"],
+                  json.dumps(n.get("annotations") or []), n.get("parent"),
+                  json.dumps(n.get("extra") or {})) for n in graph["nodes"]])
+            con.executemany(
+                "INSERT INTO edges VALUES (?,?,?,?,?,?)",
+                [(e["src"], e["dst"], e["type"], e.get("line"), e.get("confidence"), e.get("name"))
+                 for e in graph["edges"]])
+            con.executemany("INSERT OR REPLACE INTO parsed VALUES (?,?)",
+                            [(rel, json.dumps(info, separators=(",", ":")))
+                             for rel, info in files.items()])
+            con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",
+                            [(k, json.dumps(graph.get(k)))
+                             for k in ("version", "engine", "root", "built_at", "stats")])
+            con.executescript(INDEXES)
+            con.commit()
+        finally:
+            con.close()
+        replace_with_retry(tmp, path)
+    except BaseException:
+        # Never leave a partial database lying around for the next run to trip over.
+        for leftover in (tmp, tmp + "-journal"):
+            if os.path.exists(leftover):
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
+        raise
 
 
 class NodeView:
@@ -6423,7 +6497,9 @@ def main(argv=None):
         if a.root and a.graph == DEFAULT_GRAPH:
             a.graph = os.path.join(a.root, DEFAULT_GRAPH)
         if not os.path.exists(a.graph):
-            sys.exit(f"graph not found at {a.graph}. Build it first: astgraph.py build --root <repo>")
+            msg = f"graph not found at {a.graph}. Build it first: astgraph.py build --root <repo>"
+            note = legacy_graph_note(a.graph)
+            sys.exit(msg + (f"\n{note}" if note else ""))
         try:
             g = G(Store(a.graph))
         except sqlite3.Error as e:

@@ -50,6 +50,14 @@ default:
 
 repo-checks:
   stage: check
+  cache:
+    key: pip-repo-checks
+    paths: [.cache/pip]
+  before_script:
+    # evals/validate.py parses YAML frontmatter (block scalars, lists, nested maps), so it needs a
+    # real parser rather than a hand-rolled one. Pinned like the lint tools, so a PyYAML release
+    # cannot turn this job red on its own. check_repo.py itself stays stdlib-only.
+    - pip install --quiet pyyaml==6.0.2
   script:
     - python3 tools/ci/check_repo.py      # frontmatter, agent->skill references, AGENTS.md in sync
     # Structural check of the behavioral eval suite. Does NOT run the evals (that needs the

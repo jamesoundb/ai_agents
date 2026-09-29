@@ -132,11 +132,25 @@ A grader nobody checked is worse than no grader: it reports green and hides the 
 of its own accord and recovered all 13 calls — the first empirical evidence that the
 output-budget contract does its job with a real model.
 
-**Not executed on Claude Code.** `claude` is not installed on the machine where this
-was written (`which claude` → nothing, no npx). The `claude plugin eval` file format
-here came from documentation, not from a run, so expect to fix schema details the
-first time someone tries it. The Antigravity path does not depend on any of that —
-`run_agy.py` reads these files directly.
+**Not executed on Claude Code.** `claude` is not installed on the machine where this was
+written (`which claude` → nothing, no npx). The `claude plugin eval` file format here came
+from documentation, not from a run.
+
+Be clear about what that does and does not put at risk:
+
+- **The case files themselves are proven**, because `run_agy.py` reads the same
+  `prompt.md` / `graders/` / `case.yaml` and runs them green. Whatever else is uncertain,
+  the prompts, graders and fixtures are not.
+- **`validate.py` checks against this repo's model of the schema, not the real one.** It
+  catches a typo, a bad regex, a wrong field type or an unknown grader type — but if a
+  field is genuinely named something else in `claude plugin eval`, validate.py will
+  happily approve the wrong name. It cannot know it is wrong about the spec.
+- **The risk is confined to Claude Code.** Nothing in the Antigravity path reads the
+  documented schema.
+
+On first Claude Code use: run `validate.py`, then one case with `--runs 1`, and expect to
+correct field names. Fix them in `GRADER_TYPES` / `PROMPT_FIELDS` in `validate.py` at the
+same time, so the checker stops being wrong about the spec.
 
 Also verified: the fixture provokes every behavior its graders assert on (each checked
 by running the engine by hand), and `validate.py` was itself proven against six

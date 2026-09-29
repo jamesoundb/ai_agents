@@ -705,6 +705,48 @@ def test_output_budget(tmp):
           f"a signature-only elision points at the line range, not a flag: {out.splitlines()[-2]}")
 
 
+def test_concurrent_and_legacy(tmp):
+    """Two robustness cases that only show up outside a single-process run."""
+    print("# concurrency and legacy artifacts")
+    root = os.path.join(tmp, "conc")
+    shutil.copytree(FIXTURE, root)
+
+    # Several builds on one root. They used to share `graph.db.tmp`, so whichever renamed first
+    # pulled the file away from the others and they died with FileNotFoundError.
+    procs = [subprocess.Popen([sys.executable, "-B", ENGINE, "build", "--root", root, "--full", "--quiet"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(4)]
+    results = [(p.wait(), p.communicate()[1].decode()[-160:]) for p in procs]
+    bad = [(rc, err) for rc, err in results if rc != 0]
+    check(not bad, f"4 concurrent builds on one root all succeed ({bad[:1]})")
+    leftovers = [f for f in os.listdir(os.path.join(root, ".ast-graph")) if f.endswith(".tmp")]
+    check(not leftovers, f"no temp databases left behind ({leftovers})")
+    check(json.loads(run("query", "--root", root, "stats"))["files"] > 0,
+          "the graph is usable after concurrent builds")
+
+    # Readers must survive the file being swapped under them (POSIX: the open fd keeps the old
+    # inode, so a query sees a consistent older graph rather than a torn one).
+    readers = [subprocess.Popen([sys.executable, "-B", ENGINE, "query", "--root", root, "stats"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(6)]
+    subprocess.run([sys.executable, "-B", ENGINE, "build", "--root", root, "--full", "--quiet"],
+                   capture_output=True)
+    rok = sum(1 for p in readers if p.wait() == 0)
+    check(rok == 6, f"6 readers survive a rebuild swapping the database ({rok}/6)")
+
+    # A pre-SQLite graph.json left over from an older version must be called out, not ignored.
+    legacy = os.path.join(root, ".ast-graph", "graph.json")
+    with open(legacy, "w") as f:
+        f.write('{"nodes":[],"edges":[]}')
+    out = subprocess.run([sys.executable, "-B", ENGINE, "build", "--root", root, "--full"],
+                         capture_output=True, text=True)
+    check("older version" in out.stderr and "can be deleted" in out.stderr,
+          f"build reports a leftover pre-SQLite graph.json ({out.stderr.strip()[:110]})")
+    os.remove(os.path.join(root, ".ast-graph", "graph.db"))
+    q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "stats"],
+                       capture_output=True, text=True)
+    check(q.returncode != 0 and "older version" in (q.stdout + q.stderr),
+          "a query with only a legacy graph.json says so instead of just 'not found'")
+
+
 def test_empty_root(tmp):
     print("# empty root")
     empty = os.path.join(tmp, "empty")
@@ -809,6 +851,7 @@ def main():
         G = test_resolution(root)
         test_tests_detection(root, G)
         test_determinism(root)
+        test_concurrent_and_legacy(tmp)
         test_empty_root(tmp)
         test_keep_dir_and_parse_errors(tmp)
         test_cpp_extraction(root)

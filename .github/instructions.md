@@ -169,6 +169,10 @@ different one rather than adding vendor-neutral fallbacks.
   `file`, `find`, `path`, `stats`) each cost 0.2-0.4s and ~50 MB because they go through SQLite
   indexes; `overview` weighs the whole graph at ~3s/265 MB (~5.5s/500 MB with `--no-tests`).
   The next lever, if build time becomes painful, is incremental *linking* (today always full).
+- Platform: Linux only is tested. macOS is expected to work (no bash 4+ constructs, `env bash`
+  shebangs, `os.sep`/`os.path.join` throughout) but has never been run. Windows needs WSL or Git
+  Bash for `run.sh`; the one known difference, `os.replace` failing while another process holds
+  the database open, retries briefly -- written from documented behaviour, never exercised there.
 - Output budget: every cap lives in the `CAP_*` block at the top of `astgraph.py`, and each one
   must leave a stated way back — a flag that raises it (`skeleton --max-calls/--max-imports`,
   `symbol --limit/--all`, `trace-deps --max-rows/--files-only`) or an exact line range to read.

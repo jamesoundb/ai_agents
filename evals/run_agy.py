@@ -29,7 +29,10 @@ import sys
 import tempfile
 import time
 
-import yaml
+try:
+    import yaml
+except ImportError:                                    # pragma: no cover - environment guard
+    sys.exit("evals/run_agy.py needs PyYAML to parse case frontmatter: pip install pyyaml")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)

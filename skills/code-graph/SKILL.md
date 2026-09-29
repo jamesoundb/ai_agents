@@ -98,6 +98,22 @@ override at runtime; `callers CLASS --no-members` keeps only edges to the class 
 output (`stats` always prints JSON). Run `query --root DIR ...` from outside the repo (the graph is read from
 `DIR/.ast-graph/graph.db`) or `query --graph PATH ...` for a graph at a custom path.
 
+## Platform support
+
+Developed and tested on **Linux only**. Everything below is what is known, not what is assumed:
+
+- **Linux** — tested continuously, including concurrent builds and readers during a rebuild.
+- **macOS** — expected to work and never run. The scripts avoid bash 4+ constructs (macOS ships
+  bash 3.2) and use `#!/usr/bin/env bash`, and path handling goes through `os.sep`/`os.path.join`
+  throughout, but no one has executed it there.
+- **Windows** — `scripts/run.sh` is bash, so it needs WSL or Git Bash; `astgraph.py` itself is
+  plain Python and should run under native Python. One known difference is handled blind:
+  replacing the database while another process holds it open raises `PermissionError` on Windows
+  but not on POSIX, so the swap retries briefly. That retry has not been exercised on Windows.
+
+If you are the first to run this on macOS or Windows, treat a failure as expected rather than
+surprising, and say so — the gap is lack of testing, not a belief that it works.
+
 ## Crossing the Python/C++ boundary
 
 A Python call that resolves to nothing in Python is matched against **pybind11** exports, so
