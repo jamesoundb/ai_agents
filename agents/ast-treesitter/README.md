@@ -82,6 +82,11 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
 
 1. From a clone of this repo: `./install.sh --harness antigravity --target /path/to/your/repo` (or your harness)
    (add `--copy` if symlinks are not an option, e.g. Windows without developer mode).
+   To roll out this agent alone, without the infrastructure ones, name it:
+   `./install.sh --harness claude --target /path/to/repo --agents ast-treesitter`. Its three
+   skills (`code-graph`, `code-skeleton`, `blast-radius`) come with it because the agent declares
+   them, so the relative path `code-skeleton` uses to reach the engine
+   (`../code-graph/scripts/run.sh`) cannot end up dangling.
 2. Add `.ast-graph/` to the repo's `.gitignore`.
    Claude Code: the subagent runs with `permissionMode: default` and skills preloaded through a
    subagent's `skills:` list do not carry their `allowed-tools` pre-approval, so each engine call
@@ -91,6 +96,18 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
    shows the expected languages and file counts. Add `--exclude` globs or extend `EXT_LANG` if not.
 4. Optional CI: rebuild the graph on the default branch and publish `overview --json` as an
    architecture snapshot; run `trace-deps` for each changed file on pull requests.
+5. Repositories with more than one language: a name that exists in both halves is **not** guessed.
+   `query callers OrderService.place` across a Kotlin service and a Python one answers
+
+   ```
+   'OrderService.place' is ambiguous (2 matches). Re-run with one of these ids or `file:name`:
+     api/src/main/kotlin/com/acme/OrderService.kt::OrderService.place@6
+     svc/orders.py::OrderService.place@12
+   ```
+
+   `query callers OrderService.kt:OrderService.place` picks one side. Tell developers this is the
+   expected answer rather than a failure: the alternative is a tool that silently reports the
+   callers of the wrong `place`.
 
 ## Measured behaviour
 
