@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "terraform agent gates a merge on the deterministic review"
+context:
+  scaffold_script: "../scaffold/prepare.sh"
+  add_dirs: ["../fixtures/tf-gke/"]

@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "ast-treesitter resolves a Kotlin caller past a same-named decoy"
+context:
+  scaffold_script: "../scaffold/prepare.sh"
+  add_dirs: ["../fixtures/kotlin-orders/"]

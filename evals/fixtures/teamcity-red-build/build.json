@@ -1,0 +1,28 @@
+{
+  "id": 48211,
+  "buildTypeId": "Api_IntegrationTests",
+  "number": "2417",
+  "status": "FAILURE",
+  "statusText": "Process exited with code 137 (Step: Integration tests (Gradle))",
+  "state": "finished",
+  "queuedDate": "20260929T081200+0000",
+  "startDate": "20260929T083700+0000",
+  "finishDate": "20260929T085200+0000",
+  "agent": { "name": "kube-agent-7f4c9" },
+  "problemOccurrences": {
+    "count": 1,
+    "problemOccurrence": [
+      {
+        "type": "TC_EXIT_CODE",
+        "details": "Process exited with code 137 (Step: Integration tests (Gradle))"
+      }
+    ]
+  },
+  "testOccurrences": { "count": 312, "failed": 0, "muted": 0, "newFailed": 0 },
+  "statistics": {
+    "property": [
+      { "name": "BuildDuration", "value": "900000" },
+      { "name": "TimeSpentInQueue", "value": "1500000" }
+    ]
+  }
+}

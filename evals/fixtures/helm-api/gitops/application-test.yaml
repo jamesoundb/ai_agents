@@ -1,0 +1,20 @@
+# ArgoCD Application for the shared test environment.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api-test
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.com/acme/charts.git
+    targetRevision: HEAD
+    path: chart
+    helm:
+      valueFiles:
+        - values-test.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: api-test
+  syncPolicy:
+    automated: {}

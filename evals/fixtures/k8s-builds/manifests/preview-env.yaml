@@ -1,0 +1,23 @@
+# Per-branch preview environment, created by the build and never torn down.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: preview-api
+  namespace: ci-builds
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: preview-api
+  template:
+    metadata:
+      labels:
+        app: preview-api
+    spec:
+      containers:
+        - name: api
+          image: europe-docker.pkg.dev/acme/ci/api:latest
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi

@@ -1,0 +1,11 @@
+[08:37:02] : Starting build on agent kube-agent-7f4c9 (pod integration-tests-2417 in namespace ci-builds)
+[08:37:04] : Checkout directory: /opt/buildagent/work/api
+[08:37:09] : Step 1/2: Restore Gradle cache (Command Line)
+[08:37:41] : Step 2/2: Integration tests (Gradle)
+[08:38:02] :   > Task :api:compileJava UP-TO-DATE
+[08:38:20] :   > Task :api:integrationTest
+[08:44:55] :   Gradle worker heap after suite 8 of 14: 3.6 GiB
+[08:51:58] :   Container tests exceeded its memory limit and was terminated: OOMKilled
+[08:51:58] :   Process 'Gradle Test Executor 3' finished with non-zero exit value 137
+[08:51:59] : Process exited with code 137 (Step: Integration tests (Gradle))
+[08:52:00] : Build finished with exit code 137

@@ -1,0 +1,18 @@
+replicaCount: 2
+
+image:
+  repository: europe-docker.pkg.dev/acme/api/api
+  tag: latest
+  pullPolicy: Always
+
+# Sized once for production and never revisited.
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+
+database:
+  password: "not-a-real-secret-placeholder"
+
+# No consumer renders this any more.
+legacyIngressClass: nginx

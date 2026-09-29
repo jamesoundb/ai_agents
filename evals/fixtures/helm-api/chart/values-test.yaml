@@ -1,0 +1,7 @@
+# Per-branch test environments.
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi

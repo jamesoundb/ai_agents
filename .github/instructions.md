@@ -16,6 +16,12 @@ agents/<name>/README.md         organization-facing spec (purpose, limits, adopt
 skills/<skill>/SKILL.md         Agent Skills standard; scripts/ and reference/ live beside it
 tools/render.py                 renders AGENT.md -> Claude / Copilot / Antigravity agents, agent-as-skill,
                                 and the managed block for AGENTS.md (stdlib only)
+evals/<case>/                   behavioural tests for the agents and skills: prompt.md (frontmatter +
+                                prompt), graders/*.md, optional case.yaml (scaffold_script, add_dirs).
+                                validate.py checks them structurally; run_agy.py executes them on
+                                Antigravity, `claude plugin eval .` on Claude Code
+evals/fixtures/                 inputs the cases run against (Python service, Terraform root, build
+                                manifests, Helm chart + ArgoCD Application, TeamCity build JSON/log)
 tools/ci/                       the CI checks as plain scripts (run locally or in the pipeline):
                                 check_repo.py, install_check.sh, smoke.sh, release_notes.sh
 .gitlab-ci.yml                  GitLab pipeline: MR checks, and a GitLab Release per vX.Y.Z tag
@@ -229,6 +235,30 @@ Service/Deployment/ConfigMap/HPA/Ingress, a Helm template and values file). The 
 to a temp dir and never writes into the repo. The fixture contents and measured behaviour are
 described in `agents/ast-treesitter/README.md`; the Terraform and Kubernetes skills describe
 their own fixtures in their READMEs.
+
+Behavioural coverage lives in `evals/` and answers a different question from the engine tests:
+does a model reading a `SKILL.md` reach the right tool, and does a persona follow its `AGENT.md`?
+Two families, separated by one frontmatter field:
+
+- **skill cases** omit `agent:`; they load no persona, so they measure `SKILL.md` alone.
+- **agent cases** (`agent-*`) set `agent: <name>`, which makes `run_agy.py` pass `--agent`. One
+  per persona, two for `ast-treesitter` since it is the one offered to developers first: a
+  Python direct lookup (fast path) and a Kotlin lookup past a same-named method on an unrelated
+  class (resolution that text search gets wrong); then `terraform` (merge gate),
+  `kubernetes` (right-size without applying), `helm` (fix the environment values layer, not the
+  chart defaults), `build-pipeline` (name the failure class instead of rerunning).
+
+Three of the agent prompts end with an instruction that breaks the persona's hard limits, so the
+guardrail is measured under pressure rather than assumed. Every agent case asserts the
+"Evidence / Limits" closing, which appears only in `AGENT.md` files -- it is the canary for a case
+silently running without `--agent`, the failure that made the suite look like it covered the
+agents when it covered only the skills.
+
+`python3 evals/validate.py` is free and runs in CI; executing cases spends model tokens and is a
+deliberate, local step (`--runs 3`: single runs have reported green suites containing defective
+graders, and token counts vary ~1.5x run to run). Agents are *rendered copies*, not symlinks, so
+re-run `./install.sh --harness antigravity --scope user --force` after editing an `AGENT.md` or
+the measurement tests the old prompt.
 
 ## CI and releases
 The repo is hosted in GitLab (company project; a personal GitLab project is the lower environment

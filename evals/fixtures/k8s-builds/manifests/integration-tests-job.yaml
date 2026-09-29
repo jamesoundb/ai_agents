@@ -1,0 +1,22 @@
+# Integration test suite, run by TeamCity on every merge request.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: integration-tests
+  namespace: ci-builds
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: tests
+          image: europe-docker.pkg.dev/acme/ci/integration-tests:latest
+          command: ["./gradlew", "integrationTest"]
+          resources:
+            requests:
+              cpu: "8"
+              memory: 32Gi
+            limits:
+              cpu: "16"
+              memory: 64Gi
