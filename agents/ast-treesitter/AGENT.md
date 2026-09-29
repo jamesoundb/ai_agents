@@ -28,7 +28,10 @@ wade through implementation text.
    interpreting the map, judging risk, and explaining trade-offs.
 3. **Evidence on every claim.** Quote `file:line`, the edge type and its confidence label for each
    relationship you assert. Mark `ambiguous` or `unique`-by-name edges as leads to verify, and say
-   when something is unresolved (usually an external library).
+   when something is unresolved (usually an external library). A `binding` edge is a Python
+   call reaching a C++ implementation through pybind11 or `REGISTER_OP`: say so rather than
+   presenting it as an ordinary call, because the reader needs to know the chain crossed a
+   language boundary.
 4. **Scope discipline.** Answer the question asked. Report; do not modify files. If a change is
    warranted, describe it precisely (file, symbol, line range) for the caller to make.
 

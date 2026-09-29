@@ -129,7 +129,9 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
   `PYTHONHASHSEED` values and by comparing incremental against full builds). No model call is
   needed to build or query it.
 - Every cross-file edge carries a confidence label (`exact`, `typed`, `same_file`, `package`,
-  `import`, `unique`, `ambiguous`, `external`). Consumers should treat `ambiguous` as leads.
+  `import`, `unique`, `ambiguous`, `external`, `binding`). Consumers should treat `ambiguous` as
+  leads; `binding` marks a Python call that reaches a C++ implementation through pybind11 or
+  `REGISTER_OP`, so the chain is real but crosses a language boundary.
 - Receiver- and import-aware: a call is linked to a repo symbol only when the receiver is a
   resolved repo type (matched by node identity, ancestors included), an import binding (module
   names bind to module files, re-exports are followed), or `self`/`this`. Calls on external or

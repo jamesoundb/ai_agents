@@ -12,8 +12,35 @@ index. Resolution is by name plus lightweight type tracking, never by a real typ
 | Java | classes/interfaces/enums/records/annotations (extends, implements, annotations), methods, constructors, fields | imports (single, wildcard, static), method invocations, `new X()`; same package resolved without import | fields, parameters, local declarations, enhanced-for variables, `this.field` chains |
 | Kotlin | classes/interfaces/enums (entries as typed fields)/data/sealed/objects/companion objects (supertypes, annotations, generics with bounds), primary-constructor `val`/`var` properties, class properties, functions/methods (params incl. `vararg`, return type, extension receiver; `= apply { }` bodies return the receiver), top-level functions and top-level `val`/`var` properties (typed variables) | `import` (single, wildcard, `as` alias) resolved through the declared package and the top-level definitions of each file (shared JVM package index with Java, so Kotlin and Java in one package see each other), calls (`f()`, `a.b()`, `a?.b()`, `Outer.member()` incl. companions, `(x as T).m()`, `a + b` as `plus`, calls inside lambdas with their implicit receiver or `it`), supertypes incl. nested types of imported classes | typed parameters and `vararg` (as arrays), `val x: T`, `val x = T(...)`, `val x = f()` (return type), properties incl. inherited ones used without `this.`, generic bounds on constructor properties, `Registry.lookup()` on `object`s |
 | Rust | structs (fields), enums, traits, impl blocks (methods attached to the type), functions, mods, type aliases, attributes | `use`, calls (plain, `Type::fn`, `x.method()`), macros (`name!`), struct literals, trait impls | typed parameters, `let x: T`, `let x = T { .. }`, `let x = T::new()`, `self` |
+| C / C++ (and CUDA `.cu`/`.cuh`) | namespaces (as modules), classes/structs/unions (bases; `public`/`private` is not recorded), enums and enumerators, constructors, destructors (`~T`, kept distinct from methods), methods, free functions, fields; a declaration in the `.h` and its out-of-line definition in the `.cc` share one qualified name and are paired by a `defines` edge, so callers do not split across the two | `#include "x.h"` resolves to the header's file node; `#include <vector>` stays external and is never matched to a repo file of the same name; calls (`obj->m()`, `ns::fn()`) with a receiver hint, `new T()` as `instantiates`, base classes as `extends` | receiver hints from pointer/namespace qualifiers; C++ is the language where declaration/definition pairing does most of the work, not local type inference |
 | Terraform (HCL) | `resource`, `data`, `module`, `variable`, `output`, `provider`, `locals`, `terraform` (required providers, backend), `moved` and `import` blocks | `var.`, `local.`, `module.x(.output)`, `data.t.n`, `type.name` references across all `.tf` files of the same directory, each recorded at the line of the reference (not of the enclosing attribute); `depends_on`; `moved`/`import` -> their `to` address; local module sources and `.terraform/modules/modules.json` for registry/git modules; a registry source with a `//subdir` that exists in the repo is an `ambiguous` lead to that directory. Iterators of `dynamic` blocks (`node_config.value`, or the `iterator =` name) are not references | n/a |
 | Kubernetes YAML | every document with `apiVersion` + `kind` (name, namespace, labels, images, selectors, pod-template labels), `List` items, Kustomization resources, Helm `values*.yaml` keys | ConfigMap/Secret/PVC/ServiceAccount/StorageClass/Ingress backend/HPA target/RoleBinding refs, Service->workload label selection, kustomization imports | n/a |
+
+## Python <-> C++ bridge
+
+A Python symbol whose implementation is a C++ kernel used to have its dependency chain cut at the
+language boundary, so a blast radius reported no dependents for something with many. Two binding
+styles are followed:
+
+- **pybind11**: `PYBIND11_MODULE(_pywrap_x, m)` becomes a `py_module` node and each `m.def("Name",
+  ...)` a `py_binding`. A Python call to `Name` links to that binding, and the binding links on to
+  the C++ function it exports -- both the lambda body and the `&Fn` pointer form -- so the chain
+  reaches the real implementation instead of stopping at the export.
+- **TensorFlow-style `REGISTER_OP`** registration, the same way.
+
+These edges carry their own confidence, **`binding`**, rather than being passed off as ordinary
+calls:
+
+```
+callers of RealCompute  (cpp/bindings.cc:5)
+  RealCompute <- _pywrap_demo.DemoExecute  [calls, same_file]  (cpp/bindings.cc:18)
+    _pywrap_demo.DemoExecute <- run_it     [calls, binding]    (python/bridge/caller.py:6)
+```
+
+A call with a Python definition in scope is never diverted to a binding of the same name. Limits:
+the binding must be visible in the repository as source -- generated wrapper modules that only
+exist after a build (Bazel `gen_*_ops.py`) are not there to be linked, and a Python caller of
+those stops at the generated name.
 
 ## Known limits (state them when relevant)
 

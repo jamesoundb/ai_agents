@@ -22,8 +22,7 @@ the lines it cites, not from dumping files into the model.
 
 ## Setup (once per machine)
 
-Install at user scope so every repository and scratch directory sees the agent, and updates are
-a single `git pull`:
+Install at user scope so every repository and scratch directory sees the agent:
 
 ```bash
 git clone <this repo> ~/ai_agents
@@ -32,14 +31,26 @@ git config --global core.excludesFile ~/.config/git/ignore
 echo '.ast-graph/' >> ~/.config/git/ignore      # the graph is a build artifact in every repo
 ```
 
-What that writes (symlinks into `~/ai_agents`, so a `git pull` there updates everything):
+What that writes:
 
 | harness | agent | skills |
 |---|---|---|
 | Antigravity (IDE and `agy`) | `~/.gemini/config/agents/ast-treesitter/agent.md` | `~/.gemini/config/skills/<skill>/` |
 | Gemini CLI | persona skill `~/.gemini/skills/ast-treesitter/` | `~/.gemini/skills/<skill>/` |
 
-Check it: `agy agents` lists `ast-treesitter` (verified with agy 1.2.4; the CLI keeps its own
+**Updating is two steps, not one.** The skills are symlinks into `~/ai_agents`, so `git pull`
+updates them immediately. The agent is a *rendered copy*, so it does not change until you re-run
+the installer:
+
+```bash
+git -C ~/ai_agents pull
+~/ai_agents/install.sh --harness antigravity --scope user --force   # --force replaces the copy
+```
+
+Skip the second line and you keep running the previous agent prompt with no indication that
+anything is out of date.
+
+Check it: `agy agents` lists `ast-treesitter` (verified with agy 1.2.13; the CLI keeps its own
 state in `~/.gemini/antigravity-cli/`, the IDE in `~/.gemini/antigravity/`, but both read the
 shared `~/.gemini/config/` customisation directory).
 
@@ -105,6 +116,7 @@ Every relationship carries a confidence label. Treat them as three tiers:
 |---|---|---|
 | `exact`, `typed` | import edge, or a call whose receiver type the graph knows (field, parameter, local, return type, inherited type) | a fact |
 | `same_file`, `package`, `import` | resolved by scope: the only definition in this file, package or imported file | a fact in practice |
+| `binding` | a Python call that reaches a C++ implementation through pybind11 or `REGISTER_OP` | a fact, across a language boundary |
 | `ambiguous` | a lead: several candidates, or a call on a value whose type is unknown | verify before acting |
 | `text match` | the agent found it with grep, not the graph | verify before acting |
 
