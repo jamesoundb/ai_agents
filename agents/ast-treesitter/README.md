@@ -147,10 +147,16 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
 
 1. From a clone of this repo: `./install.sh --harness antigravity --target /path/to/your/repo` (or your harness)
    (add `--copy` if symlinks are not an option, e.g. Windows without developer mode).
-   To roll out this agent alone, without the infrastructure ones, name it:
-   `./install.sh --harness claude --target /path/to/repo --agents ast-treesitter`. Its three
-   skills (`code-graph`, `code-skeleton`, `blast-radius`) come with it because the agent declares
-   them, so the relative path `code-skeleton` uses to reach the engine
+   To roll this agent out on its own, narrow **both** lists — `--agents` selects the agent but
+   still installs every skill:
+
+   ```bash
+   ./install.sh --harness claude --target /path/to/repo \
+       --agents ast-treesitter --skills code-graph,code-skeleton,blast-radius
+   ```
+
+   Naming any one of the three is enough: the installer pulls in the skills the agent declares,
+   so the relative path `code-skeleton` uses to reach the engine
    (`../code-graph/scripts/run.sh`) cannot end up dangling.
 2. Add `.ast-graph/` to the repo's `.gitignore`.
    Claude Code: the subagent runs with `permissionMode: default` and skills preloaded through a
