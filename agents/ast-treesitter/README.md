@@ -21,6 +21,43 @@ intellectronica, section 3.1 "Context gathering mechanisms".
 | "Where should this change go?" | Candidate symbols with locations and their importers |
 | "How do our Terraform modules and Kubernetes objects connect?" | `module.x -> output.y`, `Service -> Deployment` selection, ConfigMap/Secret/PVC references |
 
+## How it answers a question
+
+Worth reading once, because the value is in the mechanism rather than the phrasing. A developer
+asks *"who calls `Ledger.post`?"* in a Python package. The agent runs four commands:
+
+```
+run.sh build --root .                    # parse changed files, re-link the graph
+run.sh query callers Ledger.post         # the answer
+run.sh query symbol Ledger.post          # confirm the symbol it resolved
+                                         # then open only the lines it is about to cite
+```
+
+and the second one returns:
+
+```
+callers of Ledger.post  (billing/core.py:12)  depth=2
+  Ledger.post <- charge_account              [calls, typed]  (billing/api.py:10)
+  Ledger.post <- settle                      [calls, typed]  (billing/jobs.py:9)
+  Ledger.post <- test_post_records_an_entry  [calls, typed]  (tests/test_core.py:8)
+```
+
+No model reasoning produced that list. Tree-sitter parsed the files and the linker resolved the
+receivers; the model asked the question and cited the result. Which is what makes it right where
+the obvious alternative is wrong — in this package (`evals/fixtures/python-billing`, so you can
+run it yourself):
+
+- `billing/api.py` reaches the class through a re-export (`from .core import Ledger as Book`), so
+  the defining name never appears in the calling file.
+- `billing/jobs.py` holds a local typed only by a factory's return annotation
+  (`def open_ledger(...) -> Ledger`), so the class name appears nowhere in that file either.
+- `billing/legacy.py` has an unrelated `LegacyLedger.post`.
+
+`grep -rn "Ledger"` is blind to the first two and `grep -rn "\.post("` reports the third as a
+caller. The graph finds all three real callers, labels each `typed`, and excludes the decoy.
+Measured over three runs: 8-9 tool calls, 33-51s, ~50k tokens, and the same trace shape every
+time.
+
 Not for: editing code (read-only by design), runtime/behavioral questions, or anything that needs
 a real type checker: overloads are attributed only by argument count and the argument types the
 linker can see (otherwise reported as `ambiguous`), generics resolve only through a declared
@@ -51,6 +88,32 @@ interpreter; override with `ASTGRAPH_PYTHON` (also used as the base for the venv
 `ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.db` plus a `graph.db.stamp` sidecar
 (gitignore both). A build is skipped outright when the git working tree is unchanged; otherwise
 files are re-parsed by content hash and the whole graph is re-linked.
+
+### Storage: why the graph is a database
+
+The graph was one JSON document that every query `json.load`ed in full. That is fine at a few
+hundred files and fatal at twenty thousand: TensorFlow with C++ indexed produced a **1.3 GB**
+`graph.json`, and a single `query stats` cost **12.8s and 5.3 GB of RSS**. Nearly two thirds of
+those bytes were the per-file parse cache, which only `build` ever reads.
+
+`graph.db` is SQLite: `nodes`, `edges`, `parsed` and `meta`, with eight indexes. A query fetches
+what it needs through an index instead of materialising the graph, and lazy views (`NodeView`,
+`AdjView`, `NameView`) keep `g.nodes[id]` and `g.out[src]` reading like dictionary access.
+Measured on TensorFlow, same output both sides:
+
+| query | JSON | SQLite |
+|---|---|---|
+| `symbol tensorflow::OpKernel` | 13.65s / 3.6 GB | **0.30s / 50 MB** |
+| `callers OpKernel::Compute` | 3.15s / 688 MB | **0.29s / 47 MB** |
+| `find MatMul` | 2.96s / 673 MB | **0.40s / 53 MB** |
+| `stats` | 12.8s / 5.3 GB | 4.74s / 992 MB |
+
+The queries a developer actually runs are ~100x leaner. `stats` and `overview` genuinely read the
+whole graph, so they improved but stay slow, and **build got slower** (~11 min and 3.2 GB on
+TensorFlow) because writing rows costs more than dumping a dict — the right trade when you build
+once and query all day. `meta` stores `GRAPH_VERSION` and a hash of `astgraph.py`, so a graph
+written by an older engine is rebuilt rather than misread; the previous JSON format is treated as
+absent.
 Regression tests: `skills/code-graph/tests/run_tests.sh` (fixture in `tests/fixture/`).
 
 ## Languages
@@ -111,14 +174,19 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
 
 ## Measured behaviour
 
+The tables below were measured on the **JSON engine**, before the SQLite migration of
+2026-09-28. Node and edge counts, resolution quality and build times still hold; the query
+latency and memory figures have been superseded by the table above, and rows that describe JSON
+mechanics are marked.
+
 Large repo (terraform-provider-google @ e4cfd727a, 2,933 Go files, 1.19M lines, 2026-09-14):
 
 | run | result |
 |---|---|
 | cold build | 13s, 346 MB peak RSS, 50,341 nodes, 224,417 edges |
 | unchanged git tree | fast path, 0.13s |
-| one-file edit | 1 file re-parsed, 6s (JSON load/dump plus a ~4s linear re-link) |
-| `query overview` / `query stats` | ~1.7s each (loading the 188 MB graph) |
+| one-file edit | 1 file re-parsed, 6s (JSON era: load/dump plus a ~4s linear re-link) |
+| `query overview` / `query stats` | ~1.7s each (JSON era: loaded the whole 188 MB graph; SQLite queries do not) |
 | `trace-deps ReplaceVars --depth 2` | 1,029 files; 5,697 rows degrade to the summary view automatically |
 | `symbol ReplaceVars` | 47 lines (capped, with a per-file summary of the rest) |
 
@@ -132,7 +200,7 @@ linker only):
 |---|---|---|
 | cold build | 12s, 256 MB RSS | 20s, 510 MB RSS |
 | one-line edit rebuild | 4.9s | 11.8s |
-| graph.json | 162 MB -> 107 MB | 375 MB -> 257 MB |
+| graph.json (JSON era; now `graph.db`) | 162 MB -> 107 MB | 375 MB -> 257 MB |
 | edges (before -> after) | 407,580 -> 177,601 | 810,251 -> 410,035 |
 | ambiguous edges | 281,255 -> 25,408 | 529,471 -> 79,480 |
 | typed edges | 6,407 -> 14,678 | 42,134 -> 52,295 |
