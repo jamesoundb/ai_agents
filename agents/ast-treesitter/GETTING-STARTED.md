@@ -171,3 +171,24 @@ $S skeleton src/main/kotlin/com/acme/Order.kt        # a file's outline with lin
    day.
 3. A missing edge is more common than a wrong one. The agent is designed to say "lead" or
    "text match" rather than guess; if it presented a lead as a fact, that is the bug to report.
+4. If the answer looks stale rather than wrong — a symbol you just added is missing, or a caller
+   you just deleted is still listed — force a rebuild. A build on an unchanged git working tree
+   is skipped outright, and says so:
+
+   ```
+   graph at ./.ast-graph/graph.db is up to date (git working tree unchanged since ...)
+   ```
+
+   That fast path is driven by a fingerprint of the tree, and it has one blind spot: **edits to
+   git-ignored files are invisible to it**, so a repository with generated sources that are not
+   committed can keep serving an older graph. Either re-parse in place, or delete the artifact
+   and start clean:
+
+   ```bash
+   <skills dir>/code-graph/scripts/run.sh build --root . --full   # re-parse every file
+   rm -rf .ast-graph && <skills dir>/code-graph/scripts/run.sh build --root .
+   ```
+
+   Both produce the same graph; `--full` is faster because it keeps the parse cache. You never
+   need to do this after a version upgrade — the graph stores the engine's hash and rebuilds
+   itself when it changes.
