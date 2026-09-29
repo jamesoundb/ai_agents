@@ -52,6 +52,10 @@ repo-checks:
   stage: check
   script:
     - python3 tools/ci/check_repo.py      # frontmatter, agent->skill references, AGENTS.md in sync
+    # Structural check of the behavioral eval suite. Does NOT run the evals (that needs the
+    # claude CLI and spends API credits) -- it catches malformed graders, uncompilable regexes
+    # and missing fixtures before anyone pays for a run.
+    - python3 evals/validate.py
 
 lint:
   stage: check

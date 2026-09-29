@@ -5,14 +5,15 @@ description: >
   fields, calls, imports, inheritance, Terraform resources/modules, Kubernetes objects) instead of
   grepping and reading raw files. Use when you need to understand architecture, find callers or
   callees, trace dependencies, rank hub symbols, or map Terraform/Kubernetes relationships.
-  Supports Python, JavaScript/TypeScript, Go, Java, Kotlin, Rust, HCL and YAML.
+  Supports C, C++, Python, JavaScript/TypeScript, Go, Java, Kotlin, Rust, HCL and YAML, and
+  links Python to C++ across pybind11 bindings and TensorFlow-style op registration.
 allowed-tools: Bash(*/code-graph/scripts/run.sh *), Bash(python3 */code-graph/scripts/astgraph.py *), Read, Glob, Grep
 ---
 
 # code-graph: query a map of the code, do not dump the code
 
 Tree-sitter parses every supported file into a symbol skeleton, and this skill links those
-skeletons into a graph stored at `.ast-graph/graph.json` (relative to the repo root). The
+skeletons into a graph stored at `.ast-graph/graph.db` (relative to the repo root). The
 language model should navigate that graph and only open raw source for the exact line ranges it
 needs. Parsing is deterministic and cheap; do not ask the model to infer relationships that the
 graph already contains.
@@ -26,8 +27,14 @@ it writes into the repo is the graph under `.ast-graph/`).
 1. **Build or refresh the graph** from the repo root. Always do this first; nothing watches the
    filesystem. In a git checkout an unchanged working tree returns in well under a second (the
    graph carries a git stamp in `<graph>.stamp`); otherwise only changed files are re-parsed
-   (by content hash) but every file is re-linked, which takes seconds on small repos and tens of
-   seconds on 1M+ line repos:
+   (by content hash) but every file is re-linked, so the cost scales with the whole repo, not
+   with your edit. Measured on TensorFlow (20,805 indexed files, 443k symbols, 1.43M edges,
+   C/C++ and Python): a cold build takes ~11 minutes and ~3.2 GB RSS and writes a 1.7 GB
+   `graph.db`. **Querying it is cheap**: targeted commands (`symbol`, `callers`, `callees`,
+   `trace-deps`, `file`, `find`, `path`, `stats`) each return in 0.2-0.4s using ~50 MB, because
+   they read through SQLite indexes instead of loading the graph. `overview` is the one command
+   that weighs the whole graph (~3s/265 MB; ~5.5s/500 MB with `--no-tests`). Use `--include` if
+   you only care about part of the tree:
    ```bash
    scripts/run.sh build --root .
    ```
@@ -89,7 +96,34 @@ override at runtime; `callers CLASS --no-members` keeps only edges to the class 
 (`--kind` drops path-only hits; `--no-tests` hides test-file symbols); `path` ignores
 `ambiguous` edges unless `--include-ambiguous`. Every query subcommand accepts `--json` for machine-readable
 output (`stats` always prints JSON). Run `query --root DIR ...` from outside the repo (the graph is read from
-`DIR/.ast-graph/graph.json`) or `query --graph PATH ...` for a graph at a custom path.
+`DIR/.ast-graph/graph.db`) or `query --graph PATH ...` for a graph at a custom path.
+
+## Crossing the Python/C++ boundary
+
+A Python call that resolves to nothing in Python is matched against **pybind11** exports, so
+blast radius reaches the C++ that implements it:
+
+```
+process --calls (binding)--> _acme_core.run_engine  (bindings.cc:5)
+_acme_core.run_engine --calls (same_file)--> RunEngine  (bindings.cc:4)
+RunEngine --calls (typed)--> acme.Engine.Run  (engine.cc:4)
+```
+
+`PYBIND11_MODULE` becomes a `py_module`, each `m.def("name", ...)` a `py_binding`, and the
+binding carries an edge to whatever it exports (`&Func`, or the calls inside an exported
+lambda). TensorFlow-style registration is also indexed: `REGISTER_OP("X")` becomes an `op_def`
+and `REGISTER_KERNEL_BUILDER(Name("X"), KernelClass)` an `implements` edge from the kernel to
+the op. These hops are labelled `binding` so you can see which edges crossed a language
+boundary.
+
+Two rules keep it from inventing edges: a name exported by more than one extension module is
+dropped rather than guessed at, and a call is never diverted to a binding when Python defines
+that name itself.
+
+**What is not bridged:** SWIG, Cython, ctypes/cffi and Boost.Python. A repo binding through
+those still has its Python and C++ halves indexed separately, and a blast radius that stops at
+the boundary will look complete rather than truncated — check for a binding layer before
+trusting a "no dependents" answer on a C extension.
 
 ## Naming symbols in queries
 

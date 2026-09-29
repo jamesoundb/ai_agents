@@ -48,14 +48,14 @@ Engine: `astgraph.py` (Python 3.10+, `tree-sitter`, `tree-sitter-language-pack`;
 tested on 3.12, and the pinned releases of both libraries require 3.10). `run.sh` installs
 those into `~/.cache/astgraph/venv` on first use and stops with a clear message on an older
 interpreter; override with `ASTGRAPH_PYTHON` (also used as the base for the venv) or
-`ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.json` plus a `graph.json.stamp` sidecar
+`ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.db` plus a `graph.db.stamp` sidecar
 (gitignore both). A build is skipped outright when the git working tree is unchanged; otherwise
 files are re-parsed by content hash and the whole graph is re-linked.
 Regression tests: `skills/code-graph/tests/run_tests.sh` (fixture in `tests/fixture/`).
 
 ## Languages
 
-Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, Terraform/HCL, Kubernetes YAML (including
+C, C++ (and CUDA), Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, Terraform/HCL, Kubernetes YAML (including
 Kustomization and Helm `values.yaml`; Helm templates are recognized but not parsed). Details and
 limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
 

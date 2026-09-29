@@ -22,6 +22,7 @@ skills/code-graph/tests/fixture/**/.terraform/
 skills/code-graph/tests/fixture/**/.terraform.lock.hcl
 __pycache__/
 *.pyc
+.ruff_cache/
 
 # Secrets / local discovery data for gke-cost-discovery
 gke-cost-discovery.env

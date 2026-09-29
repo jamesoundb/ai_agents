@@ -1,4 +1,4 @@
-# Graph schema (`.ast-graph/graph.json`, version 7)
+# Graph schema (`.ast-graph/graph.db`, version 8)
 
 ```json
 {
@@ -65,12 +65,43 @@ and not in scope is not guessed.
 
 ## Build artifacts
 
-`graph.json` (`version` = `GRAPH_VERSION`, currently 7, and `engine` = SHA-1 of `astgraph.py`; a
-mismatch of either forces a full re-parse) and, in
-git checkouts, `graph.json.stamp`: `{"version", "stamp", "stats", "built_at"}` where `stamp` is a
-SHA-1 over HEAD, the porcelain status of indexed source files under the root, their content, and
-the include/exclude/keep-dir filters. A matching stamp makes `build` return without loading the
-graph.
+`graph.db`, a SQLite database, plus (in git checkouts) a `graph.db.stamp` sidecar.
+
+### Why a database
+
+The graph used to be one JSON document that every query `json.load`ed in full. That is fine at a
+few hundred files and fatal at twenty thousand: TensorFlow with C/C++ indexed produced a 1.3 GB
+file, and a single `query stats` cost 12.8s and **5.3 GB of RSS** — more memory than many laptops
+have. Of those bytes, 62% were the per-file parse cache that only `build` reads.
+
+SQLite lets a query fetch what it needs through an index instead of materialising the graph.
+
+### Tables
+
+| table | holds | indexes |
+|---|---|---|
+| `nodes` | one row per symbol; `annotations`/`extra` are JSON columns, `lname`/`lqname` are pre-lowered for lookup | `lname`, `lqname`, `file`, `kind`, `parent` |
+| `edges` | `src`, `dst`, `type`, `line`, `confidence`, `name` | `src`, `dst`, `type` |
+| `parsed` | the per-file parse cache (`path` -> JSON blob), read by `build` for incrementality and by `query file` one row at a time | primary key on `path` |
+| `meta` | `version`, `engine`, `root`, `built_at`, `stats` | primary key on `key` |
+
+`version` = `GRAPH_VERSION` (currently 8) and `engine` = SHA-1 of `astgraph.py`; a mismatch of
+either forces a full re-parse. A graph written by an older engine, or in the previous JSON format,
+is treated as absent and rebuilt rather than misread.
+
+### Reading it
+
+Queries go through `Store` and the lazy views over it (`NodeView`, `AdjView`, `NameView`,
+`LazyGraph`), so `g.nodes[id]`, `g.out[src]` and `g.by_name[x]` are indexed lookups rather than
+dictionary scans. Whole-graph commands (`find`, `overview`, `summary`, `path`) still read every
+row, but stream them instead of building one large document.
+
+### The stamp
+
+`graph.db.stamp`: `{"version", "stamp", "stats", "built_at"}` where `stamp` is a SHA-1 over HEAD,
+the porcelain status of indexed source files under the root, their content, and the
+include/exclude/keep-dir filters. A matching stamp makes `build` return without opening the
+database at all.
 
 ## Refs (per file, pre-link)
 

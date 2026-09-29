@@ -40,8 +40,21 @@ def build(root, *extra):
 
 
 def load(root):
-    with open(os.path.join(root, ".ast-graph", "graph.json")) as f:
-        return json.load(f)
+    """The whole graph as one dict, read back out of the SQLite store.
+
+    Storage is a database so that a query never has to materialise the graph (a 1.3 GB JSON blob
+    on TensorFlow cost 5.3 GB of RSS per query). Tests are the one caller that legitimately wants
+    everything at once, including the per-file parse cache, so they reassemble it here."""
+    db = os.path.join(root, ".ast-graph", "graph.db")
+    st = astgraph.Store(db)
+    try:
+        g = {k: st.meta(k) for k in ("version", "engine", "root", "built_at", "stats")}
+        g["nodes"] = list(st.iter_nodes())
+        g["edges"] = list(st.iter_edges())
+        g["files"] = st.parsed()
+        return g
+    finally:
+        st.close()
 
 
 class Graph:
@@ -154,19 +167,19 @@ def test_resolution(root):
     ov = G.node("python/app/overloads.py", "caller")
     tgt = [(G.nodes[e["dst"]]["line"], e["confidence"]) for e in G.edges_from(ov, name="read")]
     check(tgt == [(8, "same_file")], f"py: call attaches to the implementation, not the first @overload stub {tgt}")
-    fr = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "find", "read", "--lang", "python", "--kind", "function", "--json"))
-    at = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "overloads.py:read@8")
+    fr = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "find", "read", "--lang", "python", "--kind", "function", "--json"))
+    at = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "overloads.py:read@8")
     check("overloads.py:8" in at.splitlines()[0], f"`file:name@line` query form selects that definition: {at.splitlines()[0][:80]}")
     check(fr and fr[0]["line"] == 8, f"find lists the implementation before its @overload stubs (first at line {fr[0]['line'] if fr else None})")
-    ctor = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "trace-deps", "service.py:Service.__init__", "--depth", "1")
+    ctor = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "trace-deps", "service.py:Service.__init__", "--depth", "1")
     check("is a constructor" in ctor and "python/tests/test_service.py" in ctor, "trace-deps on __init__ includes the class's instantiations")
-    pth = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentOrchestratorTest", "PaymentGatewayClient")
+    pth = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "path", "PaymentOrchestratorTest", "PaymentGatewayClient")
     check("--calls (typed)--> PaymentGatewayClient.validate" in pth, f"path: text rows end at the target's member: {pth.strip().splitlines()[-1][:80] if pth.strip() else pth!r}")
-    pj = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentOrchestratorTest", "PaymentGatewayClient", "--json"))
+    pj = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "path", "PaymentOrchestratorTest", "PaymentGatewayClient", "--json"))
     check(pj["found"] and len(pj["hops"]) == len(pth.strip().splitlines()) and pj["hops"][-1]["dst"].endswith("PaymentGatewayClient.validate@4")
           and all(set(h) == {"src", "type", "confidence", "dst", "file", "line"} for h in pj["hops"]),
           f"path --json: one hop per text row with src/type/confidence/dst/file/line ({len(pj['hops'])} hops)")
-    pn = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "path", "PaymentGatewayClient", "PaymentOrchestratorTest", "--json"))
+    pn = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "path", "PaymentGatewayClient", "PaymentOrchestratorTest", "--json"))
     check(pn["found"] is False and pn["hops"] == [], "path --json: no path -> found=false, empty hops")
     pal = G.node("enums.py", "Palette")
     pc = {(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["src"].startswith(pal["id"].split("@")[0]) or G.nodes[e["src"]].get("parent") == pal["id"]}
@@ -240,9 +253,9 @@ def test_resolution(root):
     check(("helper", "import") in c, f"rust: helper() from the workspace crate resolves with import confidence {c}")
     rimp = sorted(G.nodes[e["dst"]]["id"] for e in G.g["edges"] if e["type"] == "imports" and e["src"] == "rust/src/lib.rs")
     check("rust/crates/util/src/lib.rs" in rimp and "rust/src/store.rs" in rimp and not any(x.startswith("external:crate") for x in rimp), f"rust: crate:: and workspace crate imports resolve {rimp}")
-    ovr = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--no-tests", "--lang", "rust"))
+    ovr = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--json", "--no-tests", "--lang", "rust"))
     rscore = {G.nodes[i]["qname"]: c for i, c in ovr["hub_symbols"]}
-    ovr_all = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--lang", "rust"))
+    ovr_all = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--json", "--lang", "rust"))
     rscore_all = {G.nodes[i]["qname"]: c for i, c in ovr_all["hub_symbols"]}
     check(rscore.get("Store", 0) < rscore_all.get("Store", 0) and not any(q.startswith("impl") for q in rscore), f"rust: --no-tests drops inline `mod tests` usage and impl blocks roll up to Store ({rscore_all.get('Store')} -> {rscore.get('Store')})")
 
@@ -273,7 +286,7 @@ def test_resolution(root):
     check((37, "typed") in saves, f"kotlin: class property `val cached = makeRepo()` typed from the return type {saves}")
     check(("Sq.plus2", "typed") in kc, f"kotlin: infix call `a plus2 b` typed {kc}")
     check(not [e for e in G.edges_from(kp) if e.get("name") in ("let", "forEach")], "kotlin: stdlib scope/collection functions produce no lead edges")
-    sq_card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Sq")
+    sq_card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Order.kt:Sq")
     check("double" in sq_card and "[extension, " in sq_card, "kotlin: extension functions appear on the receiver's card (tagged with their file)")
     lk = sorted(e["line"] for e in G.edges_from(kp, name="lookup") if e["confidence"] == "typed")
     check(39 in lk, f"kotlin: `val reg = Registry` local typed as the object {lk}")
@@ -294,7 +307,7 @@ def test_resolution(root):
     check(astgraph.is_test_file("kotlin/src/main/kotlin/x/FooTest.kt") and not astgraph.is_test_file("kotlin/src/main/kotlin/x/Latest.kt"), "kotlin: *Test.kt is a test file, Latest.kt is not")
     fields = sorted(n["name"] for n in G.g["nodes"] if n["kind"] == "field" and n["file"].endswith("Order.kt"))
     check(fields == ["LARGE", "SMALL", "all", "cached", "h", "id", "id", "items", "lazyOrder", "runner", "side", "sq", "svc", "svc"], f"kotlin: primary-constructor val/var parameters, class properties and enum entries are fields {fields}")
-    card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Order")
+    card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Order.kt:Order")
     check("create" in card and "Members" in card, "kotlin: class card lists companion members")
     dt = G.confs(G.edges_from(G.node("Order.kt", "Sq.describeTwice")))
     check(("Sq.double", "typed") in dt, f"kotlin: `this`/`this@label` inside an extension function is the receiver type {dt}")
@@ -302,11 +315,11 @@ def test_resolution(root):
     check(("FunctionProvider.charLength", "typed") in kc, f"kotlin: imported top-level `val currentDialect: Dialect` types a property chain {kc}")
     cd = G.node("Base.kt", "currentDialect")
     check(cd["kind"] == "variable" and cd["extra"].get("type") == "Dialect", f"kotlin: top-level property is a typed variable node {cd['kind']} {cd['extra']}")
-    oc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Base.kt:FunctionProvider.charLength")
+    oc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Base.kt:FunctionProvider.charLength")
     check("Overridden by (1): SqliteProvider.charLength" in oc, f"kotlin: method card lists overriding methods: {[l for l in oc.splitlines() if 'Overrid' in l]}")
-    ja = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Shape.java:Shape.area")
+    ja = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Shape.java:Shape.area")
     check("Overridden by" in ja and "Circle.area" in ja and "Square.area" in ja, f"java: interface method card lists implementers' methods: {[l for l in ja.splitlines() if 'Overrid' in l]}")
-    jc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Circle.java:Circle.area")
+    jc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Circle.java:Circle.area")
     check("Overrides: Shape.area" in jc, f"java: implementing method card names the interface method: {[l for l in jc.splitlines() if 'Overrid' in l]}")
     kc2 = [(G.nodes[e["dst"]]["qname"], e["line"], e["confidence"]) for e in G.edges_from(kp)]
     for want in ("Cart.grow", "Kind.code", "Order.Builder.build" if False else "Cart.Builder.build", "Cart.plus"):
@@ -326,7 +339,7 @@ def test_resolution(root):
     check(("Provider.Chain.proceed", "typed") in rc, f"kotlin: parameter typed `Provider.Chain` (Provider imported) resolves member calls {rc}")
     mc = [(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.g["edges"] if e["src"] == G.node("OrderService.kt", "MyChain")["id"] and e["type"] == "implements"]
     check(mc == [("Provider.Chain", "import")], f"kotlin: `: Provider.Chain` implements the nested interface of an imported type {mc}")
-    bc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "Order.kt:Cart.Builder.kind")
+    bc = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Order.kt:Cart.Builder.kind")
     check("fun kind(k: Kind): Builder" in bc, f"kotlin: `= apply {{ }}` setter gets the receiver as return type: {bc.splitlines()[0]}")
     wr = G.node("Order.kt", "Widget.react")
     rc2 = [(G.nodes[e["dst"]]["qname"], e["line"], e["confidence"]) for e in G.edges_from(wr)]
@@ -350,7 +363,7 @@ def test_resolution(root):
           "kotlin: `@Composable` on a function type no longer breaks the file (grammar workaround)")
     sc = G.confs(G.edges_from(G.node("Compose.kt", "Screen")))
     check(("Row", "same_file") in sc, f"kotlin: composable calling composable resolved {sc}")
-    ft = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "find", "helper", "--no-tests", "--json")
+    ft = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "find", "helper", "--no-tests", "--json")
     check(all(not n["file"].split("/")[-1].startswith("test") and "/tests/" not in n["file"] for n in json.loads(ft)), "find --no-tests hides test-file symbols")
 
     # --- Terraform / Kubernetes
@@ -362,7 +375,7 @@ def test_resolution(root):
     mv_edges = [(G.nodes[e["dst"]]["qname"], e["type"], e["confidence"]) for e in G.g["edges"] if mv and e["src"] == mv[0]["id"]]
     check(len(mv) == 1 and mv[0]["signature"] == "moved aws_instance.old -> aws_instance.app" and mv_edges == [("aws_instance.app", "references", "exact")],
           f"hcl: `moved` block is a node referencing its `to` address {mv_edges}")
-    td = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "trace-deps", "infra/main.tf:aws_instance.app", "--depth", "1")
+    td = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "trace-deps", "infra/main.tf:aws_instance.app", "--depth", "1")
     check("moved.aws_instance.app" in td and "references -> aws_instance.app | exact" in td, f"hcl: blast radius of a resource lists the moved block: {[l for l in td.splitlines() if 'moved' in l]}")
     reg = [(G.nodes[e["dst"]]["id"], e["confidence"]) for e in G.edges_from(G.node("main.tf", "module.vpc_from_registry"), typ="uses_module")]
     check(("terraform_module:infra/modules/vpc", "ambiguous") in reg and any(c == "external" for _, c in reg),
@@ -372,29 +385,29 @@ def test_resolution(root):
     sg = G.node("infra/main.tf", "aws_security_group.app")
     ref_lines = sorted(e["line"] for e in G.g["edges"] if e["src"] == sg["id"] and e["type"] == "references" and G.nodes[e["dst"]]["qname"] == "module.vpc")
     check(vpc_line in ref_lines, f"hcl: a reference inside a multi-line expression is recorded at its own line ({ref_lines}, expected {vpc_line})")
-    tfq = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "symbol", "main.tf:terraform")
+    tfq = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "main.tf:terraform")
     check(tfq.splitlines()[0].endswith("(main.tf:1)"), f"query: `file:name` prefers the exact root path over suffix matches: {tfq.splitlines()[0]}")
-    ovh = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--lang", "hcl", "--top", "20")
+    ovh = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--lang", "hcl", "--top", "20")
     check('variable "cidr"' in ovh and "(+1 same-named copy in other directories)" in ovh, "overview: same-named symbols in several directories collapse to one row")
     st = json.loads(run("query", "--root", root, "stats"))
-    check(st.get("files", 0) > 0, "query --root reads <root>/.ast-graph/graph.json")
+    check(st.get("files", 0) > 0, "query --root reads <root>/.ast-graph/graph.db")
     check(("selects", "exact") in types, "k8s: Service selects Deployment")
     svc = [n for n in G.g["nodes"] if n["kind"] == "k8s_object" and n["name"] == "Service/web"][0]
     check(any(G.nodes[e["dst"]]["name"] == "Deployment/web" for e in G.g["edges"] if e["src"] == svc["id"] and e["type"] == "selects"), "k8s: Service/web -> Deployment/web")
 
     # --- overview flags
-    ovl = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--lang", "go"))
+    ovl = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--json", "--lang", "go"))
     files_go = {G.nodes[i]["file"] for i, _ in ovl["hub_symbols"]}
     check(files_go and all(f.endswith(".go") for f in files_go), f"overview --lang go ranks only Go symbols {sorted(files_go)}")
-    ovt = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--no-tests", "--top", "80"))
+    ovt = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--json", "--no-tests", "--top", "80"))
     scored = {G.nodes[i]["qname"]: c for i, c in ovt["hub_symbols"]}
-    check("PaymentRequest" in scored and scored["PaymentRequest"] < {G.nodes[i]["qname"]: c for i, c in json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--top", "80"))["hub_symbols"]}["PaymentRequest"],
+    check("PaymentRequest" in scored and scored["PaymentRequest"] < {G.nodes[i]["qname"]: c for i, c in json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--json", "--top", "80"))["hub_symbols"]}["PaymentRequest"],
           "overview --no-tests drops the usage coming from PaymentOrchestratorTest")
-    fj = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "file", "python/pkg/ops.py", "--json"))
+    fj = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "file", "python/pkg/ops.py", "--json"))
     check("python/app/consumer.py" in fj.get("imported_by", []) and any(n["name"] == "convert" for n in fj["nodes"]), f"query file --json lists nodes and importers {fj.get('imported_by')}")
 
     # --- hub-sized output modes
-    gp = os.path.join(root, ".ast-graph", "graph.json")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
     summ = run("query", "--graph", gp, "trace-deps", "PaymentRequest", "--summary")
     check("| Directory |" in summ and "Most connected dependents" in summ and "Files affected:" in summ and "| Dependent file |" not in summ, "trace-deps --summary: directory table, dependents, no per-edge rows")
     fo = run("query", "--graph", gp, "trace-deps", "PaymentRequest", "--files-only")
@@ -425,7 +438,7 @@ def test_resolution(root):
     check(fl and all(n["file"].endswith(".go") for n in fl), f"find --lang go filters to Go files {[n['file'] for n in fl][:3]}")
 
     # --- overview hub sanity: the mock must not outrank real code
-    ov = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "overview", "--json", "--top", "500"))
+    ov = json.loads(run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "overview", "--json", "--top", "500"))
     score = {G.nodes[i]["qname"]: c for i, c in ov["hub_symbols"]}
     # the mock's hub score is just its legitimate uses: one instantiation + one typed m.Get call
     check(score.get("ResourceDataMock", 0) == 2 and score.get("MemStore", 0) >= score.get("ResourceDataMock", 0),
@@ -443,7 +456,7 @@ def test_tests_detection(root, G):
                     ("rust/tests/integration.rs", True), ("google/services/x/resource_x_connectivity_test_resource.go", False),
                     ("a/inspect_template.go", False), ("a/latest_version.go", False)]:
         check(astgraph.is_test_file(p) is want, f"is_test_file({p}) == {want}")
-    out = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.json"), "trace-deps", "PaymentRequest")
+    out = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "trace-deps", "PaymentRequest")
     line = next((l for l in out.splitlines() if l.startswith("Tests reached")), "")
     check("PaymentOrchestratorTest.java" in line and "LatestAttestor" not in line, f"trace-deps PaymentRequest tests: {line}")
 
@@ -465,6 +478,233 @@ def test_keep_dir_and_parse_errors(tmp):
     check("parse errors (first at L3)" in head, f"skeleton reports the first parse-error line: {head}")
 
 
+def test_cpp_extraction(root):
+    """C/C++ phase 1: structure, namespaces, inheritance, includes, calls.
+
+    The load-bearing assertion is the last one: an out-of-line `MatMulOp::Compute` defined in
+    the .cc must carry the SAME qname as its declaration in the .h. Without that the two are
+    separate symbols and every caller links to whichever the linker happened to see first.
+    """
+    print("# C/C++ extraction")
+    hdr = run("skeleton", os.path.join(root, "cpp", "kernel.h"), "--json")
+    doc = json.loads(hdr)[0]
+    q = {n["qname"]: n for n in doc["nodes"]}
+    for want, kind in [("demo", "module"), ("demo.ops", "module"),
+                       ("demo.ops.MatMulOp", "class"),
+                       ("demo.ops.MatMulOp.MatMulOp", "constructor"),
+                       ("demo.ops.MatMulOp.Compute", "method"),
+                       ("demo.ops.MatMulOp.rank_", "field"),
+                       ("demo.ops.Point", "struct"), ("demo.ops.Point.x", "field"),
+                       ("demo.ops.Mode", "enum"), ("demo.ops.Mode.FAST", "field")]:
+        check(want in q and q[want]["kind"] == kind,
+              f"header: {kind} {want}" + ("" if want in q else " MISSING"))
+    check(any(n["qname"] == "demo.ops.MatMulOp.~MatMulOp" and n["kind"] == "destructor"
+              for n in doc["nodes"]), "header: destructor recognised")
+    refs = {(r["kind"], r["name"]) for r in doc["refs"]}
+    check(("extends", "OpKernel") in refs, "header: base class -> extends ref")
+    check(("import", "vector") in refs and ("import", "fixture/base.h") in refs,
+          "header: both #include forms become imports")
+
+    impl = json.loads(run("skeleton", os.path.join(root, "cpp", "kernel.cc"), "--json"))[0]
+    iq = {n["qname"]: n["kind"] for n in impl["nodes"]}
+    check(iq.get("demo.ops.MatMulOp.Compute") == "method",
+          f"impl: out-of-line definition keeps the class qname (got {iq.get('demo.ops.MatMulOp.Compute')})")
+    check(iq.get("demo.ops.MatMulOp.MatMulOp") == "constructor",
+          "impl: out-of-line constructor is a constructor, not a method")
+    check(iq.get("demo.ops.MatMulOp.~MatMulOp") == "destructor",
+          "impl: out-of-line destructor is a destructor")
+    irefs = {(r["kind"], r.get("hint"), r["name"]) for r in impl["refs"]}
+    check(("call", "ctx", "input") in irefs, "impl: ptr->method() call with receiver hint")
+    check(("call", "errors", "InvalidArgument") in irefs, "impl: ns::fn() call with namespace hint")
+    check(("instantiates", None, "Point") in irefs, "impl: `new Point()` -> instantiates")
+    check(q["demo.ops.MatMulOp.Compute"]["qname"] == "demo.ops.MatMulOp.Compute"
+          and "demo.ops.MatMulOp.Compute" in iq,
+          "header declaration and .cc definition agree on the qname")
+
+    G = Graph(load(root))
+    # Phase 2: the .h declaration and the .cc definition are paired.
+    decl = [n for n in G.g["nodes"] if n["file"].endswith("cpp/kernel.h")
+            and n["qname"] == "demo.ops.MatMulOp.Compute"]
+    defn = [n for n in G.g["nodes"] if n["file"].endswith("cpp/kernel.cc")
+            and n["qname"] == "demo.ops.MatMulOp.Compute"]
+    check(len(decl) == 1 and len(defn) == 1, "one declaration in the .h and one definition in the .cc")
+    if decl and defn:
+        check(decl[0]["extra"].get("is_declaration") is True, "the header node is marked a declaration")
+        check(defn[0]["extra"].get("has_body") is True, "the .cc node carries the body")
+        pairs = [e for e in G.g["edges"] if e["type"] == "defines"
+                 and e["src"] == defn[0]["id"] and e["dst"] == decl[0]["id"]]
+        check(len(pairs) == 1, f"a `defines` edge pairs the body to its prototype (got {len(pairs)})")
+        check(decl[0]["extra"].get("defined_at", "").endswith("kernel.cc:10"),
+              f"the declaration records where it is defined ({decl[0]['extra'].get('defined_at')})")
+    # `#include "kernel.h"` is a real file->file edge, not a dangling name.
+    inc = [e for e in G.g["edges"] if e["type"] == "imports"
+           and e["src"].endswith("cpp/kernel.cc") and e["dst"].endswith("cpp/kernel.h")]
+    check(len(inc) == 1, f'#include "kernel.h" resolves to the header file node (got {len(inc)})')
+    # A system include must stay external -- never matched to a repo file that happens to share a name.
+    sysinc = [e for e in G.g["edges"] if e["type"] == "imports" and e["src"].endswith("cpp/kernel.h")
+              and not str(e["dst"]).startswith("external:")]
+    check(all(G.nodes[e["dst"]]["file"].endswith(".h") for e in sysinc if e["dst"] in G.nodes),
+          "<vector> does not resolve to a repo file")
+
+    c = json.loads(run("skeleton", os.path.join(root, "cpp", "plain.c"), "--json"))[0]
+    cq = {n["qname"]: n["kind"] for n in c["nodes"]}
+    check(cq.get("Buffer") == "struct" and cq.get("Buffer.size") == "field", "plain C: struct and field")
+    check(cq.get("buffer_len") == "function" and cq.get("main") == "function", "plain C: functions")
+
+
+def test_cross_language_bridge(root):
+    """Phase 3: Python <-> C++ across pybind11 and TensorFlow-style op registration.
+
+    This is the gap the TensorFlow audit found: a Python symbol whose implementation is a C++
+    kernel had its dependency chain cut at the language boundary, so blast radius reported no
+    dependents for something that has many. A confidently incomplete answer is worse than an
+    obviously missing one, which is why these edges carry their own `binding` confidence.
+    """
+    print("# cross-language bridge (pybind11 / REGISTER_OP)")
+    G = Graph(load(root))
+
+    mod = [n for n in G.g["nodes"] if n["kind"] == "py_module"]
+    check(len(mod) == 1 and mod[0]["name"] == "_pywrap_demo",
+          f"PYBIND11_MODULE declares the extension module ({[m['name'] for m in mod]})")
+    binds = {n["name"]: n for n in G.g["nodes"] if n["kind"] == "py_binding"}
+    check("DemoExecute" in binds and "DemoOther" in binds,
+          f"m.def(...) exports are recorded ({sorted(binds)})")
+
+    # The load-bearing edge: Python -> C++.
+    caller = G.node("python/bridge/caller.py", "run_it")
+    bridged = [e for e in G.edges_from(caller, name="DemoExecute")]
+    check(len(bridged) == 1 and G.nodes[bridged[0]["dst"]]["file"].endswith("cpp/bindings.cc"),
+          f"a Python call reaches the C++ binding {[(G.nodes[e['dst']]['file'], e['confidence']) for e in bridged]}")
+    check(bridged and bridged[0]["confidence"] == "binding",
+          "the cross-language edge is labelled `binding`, not passed off as a normal call")
+
+    # And back again: this is what blast radius needs.
+    dependents = [e for e in G.edges_to(binds["DemoExecute"]) if e["type"] == "calls"]
+    check(any(G.nodes[e["src"]]["file"].endswith("caller.py") for e in dependents),
+          "blast radius from the C++ binding reaches its Python dependents")
+
+    # Never claim a name Python defines itself.
+    local = G.node("python/bridge/caller.py", "not_a_binding")
+    check(not [e for e in G.edges_from(local) if G.nodes[e["dst"]]["kind"] == "py_binding"],
+          "a call with a Python definition in scope is not diverted to a binding")
+
+    # The hop that makes the chain useful: the binding must reach the C++ body it exports,
+    # otherwise a Python caller stops at the binding and blast radius still understates.
+    impl_edges = [e for e in G.edges_from(binds["DemoExecute"], name="RealCompute")]
+    check(len(impl_edges) == 1 and G.nodes[impl_edges[0]["dst"]]["name"] == "RealCompute",
+          f"a binding reaches the C++ function it exports {[G.nodes[e['dst']]['qname'] for e in impl_edges]}")
+    ptr_edges = [e for e in G.edges_from(binds["DemoOther"], name="RealCompute")]
+    check(len(ptr_edges) == 1, "`m.def(\"X\", &Y)` links the binding to Y as well as a lambda body")
+    real = G.node("cpp/bindings.cc", "RealCompute")
+    py_deps = [e for e in G.edges_to(real)]
+    check(any(G.nodes[e["src"]]["kind"] == "py_binding" for e in py_deps),
+          "the C++ implementation has the binding among its dependents (so blast radius crosses back)")
+
+    # C++ local typing, and where a cross-file member call lands.
+    uses = G.node("cpp/bindings.cc", "UsesPoint")
+    comp = [e for e in G.edges_from(uses, name="Compute")]
+    check(len(comp) == 1 and comp[0]["confidence"] == "typed",
+          f"a call through a typed C++ local resolves ({[(G.nodes[e['dst']]['qname'], e['confidence']) for e in comp]})")
+    check(comp and G.nodes[comp[0]["dst"]]["file"].endswith("kernel.cc"),
+          f"the call edge lands on the .cc definition, not the .h prototype "
+          f"(got {G.nodes[comp[0]['dst']]['file'] if comp else None})")
+
+    # REGISTER_OP / REGISTER_KERNEL_BUILDER.
+    ops = {n["name"]: n for n in G.g["nodes"] if n["kind"] == "op_def"}
+    check("DemoMatMul" in ops, f"REGISTER_OP becomes an op_def node ({sorted(ops)})")
+    if "DemoMatMul" in ops:
+        impl = [e for e in G.edges_to(ops["DemoMatMul"]) if e["type"] == "implements"]
+        check(len(impl) == 1 and G.nodes[impl[0]["src"]]["name"] == "DemoMatMulOp",
+              f"REGISTER_KERNEL_BUILDER links the kernel class to the op "
+              f"{[(G.nodes[e['src']]['name'], e['confidence']) for e in impl]}")
+
+
+def test_literal_receivers(root):
+    """A call on a literal receiver belongs to the literal's TYPE, not to its text.
+
+    Found auditing TensorFlow: `", ".join(xs)` was recorded with the string's own text as the
+    receiver, so skeletons printed whole string literals inside `calls:` lines (1.06% of all
+    call refs there) and the linker was offered a receiver that could match a same-named repo
+    method and produce a false edge.
+    """
+    print("# literal call receivers")
+    out = run("skeleton", os.path.join(root, "python", "app", "loops.py"), "--no-stats")
+    body = [ln for ln in out.splitlines() if "format_report" in ln or "calls:" in ln]
+    joined = "\n".join(body)
+    for want in ("str.join", "str.format", "list.count", "dict.get", "tuple.index", "str.upper"):
+        check(want in joined, f"literal receiver normalized to {want}")
+    check('"' not in joined and "'" not in joined,
+          f"no raw string literal leaks into a calls: line\n{joined}")
+    check("across two source lines" not in out,
+          "a literal split across source lines does not leak either")
+
+
+def test_output_budget(tmp):
+    """The skeleton's output contract: never emit more than the file it summarizes, and state the
+    recovery path for whatever it hides."""
+    print("# skeleton output budget")
+    tiny = os.path.join(tmp, "tiny.py")
+    with open(tiny, "w") as f:
+        f.write("x = 1\n")
+    out = run("skeleton", tiny)
+    check("shown in full" in out and "x = 1" in out,
+          "never_worse: a file smaller than its skeleton is shown as source")
+    check("too small to summarize" in out and "% less" not in out,
+          f"a run that saves nothing says so instead of printing a negative percentage: {out.splitlines()[-1]}")
+
+    # A symbol with more calls than the cap must report the overflow and name the flag that lifts it.
+    busy = os.path.join(tmp, "busy.py")
+    with open(busy, "w") as f:
+        f.write("def busy():\n" + "".join(f"    callee_{i}()\n" for i in range(20)))
+    out = run("skeleton", busy)
+    check(f"(+{20 - 8} more)" in out, f"calls beyond the cap are reported as (+N more): {out}")
+    check("-- elided:" in out and "--max-calls" in out,
+          "the elision notice names the flag that raises the cap")
+    check(out.count("--max-calls") == 1,
+          "the recovery path is stated once, not on every elided line")
+
+    raised = run("skeleton", busy, "--max-calls", "20")
+    check("more)" not in raised and "-- elided:" not in raised,
+          "--max-calls raises the cap and clears the notice")
+    check("callee_19" in run("skeleton", busy, "--max-calls", "0"), "--max-calls 0 means no cap")
+
+    many = os.path.join(tmp, "many.py")
+    with open(many, "w") as f:
+        f.write("".join(f"import mod_{i}\n" for i in range(20)) + "def f():\n    pass\n")
+    out = run("skeleton", many)
+    check(f"(+{20 - 12} more)" in out and "--max-imports" in out,
+          f"imports beyond the cap are reported and recoverable: {out}")
+    check("mod_19" in run("skeleton", many, "--max-imports", "0"), "--max-imports 0 means no cap")
+
+    # Flag interactions. `big` is large enough that the never_worse guard stays out of the way.
+    big = os.path.join(tmp, "big.py")
+    with open(big, "w") as f:
+        f.write("".join(f"def busy_{c}():\n" + "".join(f"    dep_{k}.call_{k}()\n" for k in range(14))
+                        for c in range(25)))
+    out = run("skeleton", big, "--no-stats")
+    check("-- elided:" in out and "% less" not in out,
+          "--no-stats drops the token line but keeps the recovery notice")
+    check("-- elided:" not in run("skeleton", big, "--no-calls"),
+          "--no-calls reports no call elisions -- the calls were never promised")
+    check("more)" not in run("skeleton", big, "--max-calls", "-5"), "a negative cap means no cap")
+
+    js = run("skeleton", big, "--json")
+    check("-- elided:" not in js, "--json emits no notice (it would corrupt the payload)")
+    try:
+        json.loads(js)
+        check(True, "--json stays parseable when something was elided")
+    except ValueError as e:
+        check(False, f"--json stays parseable when something was elided: {e}")
+
+    # A signature cut has no flag to raise -- its recovery is the line range printed beside it.
+    sig = os.path.join(tmp, "sig.py")
+    with open(sig, "w") as f:
+        f.write("def f(\n  a: int,\n  b: str,\n  c: float,\n) -> dict:\n    return {}\n" + "# pad\n" * 200)
+    out = run("skeleton", sig)
+    check("signature lines" in out and "read the line ranges above" in out,
+          f"a signature-only elision points at the line range, not a flag: {out.splitlines()[-2]}")
+
+
 def test_empty_root(tmp):
     print("# empty root")
     empty = os.path.join(tmp, "empty")
@@ -478,11 +718,14 @@ def test_determinism(root):
     outs = []
     for seed in ("1", "2"):
         env = dict(os.environ, PYTHONHASHSEED=seed)
-        out = os.path.join(root, f"seed{seed}.json")
+        out = os.path.join(root, f"seed{seed}.db")
         subprocess.run([sys.executable, "-B", ENGINE, "build", "--root", root, "--full", "--quiet", "--out", out], env=env, check=True)
-        with open(out) as f:
-            g = json.load(f)
-        outs.append(({n["id"] for n in g["nodes"]}, {(e["src"], e["dst"], e["type"], e.get("line"), e["confidence"]) for e in g["edges"]}))
+        st = astgraph.Store(out)
+        try:
+            outs.append(({n["id"] for n in st.iter_nodes()},
+                         {(e["src"], e["dst"], e["type"], e.get("line"), e["confidence"]) for e in st.iter_edges()}))
+        finally:
+            st.close()
     check(outs[0][0] == outs[1][0] and outs[0][1] == outs[1][1], f"graph identical under PYTHONHASHSEED=1 and =2 (edge diff {len(outs[0][1] ^ outs[1][1])})")
 
 
@@ -512,7 +755,7 @@ def test_fast_path(root):
     git("add", "-A"); git("commit", "-qm", "init")
     out1 = build(root, "--full")
     check("parsed" in out1, "first build parses")
-    check(os.path.exists(os.path.join(root, ".ast-graph", "graph.json.stamp")), "stamp sidecar written")
+    check(os.path.exists(os.path.join(root, ".ast-graph", "graph.db.stamp")), "stamp sidecar written")
     out2 = build(root)
     check("up to date" in out2, f"unchanged tree, .ast-graph/ untracked (no .gitignore) -> fast path: {out2.strip()}")
     with open(os.path.join(root, "README.md"), "w") as f:
@@ -568,6 +811,10 @@ def main():
         test_determinism(root)
         test_empty_root(tmp)
         test_keep_dir_and_parse_errors(tmp)
+        test_cpp_extraction(root)
+        test_cross_language_bridge(root)
+        test_literal_receivers(root)
+        test_output_budget(tmp)
         test_incremental(root)
         # fresh copy for the git test
         root2 = os.path.join(tmp, "fixture-git")

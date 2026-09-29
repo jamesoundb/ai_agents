@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "A tiny file is read, not skeletonized"
+context:
+  scaffold_script: "../scaffold/prepare.sh"
+  add_dirs: ["../fixtures/orders/"]

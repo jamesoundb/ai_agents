@@ -23,10 +23,11 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import time
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 
 try:
     from tree_sitter_language_pack import get_parser
@@ -45,14 +46,36 @@ EXT_LANG = {
     ".java": "java",
     ".kt": "kotlin", ".kts": "kotlin",
     ".rs": "rust",
+    ".c": "c",
+    ".cc": "cpp", ".cpp": "cpp", ".cxx": "cpp", ".c++": "cpp",
+    ".h": "cpp", ".hpp": "cpp", ".hh": "cpp", ".hxx": "cpp",   # .h: C++ grammar is a superset
+    ".cu": "cpp", ".cuh": "cpp",                                # CUDA parses as C++ here
     ".tf": "hcl", ".hcl": "hcl", ".tfvars": "hcl",
     ".yaml": "yaml", ".yml": "yaml",
 }
+CPP_EXTS = {".c", ".cc", ".cpp", ".cxx", ".c++", ".h", ".hpp", ".hh", ".hxx", ".cu", ".cuh"}
 DEFAULT_EXCLUDE_DIRS = {
     ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", "target",
     ".terraform", ".ast-graph", "vendor", ".idea", ".vscode", ".mypy_cache", ".pytest_cache",
     "coverage", ".next", ".tox",
 }
+# Output caps. Every elision in the human-readable output comes from one of these, so "how
+# aggressive is the output budget" is answerable from one place instead of from a dozen inline
+# literals. The rule each cap must satisfy: whatever it hides is recoverable, and the output says
+# how -- either a CLI flag that raises the cap, or an exact line range to read instead. An elision
+# that states no recovery path is a bug.
+CAP_SKELETON_CALLS = 8         # `calls:` per symbol                    -> --max-calls
+CAP_SKELETON_IMPORTS = 12      # `imports:` per file                    -> --max-imports
+CAP_SKELETON_SIG_LINES = 3     # signature lines kept before eliding    -> the item's [Lstart-Lend]
+CAP_FIND = 50                  # `find` rows                            -> --limit
+CAP_SYMBOL_SECTION = 40        # symbol-card rows per section           -> --limit / --all
+CAP_ROWS = 200                 # rows before a listing degrades to a summary -> --max-rows
+CAP_SUMMARY_TOP = 15           # rows per section in --summary          -> --top
+CAP_PER_FILE = 6               # trace-deps rows per file               -> --per-file
+CAP_OVERRIDES = 8              # `Overrides:` entries on a method card
+CAP_OVERRIDDEN_BY = 12         # `Overridden by:` entries on a method card
+CAP_UNRESOLVED = 12            # `Unresolved (external or not indexed)` entries
+CAP_IMPORTED_BY = 20           # `imported by:` files on a file card
 # Edge types that mean "src depends on dst" (used for blast radius / reverse dependencies).
 DEP_EDGE_TYPES = {
     "calls", "imports", "extends", "implements", "instantiates", "references",
@@ -100,7 +123,7 @@ def is_test_file(path):
     return any(r.search(parts[-1]) for r in TEST_FILE_RES)
 
 
-GRAPH_VERSION = 7  # 7: Python loop/with/walrus typing, nested __init__ fields; Kotlin smart casts, by lazy, callable refs, invoke hints, Compose type annotations (6: lambdas, enums, operators; 5: HCL moved/dynamic)
+GRAPH_VERSION = 8  # 8: literal call receivers normalized to their type (", ".join -> str.join) instead of the literal's text; 7: Python loop/with/walrus typing, nested __init__ fields; Kotlin smart casts, by lazy, callable refs, invoke hints, Compose type annotations (6: lambdas, enums, operators; 5: HCL moved/dynamic)
 
 # Unqualified calls to these names are language builtins; never linked to a repo symbol of the same name.
 BUILTIN_CALLS = {
@@ -168,7 +191,7 @@ KOTLIN_STDLIB_MEMBERS = {"apply", "let", "also", "run", "with", "takeIf", "takeU
 
 LANG_FAMILY = {"python": "py", "javascript": "js", "typescript": "js", "tsx": "js", "go": "go", "java": "jvm",
                "kotlin": "jvm", "rust": "rust", "hcl": "hcl", "yaml": "yaml"}
-DEFAULT_GRAPH = ".ast-graph/graph.json"
+DEFAULT_GRAPH = ".ast-graph/graph.db"
 
 _PARSERS = {}
 
@@ -230,6 +253,7 @@ class Ctx:
         self.file_extra = {}
         self.scopes = []  # stack of {local var name: type name} for typed call resolution
         self.lambda_stack = []   # Kotlin: enclosing trailing-lambda calls, for implicit receivers and `it`
+        self.pybind_handles = []  # C++: handle names introduced by an enclosing PYBIND11_MODULE
         self.file_node = {
             "id": path, "kind": "file", "name": os.path.basename(path), "qname": path,
             "file": path, "line": 1, "end_line": src.count(b"\n") + 1, "signature": path,
@@ -519,13 +543,50 @@ def py_function(ctx, n):
     return True
 
 
+# Literal receivers, normalized to the type they are. `"a,b".join(xs)` is a call to str.join,
+# not to a method on a symbol named `"a,b"`. Recording the literal text was doing two kinds of
+# damage: it pasted whole string literals into skeleton `calls:` lines (1.06% of all call refs in
+# TensorFlow, some of them 60+ characters), and it offered the linker a receiver that could match
+# a same-named repo method and produce a false edge.
+PY_LITERAL_TYPES = {
+    "string": "str", "concatenated_string": "str", "f_string": "str",
+    "integer": "int", "float": "float", "true": "bool", "false": "bool", "none": "None",
+    "list": "list", "dictionary": "dict", "set": "set", "tuple": "tuple",
+    "list_comprehension": "list", "dictionary_comprehension": "dict", "set_comprehension": "set",
+}
+JS_LITERAL_TYPES = {
+    "string": "String", "template_string": "String", "number": "Number",
+    "true": "Boolean", "false": "Boolean", "null": "null", "undefined": "undefined",
+    "array": "Array", "object": "Object", "regex": "RegExp",
+}
+
+
+def receiver_hint(ctx, obj, literal_types):
+    """Text of a call receiver, with literals collapsed to their type name.
+
+    Unwraps parentheses first: `("a " "b").upper()` parses as a parenthesized_expression around
+    the literal, and without this the raw text leaked through (caught by the fixture's
+    two-line literal).
+    """
+    if obj is None:
+        return None
+    inner = obj
+    while inner.type == "parenthesized_expression":
+        named = [c for c in inner.named_children if c.type != "comment"]
+        if len(named) != 1:
+            break
+        inner = named[0]
+    return literal_types.get(inner.type) or ctx.text(obj)
+
+
 def py_call(ctx, n):
     fn = n.child_by_field_name("function")
     if fn is not None:
         if fn.type == "identifier":
             ctx.add_ref("call", ctx.text(fn), n)
         elif fn.type == "attribute":
-            ctx.add_ref("call", ctx.text(fn.child_by_field_name("attribute")), n, hint=ctx.text(fn.child_by_field_name("object")))
+            ctx.add_ref("call", ctx.text(fn.child_by_field_name("attribute")), n,
+                        hint=receiver_hint(ctx, fn.child_by_field_name("object"), PY_LITERAL_TYPES))
     return False
 
 
@@ -906,7 +967,8 @@ def js_call(ctx, n):
                     return True
             ctx.add_ref("call", name, n)
         elif fn.type == "member_expression":
-            ctx.add_ref("call", ctx.text(fn.child_by_field_name("property")), n, hint=ctx.text(fn.child_by_field_name("object")))
+            ctx.add_ref("call", ctx.text(fn.child_by_field_name("property")), n,
+                        hint=receiver_hint(ctx, fn.child_by_field_name("object"), JS_LITERAL_TYPES))
     return False
 
 
@@ -2295,7 +2357,406 @@ KOTLIN_HANDLERS = {
     "if_expression": kt_if, "when_expression": kt_when, "callable_reference": kt_callable_ref,
 }
 
+
+
+# ----------------------------------------------------------------------------------------------
+# C / C++
+#
+# Shapes that matter, from the tree-sitter-cpp grammar:
+#   function_definition.declarator -> function_declarator, possibly wrapped in
+#     pointer_declarator / reference_declarator ("Tensor* f()"), so unwrap before reading a name.
+#   function_declarator.declarator -> identifier (free function) | field_identifier (in-class)
+#     | qualified_identifier ("MatMulOp::Compute", an out-of-line definition of a member declared
+#     in a header -- CPP_QUALIFIED_DEFS below records the owner so phase 2 can merge the two).
+#   call_expression.function -> identifier | field_expression (obj.m / ptr->n / this->h)
+#     | qualified_identifier (ns::f / Class::static_m).
+#   Members live in field_declaration_list: function_definition (inline body),
+#     field_declaration with a function_declarator (a declaration), declaration (constructors),
+#     or field_declaration with a plain declarator (a data member).
+# ----------------------------------------------------------------------------------------------
+CPP_DECL_WRAPPERS = {"pointer_declarator", "reference_declarator", "array_declarator",
+                     "parenthesized_declarator", "init_declarator"}
+
+
+def cpp_unwrap(n):
+    """Strip pointer/reference/array wrappers to the declarator that carries the name."""
+    seen = 0
+    while n is not None and n.type in CPP_DECL_WRAPPERS and seen < 8:
+        nxt = n.child_by_field_name("declarator")
+        if nxt is None:
+            break
+        n, seen = nxt, seen + 1
+    return n
+
+
+def cpp_decl_name(ctx, n):
+    """(name, owner) for a declarator. `owner` is set for out-of-line `Class::method` definitions."""
+    n = cpp_unwrap(n)
+    if n is None:
+        return "", None
+    if n.type == "function_declarator":
+        return cpp_decl_name(ctx, n.child_by_field_name("declarator"))
+    if n.type == "qualified_identifier":
+        txt = ctx.text(n)
+        parts = [p for p in txt.split("::") if p]
+        if len(parts) >= 2:
+            return parts[-1], "::".join(parts[:-1])
+        return txt, None
+    if n.type in ("identifier", "field_identifier", "type_identifier", "destructor_name",
+                  "operator_name", "primitive_type"):
+        return ctx.text(n), None
+    return ctx.text(n).strip(), None
+
+
+def cpp_find_declarator(n):
+    """The function_declarator inside a definition/declaration, through any wrappers."""
+    d = cpp_unwrap(n.child_by_field_name("declarator"))
+    if d is not None and d.type == "function_declarator":
+        return d
+    # `Tensor* Class::f()` can park the pointer_declarator under an ERROR node; look one level in.
+    for c in n.named_children:
+        if c.type in ("ERROR",) or c.type in CPP_DECL_WRAPPERS:
+            cand = cpp_unwrap(c if c.type in CPP_DECL_WRAPPERS else
+                              next((g for g in c.named_children if g.type in CPP_DECL_WRAPPERS
+                                    or g.type == "function_declarator"), None))
+            if cand is not None and cand.type == "function_declarator":
+                return cand
+    return None
+
+
+def cpp_member_kind(name, holder):
+    """constructor / destructor / method, from the member name and its holding type."""
+    if holder and name.lstrip("~") == holder:
+        return "destructor" if name.startswith("~") else "constructor"
+    return "destructor" if name.startswith("~") else "method"
+
+
+def cpp_type_name(ctx, node):
+    """`const acme::Engine&` / `Engine*` / `std::unique_ptr<Engine>` -> a bare class name, or None."""
+    if node is None:
+        return None
+    txt = ctx.text(node).strip()
+    txt = re.sub(r"\b(const|volatile|static|mutable|constexpr|inline|struct|class|typename)\b", " ", txt)
+    txt = txt.replace("*", " ").replace("&", " ").strip()
+    if not txt:
+        return None
+    # a smart pointer or container names the interesting type inside its template arguments
+    m = re.match(r"^(?:std::)?(?:unique_ptr|shared_ptr|weak_ptr|optional|vector|span)\s*<(.+)>$", txt)
+    if m:
+        txt = m.group(1).split(",")[0].strip()
+    txt = txt.split("<")[0].strip().split("::")[-1]
+    return txt or None
+
+
+def cpp_declare_params(ctx, declarator):
+    """Bind parameter names to their types so `ctx->input(0)` resolves through the parameter."""
+    params = declarator.child_by_field_name("parameters") if declarator is not None else None
+    for prm in (params.named_children if params is not None else []):
+        if prm.type != "parameter_declaration":
+            continue
+        t = cpp_type_name(ctx, prm.child_by_field_name("type"))
+        d = cpp_unwrap(prm.child_by_field_name("declarator"))
+        if t and d is not None and d.type in ("identifier", "field_identifier"):
+            ctx.declare(ctx.text(d), t)
+
+
+def cpp_include(ctx, n):
+    """`#include "a/b.h"` / `#include <vector>` -> an import ref carrying the path."""
+    for c in n.named_children:
+        if c.type == "system_lib_string":
+            ctx.add_ref("import", ctx.text(c).strip("<>"), n, extra_kind="system")
+            return True
+        if c.type == "string_literal":
+            ctx.add_ref("import", strip_quotes(ctx.text(c)), n)
+            return True
+    return True
+
+
+def cpp_namespace(ctx, n):
+    name = ctx.text(n.child_by_field_name("name")) or "(anonymous)"
+    node = ctx.add_node("module", name, n, signature=f"namespace {name}")
+    ctx.push(node)
+    ctx.walk_children(n.child_by_field_name("body"))
+    ctx.pop()
+    return True
+
+
+def cpp_type_decl(kind):
+    """class / struct / union / enum."""
+    def h(ctx, n):
+        nm = n.child_by_field_name("name")
+        name = ctx.text(nm) if nm is not None else ""
+        if not name:
+            return False            # anonymous struct in a typedef: let the walk continue
+        body = n.child_by_field_name("body")
+        # `class OpKernel;` is a forward declaration, not a definition. TensorFlow forward-declares
+        # OpKernel in four headers besides the one that defines it; without this the real class
+        # competes with four empty stubs and `query symbol OpKernel` just reports an ambiguity.
+        extra = {} if body is not None else {"is_declaration": True, "forward": True}
+        node = ctx.add_node(kind, name, n, signature=f"{kind} {name}", extra=extra)
+        ctx.push(node)
+        for c in n.named_children:
+            if c.type == "base_class_clause":
+                for t in c.named_children:
+                    if t.type in ("type_identifier", "qualified_identifier", "template_type"):
+                        full = ctx.text(t)
+                        ctx.add_ref("extends", base_type_name(full.split("::")[-1]), t,
+                                    hint=full.split("::")[0] if "::" in full else None)
+        body = n.child_by_field_name("body")
+        for c in (body.named_children if body is not None else []):
+            if c.type == "enumerator":
+                ctx.add_node("field", ctx.text(c.child_by_field_name("name")), c,
+                             signature=ctx.text(c))
+        ctx.walk_children(body)
+        ctx.pop()
+        return True
+    return h
+
+
+def cpp_function(ctx, n):
+    """function_definition: a free function, an inline member, or an out-of-line `Class::method`."""
+    d = cpp_find_declarator(n)
+    if d is None:
+        return False
+    name, owner = cpp_decl_name(ctx, d)
+    if not name:
+        return False
+    if name in ("PYBIND11_MODULE", "PYBIND11_PLUGIN"):
+        return cpp_pybind_module(ctx, n, d)
+    params = ctx.text(d.child_by_field_name("parameters"))
+    ret = ctx.text(n.child_by_field_name("type"))
+    parent_kind = ctx.top()["kind"]
+    kind = "method" if (owner or parent_kind in ("class", "struct", "union")) else "function"
+    # `MatMulOp::MatMulOp` defined out of line: the enclosing scope is the namespace, so the
+    # owner -- not ctx.top() -- is what says whether this is a constructor.
+    holder = owner.split("::")[-1] if owner else ctx.top().get("name")
+    if owner or parent_kind in ("class", "struct", "union"):
+        kind = cpp_member_kind(name, holder)
+    sig = " ".join(x for x in (ret, f"{name}{params}") if x).strip()
+    extra = {"has_body": n.child_by_field_name("body") is not None}
+    if owner:
+        extra["owner"] = owner
+    qname = f"{owner.replace('::', '.')}.{name}" if owner and parent_kind == "file" else None
+    if owner and parent_kind != "file":
+        qname = f"{ctx.top()['qname']}.{owner.replace('::', '.')}.{name}"
+    node = ctx.add_node(kind, name, n, signature=sig, qname=qname,
+                        type_text=f"{ret} {params}", extra=extra)
+    if owner:
+        # The definition lives away from its class; record the link so `Class::m` resolves.
+        ctx.add_ref("defines_member", owner.split("::")[-1], n, hint=None, member=name)
+    ctx.push(node)
+    ctx.push_scope()
+    cpp_declare_params(ctx, d)
+    if kind in ("method", "constructor", "destructor"):
+        holder_node = ctx.stack[-2]
+        ctx.declare("this", owner.split("::")[-1] if owner else holder_node.get("name"))
+    ctx.walk_children(n.child_by_field_name("body"))
+    ctx.pop_scope()
+    ctx.pop()
+    return True
+
+
+def cpp_field(ctx, n):
+    """field_declaration: a member function declaration, or a data member."""
+    d = cpp_unwrap(n.child_by_field_name("declarator"))
+    typ = ctx.text(n.child_by_field_name("type"))
+    if d is not None and d.type == "function_declarator":
+        name, _ = cpp_decl_name(ctx, d)
+        if not name:
+            return True
+        params = ctx.text(d.child_by_field_name("parameters"))
+        kind = cpp_member_kind(name, ctx.top().get("name"))
+        ctx.add_node(kind, name, n, signature=" ".join(x for x in (typ, f"{name}{params}") if x).strip(),
+                     type_text=f"{typ} {params}")
+        return True
+    if d is not None and d.type in ("identifier", "field_identifier"):
+        name = ctx.text(d)
+        if name:
+            ctx.add_node("field", name, n, signature=ctx.text(n).rstrip(";"),
+                         type_text=typ, extra={"type": typ})
+        return True
+    return True
+
+
+def cpp_declaration(ctx, n):
+    """Constructor/destructor declarations in a class body, and file-scope variables."""
+    d = cpp_unwrap(n.child_by_field_name("declarator"))
+    if d is not None and d.type == "function_declarator":
+        name, owner = cpp_decl_name(ctx, d)
+        if name:
+            params = ctx.text(d.child_by_field_name("parameters"))
+            typ = ctx.text(n.child_by_field_name("type"))
+            kind = cpp_member_kind(name, owner.split("::")[-1] if owner else ctx.top().get("name"))
+            ctx.add_node(kind, name, n,
+                         signature=" ".join(x for x in (typ, f"{name}{params}") if x).strip(),
+                         type_text=f"{typ} {params}")
+        return True
+    if ctx.top()["kind"] in ("class", "struct", "union") and d is not None and \
+            d.type in ("identifier", "field_identifier"):
+        ctx.add_node("field", ctx.text(d), n, signature=ctx.text(n).rstrip(";"),
+                     type_text=ctx.text(n.child_by_field_name("type")))
+        return True
+    # A local: `acme::Engine e(2);` or `Engine* e = ...`. Binding it is what lets `e.Run(x)` and
+    # `e->Run(x)` resolve to Engine::Run instead of becoming an ambiguous name-only guess.
+    t = cpp_type_name(ctx, n.child_by_field_name("type"))
+    if t:
+        for c in n.named_children:
+            nm = cpp_unwrap(c)
+            if nm is not None and nm.type in ("identifier", "field_identifier"):
+                ctx.declare(ctx.text(nm), t)
+    return False        # keep walking: initialisers hold calls
+
+
+def cpp_call(ctx, n):
+    fn = n.child_by_field_name("function")
+    if fn is None:
+        return False
+    if cpp_registration_call(ctx, n, fn):
+        return False      # recorded as a binding; keep walking for nested calls
+    if fn.type == "identifier":
+        ctx.add_ref("call", ctx.text(fn), n)
+    elif fn.type == "field_expression":
+        recv = ctx.text(fn.child_by_field_name("argument"))
+        ctx.add_ref("call", ctx.text(fn.child_by_field_name("field")), n,
+                    hint=None if recv == "this" else recv)
+    elif fn.type == "qualified_identifier":
+        parts = [p for p in ctx.text(fn).split("::") if p]
+        if parts:
+            ctx.add_ref("call", parts[-1], n, hint="::".join(parts[:-1]) or None)
+    elif fn.type in ("template_function", "parenthesized_expression"):
+        inner = fn.child_by_field_name("name")
+        if inner is not None:
+            ctx.add_ref("call", ctx.text(inner).split("::")[-1], n)
+    return False        # arguments can hold further calls
+
+
+def cpp_new(ctx, n):
+    t = n.child_by_field_name("type")
+    if t is not None:
+        ctx.add_ref("instantiates", base_type_name(ctx.text(t).split("::")[-1]), n)
+    return False
+
+
+def cpp_alias(ctx, n):
+    name = ctx.text(n.child_by_field_name("name") or n.child_by_field_name("declarator"))
+    if name:
+        ctx.add_node("type", name, n, signature=ctx.text(n).rstrip(";"),
+                     type_text=ctx.text(n.child_by_field_name("type")))
+    return True
+
+
+CPP_STRING_NODES = ("string_literal", "concatenated_string", "raw_string_literal")
+
+
+def cpp_first_string_arg(ctx, call_node, deep=False):
+    """The first string-literal argument of a call, unquoted. `REGISTER_OP("MatMul")` -> MatMul.
+
+    `deep` searches descendants, which REGISTER_KERNEL_BUILDER needs: its op name is buried in a
+    builder chain, `Name("MatMul").Device(DEVICE_CPU)`, not a direct argument."""
+    args = call_node.child_by_field_name("arguments")
+    if args is None:
+        return None
+    stack = list(args.named_children)
+    while stack:
+        a = stack.pop(0)
+        if a.type in CPP_STRING_NODES:
+            return strip_quotes(ctx.text(a)).strip()
+        if deep:
+            stack.extend(a.named_children)
+    return None
+
+
+def cpp_pybind_module(ctx, n, declarator):
+    """`PYBIND11_MODULE(_pywrap_tfe, m) { ... }` declares the Python module a C++ extension exposes.
+
+    The macro parses as an ordinary function_definition whose "parameters" are the module name and
+    the handle, so the module name is the first parameter's text."""
+    params = declarator.child_by_field_name("parameters")
+    kids = [c for c in (params.named_children if params is not None else []) if c.type != "comment"]
+    if not kids:
+        return False
+    mod = ctx.text(kids[0]).split()[-1].strip("*&")
+    handle = ctx.text(kids[1]).split()[-1].strip("*&") if len(kids) > 1 else "m"
+    node = ctx.add_node("py_module", mod, n, signature=f"PYBIND11_MODULE {mod}",
+                        extra={"handle": handle})
+    ctx.push(node)
+    ctx.pybind_handles.append(handle)
+    ctx.walk_children(n.child_by_field_name("body"))
+    ctx.pybind_handles.pop()
+    ctx.pop()
+    return True
+
+
+def cpp_registration_call(ctx, n, fn):
+    """Names that cross the language boundary: pybind exports and TensorFlow op registrations.
+
+    Returns True when the call was recorded as a binding, so the generic call handler skips it."""
+    if fn.type == "field_expression":
+        recv = ctx.text(fn.child_by_field_name("argument"))
+        field = ctx.text(fn.child_by_field_name("field"))
+        # `m.def("name", ...)` / `m.def_submodule(...)` on the handle PYBIND11_MODULE introduced.
+        if field in ("def", "def_static", "def_property_readonly") and recv in ctx.pybind_handles:
+            name = cpp_first_string_arg(ctx, n)
+            if name:
+                node = ctx.add_node("py_binding", name, n, signature=f"{recv}.{field}(\"{name}\")")
+                # Walk the rest of the call inside the binding's scope, so whatever it exports --
+                # `&TFE_Py_Execute`, or the calls inside an exported lambda -- is attributed to the
+                # binding. That is the hop that carries a Python caller through to the C++ body;
+                # without it the chain stops at the binding and blast radius still lies.
+                args = n.child_by_field_name("arguments")
+                kids = [a for a in (args.named_children if args is not None else []) if a.type != "comment"]
+                ctx.push(node)
+                for a in kids[1:]:
+                    if a.type in ("pointer_expression", "identifier", "qualified_identifier"):
+                        target = ctx.text(a).lstrip("&").split("::")[-1]
+                        if target and target != name:
+                            ctx.add_ref("call", target, a)
+                    else:
+                        ctx.walk(a)
+                ctx.pop()
+                return True
+        return False
+    if fn.type == "identifier":
+        macro = ctx.text(fn)
+        if macro in ("REGISTER_OP", "REGISTER_SYSTEM_OP"):
+            name = cpp_first_string_arg(ctx, n)
+            if name:
+                ctx.add_node("op_def", name, n, signature=f'REGISTER_OP("{name}")')
+                return True
+        if macro in ("REGISTER_KERNEL_BUILDER", "REGISTER_SYSTEM_KERNEL_BUILDER"):
+            args = n.child_by_field_name("arguments")
+            kids = [a for a in (args.named_children if args is not None else []) if a.type != "comment"]
+            if not kids:
+                return False
+            # first argument is the `Name("Op")...` builder chain, last is the kernel class
+            op = cpp_first_string_arg(ctx, n, deep=True)
+            kernel = base_type_name(ctx.text(kids[-1]).split("::")[-1]) if len(kids) > 1 else None
+            if op:
+                # the kernel class implements the registered op: a real edge across the boundary
+                ctx.add_ref("registers_op", op, n, hint=kernel, kernel=kernel)
+            return True
+    return False
+
+
+CPP_HANDLERS = {
+    "preproc_include": cpp_include,
+    "namespace_definition": cpp_namespace,
+    "class_specifier": cpp_type_decl("class"),
+    "struct_specifier": cpp_type_decl("struct"),
+    "union_specifier": cpp_type_decl("union"),
+    "enum_specifier": cpp_type_decl("enum"),
+    "function_definition": cpp_function,
+    "field_declaration": cpp_field,
+    "declaration": cpp_declaration,
+    "call_expression": cpp_call,
+    "new_expression": cpp_new,
+    "alias_declaration": cpp_alias,
+    "type_definition": cpp_alias,
+}
+
+
 HANDLERS = {
+    "cpp": CPP_HANDLERS, "c": CPP_HANDLERS,
     "kotlin": KOTLIN_HANDLERS,
     "python": PY_HANDLERS,
     "javascript": JS_HANDLERS, "typescript": JS_HANDLERS, "tsx": JS_HANDLERS,
@@ -2461,7 +2922,22 @@ def kind_label(n):
     return n["kind"] + " "
 
 
-def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=8, show_lines=True):
+def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=CAP_SKELETON_CALLS,
+                    show_lines=True, max_imports=CAP_SKELETON_IMPORTS, elided=None):
+    """Render one file's skeleton.
+
+    `elided` is an optional counter the caller passes in to collect what was hidden across files;
+    the caller reports the recovery path once at the end rather than repeating a flag name on
+    every elided line. (Inline recovery hints get read as code and cost a retry -- the same
+    finding rtk documents in core/filter.rs when it removed its interleaved markers.)
+    """
+    if elided is None:
+        elided = Counter()
+    # 0 (or negative) means "no cap"; len(refs) + 1 exceeds any per-symbol or per-file list, since
+    # both the calls and the imports are drawn from refs.
+    no_cap = len(refs) + 1
+    max_calls = max_calls if max_calls > 0 else no_cap
+    max_imports = max_imports if max_imports > 0 else no_cap
     by_parent = defaultdict(list)
     for n in nodes:
         by_parent[n["parent"]].append(n)
@@ -2482,7 +2958,10 @@ def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=8, show_l
         head += ", parse errors" + (f" (first at L{extra['first_error_line']})" if extra.get("first_error_line") else "")
     lines.append(head + ")")
     if imports:
-        lines.append("  imports: " + ", ".join(imports[:12]) + (f" (+{len(imports) - 12} more)" if len(imports) > 12 else ""))
+        if len(imports) > max_imports:
+            elided["imports"] += len(imports) - max_imports
+        lines.append("  imports: " + ", ".join(imports[:max_imports])
+                     + (f" (+{len(imports) - max_imports} more)" if len(imports) > max_imports else ""))
 
     def rng(n):
         if not show_lines:
@@ -2493,19 +2972,48 @@ def render_skeleton(file_node, nodes, refs, show_calls=True, max_calls=8, show_l
         for n in sorted(by_parent.get(parent_id, []), key=lambda x: x["line"]):
             ann = f"  @{' @'.join(a.split('(')[0] for a in n['annotations'])}" if n["annotations"] else ""
             sig_lines = n["signature"].split("\n")
-            sig = n["signature"] if len(sig_lines) <= 3 else "\n".join(sig_lines[:2]) + f"\n{'  ' * depth}    ... (+{len(sig_lines) - 2} signature lines)"
+            if len(sig_lines) <= CAP_SKELETON_SIG_LINES:
+                sig = n["signature"]
+            else:
+                keep = CAP_SKELETON_SIG_LINES - 1
+                hidden = len(sig_lines) - keep
+                elided["signature lines"] += hidden
+                # The recovery path is the item's own line range; repeat it only when --no-lines
+                # suppressed the range that would otherwise be printed on this same line.
+                where = "" if show_lines else f", read L{n['line']}-{n['end_line']}"
+                sig = "\n".join(sig_lines[:keep]) + f"\n{'  ' * depth}    ... (+{hidden} signature lines{where})"
             lines.append(f"{'  ' * depth}{kind_label(n)}{sig}{rng(n)}{ann}")
             if show_calls and calls_by_src.get(n["id"]):
                 cl = calls_by_src[n["id"]]
                 cl = [(" ".join(c.split())[:57] + "...") if len(" ".join(c.split())) > 60 else " ".join(c.split()) for c in cl]
-                lines.append(f"{'  ' * (depth + 1)}calls: " + ", ".join(cl[:max_calls]) + (f" (+{len(cl) - max_calls} more)" if len(cl) > max_calls else ""))
+                if len(cl) > max_calls:
+                    elided["calls"] += len(cl) - max_calls
+                lines.append(f"{'  ' * (depth + 1)}calls: " + ", ".join(cl[:max_calls])
+                             + (f" (+{len(cl) - max_calls} more)" if len(cl) > max_calls else ""))
             emit(n["id"], depth + 1)
 
     emit(file_node["id"], 1)
     if show_calls and calls_by_src.get(file_node["id"]):
         cl = calls_by_src[file_node["id"]]
-        lines.append("  module-level calls: " + ", ".join(cl[:max_calls]))
+        if len(cl) > max_calls:
+            elided["calls"] += len(cl) - max_calls
+        lines.append("  module-level calls: " + ", ".join(cl[:max_calls])
+                     + (f" (+{len(cl) - max_calls} more)" if len(cl) > max_calls else ""))
     return "\n".join(lines)
+
+
+def elision_notice(elided):
+    """One line naming what was hidden and the flag that brings it back, or "" if nothing was.
+
+    Printed once per run rather than per elided line -- see render_skeleton's docstring.
+    """
+    if not elided:
+        return ""
+    what = ", ".join(f"{n:,} {k}" for k, n in sorted(elided.items(), key=lambda kv: -kv[1]))
+    raisable = [f for f, key in (("--max-calls", "calls"), ("--max-imports", "imports")) if key in elided]
+    # Only signature lines were cut: those are recoverable from the [Lstart-Lend] range, not a flag.
+    how = f"raise with {' / '.join(raisable)}" if raisable else "read the line ranges above"
+    return f"-- elided: {what} ({how})"
 
 
 def iter_source_files(root_dir, includes=None, excludes=None, extra_dirs=None, keep_dirs=None):
@@ -2544,8 +3052,11 @@ def cmd_skeleton(args):
         else:
             paths.append(ap)
     out, raw_tok, skel_tok, payload = [], 0, 0, []
+    elided, guarded = Counter(), 0
     for ap in paths:
         rel = os.path.relpath(ap, root).replace(os.sep, "/")
+        if rel.startswith("../"):
+            rel = ap.replace(os.sep, "/")   # outside --root: an absolute path beats ../../../tmp/...
         try:
             with open(ap, "rb") as f:
                 src = f.read()
@@ -2557,18 +3068,46 @@ def cmd_skeleton(args):
             out.append(f"{rel}: unsupported extension (skipped)")
             continue
         fnode, nodes, refs = res
-        txt = render_skeleton(fnode, nodes, refs, show_calls=not args.no_calls, show_lines=not args.no_lines)
-        raw_tok += approx_tokens(src.decode("utf-8", "replace"))
-        skel_tok += approx_tokens(txt)
+        raw_text = src.decode("utf-8", "replace")
+        raw_t = approx_tokens(raw_text)
+        file_elided = Counter()
+        txt = render_skeleton(fnode, nodes, refs, show_calls=not args.no_calls,
+                              show_lines=not args.no_lines, max_calls=args.max_calls,
+                              max_imports=args.max_imports, elided=file_elided)
+        shown_t = approx_tokens(txt)
+        if shown_t >= raw_t:
+            # never_worse: summarizing this file costs at least as much as reading it, so read it.
+            # Keeps the header so multi-file output stays uniform, and drops the elision notice
+            # for this file -- nothing is hidden when the source itself is on screen.
+            txt = (f"{txt.split(chr(10), 1)[0]}  -- source is no larger than its skeleton, shown in full\n"
+                   + raw_text.rstrip("\n"))
+            shown_t = approx_tokens(txt)
+            guarded += 1
+        else:
+            elided.update(file_elided)
+        raw_tok += raw_t
+        skel_tok += shown_t
         out.append(txt)
         payload.append({"file": fnode, "nodes": nodes, "refs": refs})
     if args.json:
         print(json.dumps(payload, indent=None))
         return
     print("\n\n".join(out))
-    if len(paths) and not args.no_stats:
-        pct = 100 - (skel_tok * 100 // raw_tok) if raw_tok else 0
-        print(f"\n-- {len(paths)} file(s): raw ≈ {raw_tok:,} tokens, skeleton ≈ {skel_tok:,} tokens ({pct}% saved)")
+    notice = elision_notice(elided)
+    if notice:
+        print("\n" + notice)
+    if raw_tok and not args.no_stats:
+        pct = 100 - (skel_tok * 100 // raw_tok)
+        lead = "" if notice else chr(10)
+        if pct <= 0:
+            # Every file was small enough to trip the never_worse guard (or close to it). Say so
+            # plainly instead of printing a negative percentage.
+            print(f"{lead}-- {len(paths)} file(s): too small to summarize — read them directly "
+                  f"(≈{skel_tok:,} vs ≈{raw_tok:,} tokens; ~4 chars/token estimate)")
+        else:
+            note = f"; {guarded} shown in full" if guarded else ""
+            print(f"{lead}-- {len(paths)} file(s): ≈{skel_tok:,} tokens here vs "
+                  f"≈{raw_tok:,} to read them in full ({pct}% less{note}; ~4 chars/token estimate)")
 
 
 # ----------------------------------------------------------------------------------------------
@@ -2578,9 +3117,23 @@ def file_hash(data):
     return hashlib.sha1(data).hexdigest()
 
 
-def load_graph(path):
-    with open(path) as f:
-        return json.load(f)
+def load_graph(path, with_cache=False):
+    """Read a stored graph back as a plain dict. Only `build` uses this -- it needs the previous
+    run's parse cache to decide what to re-parse. Queries go through Store, which never
+    materialises the whole graph."""
+    if not os.path.exists(path):
+        return None
+    try:
+        st = Store(path)
+    except sqlite3.Error:
+        return None     # a graph from an older format: treat it as absent and rebuild
+    try:
+        g = {k: st.meta(k) for k in ("version", "engine", "root", "built_at", "stats")}
+        if with_cache:
+            g["files"] = st.parsed()
+        return g
+    finally:
+        st.close()
 
 
 def terraform_module_map(root_dir):
@@ -2783,6 +3336,29 @@ def resolve_import(ref, file_path, lang, files, root_dir, go_module=None, ctx=No
     name = ref["name"]
     d = os.path.dirname(file_path)
     ctx = ctx or {}
+    if lang in ("cpp", "c"):
+        # `#include <vector>` is flagged system at extraction time and is always external.
+        if ref.get("extra_kind") == "system":
+            return None
+        cands = [
+            name,                                              # bazel-style, from the repo root
+            os.path.normpath(os.path.join(d, name)),           # quoted, relative to the includer
+        ]
+        # Common include roots. A generated-header path (`third_party/x/y.h`) that is not in the
+        # tree simply fails to resolve, which is the honest outcome.
+        cands += [f"{r}/{name}" for r in ("include", "src", "third_party")]
+        for c in cands:
+            c = c.replace(os.sep, "/").lstrip("./")
+            if c in files:
+                return c
+        # A header named only by basename: accept it when exactly one file in the tree matches,
+        # never when several do (guessing between same-named headers invents edges).
+        base = os.path.basename(name)
+        if base == name:
+            hits = [f for f in files if f.endswith("/" + base) or f == base]
+            if len(hits) == 1:
+                return hits[0]
+        return None
     if lang == "python":
         if name.startswith("."):
             dots = len(name) - len(name.lstrip("."))
@@ -3058,7 +3634,7 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
         engine_hash = ""
     if not full and os.path.exists(out_path):
         try:
-            old = load_graph(out_path)
+            old = load_graph(out_path, with_cache=True)
             # cached parses are only reusable if the engine that produced them is byte-identical:
             # extractors change what a parse records (argument types, re-export names, ...)
             if old.get("version") != GRAPH_VERSION or old.get("engine") != engine_hash:
@@ -3092,10 +3668,7 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
     graph["engine"] = engine_hash
     graph["root"] = root_dir
     graph["built_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    graph["files"] = files
-    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(graph, f, separators=(",", ":"))
+    write_store(out_path, graph, files)
     if stamp:
         with open(stamp_path, "w") as f:
             json.dump({"version": GRAPH_VERSION, "stamp": stamp, "stats": graph["stats"], "built_at": graph["built_at"]}, f)
@@ -3175,6 +3748,36 @@ def link_graph(root_dir, files, tf_modules):
     if drop_contains:   # one filtered pass (a per-method rebuild of the edge list was quadratic: 12s on a 3.6k-file Go repo)
         edges[:] = [e for e in edges if not (e["type"] == "contains" and (e["src"], e["dst"]) in drop_contains)]
 
+    # C/C++ header-implementation pairing. `void MatMulOp::Compute(...)` in a .cc and the
+    # `void Compute(...)` it defines in a .h extract as two nodes that already share a qname
+    # (cpp_function builds the out-of-line qname from the `Class::` qualifier). Pair them with a
+    # `defines` edge and mark the declaration, so a caller can be pointed at the body rather than
+    # at the prototype. Without this every C++ member appears twice with no relation between them.
+    cpp_decl_to_def = {}
+    cpp_defs = defaultdict(list)
+    for n in nodes:
+        if n["kind"] not in ("method", "constructor", "destructor", "function"):
+            continue
+        if os.path.splitext(n["file"])[1].lower() not in CPP_EXTS:
+            continue
+        cpp_defs[n["qname"]].append(n)
+    for group in cpp_defs.values():
+        if len(group) < 2:
+            continue
+        defs = [n for n in group if n["extra"].get("has_body")]
+        decls = [n for n in group if not n["extra"].get("has_body")]
+        if not defs or not decls:
+            continue    # two declarations, or two definitions (overloads): not a header/impl pair
+        # Prefer a single definition; with several (overloads sharing a name) link each declaration
+        # to the one in the matching translation unit when there is one, else to the first.
+        for d in decls:
+            d["extra"]["is_declaration"] = True
+            target = next((x for x in defs if os.path.splitext(x["file"])[0] == os.path.splitext(d["file"])[0]), defs[0])
+            d["extra"]["defined_at"] = f"{target['file']}:{target['line']}"
+            cpp_decl_to_def[d["id"]] = target["id"]
+            edges.append({"src": target["id"], "dst": d["id"], "type": "defines",
+                          "line": target["line"], "confidence": "exact"})
+
     # Directory-level nodes: Go packages and Terraform modules
     dir_nodes = {}
     for rel, info in files.items():
@@ -3220,6 +3823,18 @@ def link_graph(root_dir, files, tf_modules):
     import_links = defaultdict(list)  # file -> [(names, alias_map, target files)] for re-export following
     ext_nodes = {}
     unresolved = 0
+    # pybind11 exports by the name Python calls them with. Ambiguous names are dropped outright:
+    # if two extension modules export the same symbol there is no way to tell which one a Python
+    # call means, and guessing would fabricate an edge across a language boundary.
+    py_binding_index = {}
+    for n in nodes:
+        if n["kind"] == "py_binding":
+            py_binding_index[n["name"]] = None if n["name"] in py_binding_index else n
+    py_binding_index = {k: v for k, v in py_binding_index.items() if v is not None}
+    op_def_index = {}
+    for n in nodes:
+        if n["kind"] == "op_def" and n["name"] not in op_def_index:
+            op_def_index[n["name"]] = n
     assets = 0
     stats_conf = defaultdict(int)
     dir_files = defaultdict(list)
@@ -3311,6 +3926,12 @@ def link_graph(root_dir, files, tf_modules):
         return ext_nodes[nid]
 
     def add_edge(src, dst, typ, line, conf, **extra):
+        # A C++ member resolved through a header lands on the prototype. Point the edge at the
+        # definition instead, so `callers`, `trace-deps` and `path` all agree with `query symbol`,
+        # which prefers the body. Without this the two halves of a C++ member are unconnected and
+        # a traversal silently stops at the language's own declaration/definition split.
+        if typ != "defines":
+            dst = cpp_decl_to_def.get(dst, dst)
         e = {"src": src, "dst": dst, "type": typ, "line": line, "confidence": conf}
         e.update(extra)
         edges.append(e)
@@ -4582,6 +5203,16 @@ def link_graph(root_dir, files, tf_modules):
                 cont = container_of(r["src"])
                 name = r["name"]
                 targets, conf, mode = resolve_call(r, rel, lang, cont)
+                if (not targets or mode == "external") and lang == "python":
+                    # Cross-language bridge: a Python call that resolves to nothing in Python may be
+                    # a pybind11 export from a C++ extension module. Only taken when exactly one
+                    # binding carries the name and no Python definition does, because a wrong
+                    # cross-language edge is worse than the honest gap it replaces.
+                    bind = py_binding_index.get(name)
+                    if bind is not None and not [c for c in by_name.get(name, [])
+                                                 if c["file"].endswith(".py")]:
+                        add_edge(r["src"], bind["id"], "calls", r["line"], "binding", name=name)
+                        continue
                 if mode == "external":
                     unresolved += 1
                     continue
@@ -4592,6 +5223,19 @@ def link_graph(root_dir, files, tf_modules):
                     continue
                 for t in targets:
                     add_edge(r["src"], t["id"], "calls", r["line"], conf, name=name)
+            elif k == "registers_op":
+                # REGISTER_KERNEL_BUILDER(Name("MatMul")..., MatMulOp<...>): the kernel class
+                # implements the registered op. Both sides are C++, but the op name is what the
+                # Python layer addresses, so this is the hop that makes an op reachable.
+                op = op_def_index.get(r["name"])
+                if op is None:
+                    unresolved += 1
+                    continue
+                kernel = r.get("kernel")
+                src_nodes = [c for c in by_name.get(kernel, []) if c["kind"] in ("class", "struct")] if kernel else []
+                src_id = src_nodes[0]["id"] if len(src_nodes) == 1 else r["src"]
+                add_edge(src_id, op["id"], "implements", r["line"],
+                         "exact" if len(src_nodes) == 1 else "package", name=r["name"])
             elif k in ("references", "depends_on") and lang == "hcl":
                 name = r["name"]
                 target = hcl_index.get((d, name))
@@ -4644,22 +5288,370 @@ def link_graph(root_dir, files, tf_modules):
 # ----------------------------------------------------------------------------------------------
 # Queries
 # ----------------------------------------------------------------------------------------------
-class G:
-    def __init__(self, graph):
-        self.g = graph
-        self.nodes = {n["id"]: n for n in graph["nodes"]}
-        self.out = defaultdict(list)
-        self.inc = defaultdict(list)
-        for e in graph["edges"]:
-            self.out[e["src"]].append(e)
-            self.inc[e["dst"]].append(e)
-        self.by_name = defaultdict(list)
-        for n in graph["nodes"]:
-            self.by_name[n["name"].lower()].append(n)
-            self.by_name[n["qname"].lower()].append(n)
-            if n["kind"] == "file":
-                self.by_name[n["file"].lower()].append(n)
+# ----------------------------------------------------------------------------------------------
+# Graph storage (SQLite)
+#
+# A graph used to be one JSON blob that every query json.load-ed in full. That is fine at a few
+# hundred files and fatal at twenty thousand: TensorFlow with C++ indexed produced a 1.3 GB file
+# and a single `query stats` cost 12.8s and 5.3 GB RSS -- more memory than most laptops have.
+#
+# SQLite gives targeted queries what they actually need: a point lookup by id, the edges on one
+# node, a name lookup. Whole-graph commands (find, overview, summary, path) still scan, but they
+# stream rows instead of materialising the file. The lazy views below keep the existing query code
+# working unchanged -- `g.nodes[id]`, `g.out[src]`, `g.g["edges"]` all still read naturally.
+# ----------------------------------------------------------------------------------------------
+SCHEMA = """
+PRAGMA journal_mode=OFF;
+PRAGMA synchronous=OFF;
+CREATE TABLE IF NOT EXISTS meta  (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS nodes (
+  id TEXT PRIMARY KEY, kind TEXT, name TEXT, lname TEXT, qname TEXT, lqname TEXT,
+  file TEXT, line INTEGER, end_line INTEGER, signature TEXT,
+  annotations TEXT, parent TEXT, extra TEXT);
+CREATE TABLE IF NOT EXISTS edges (
+  src TEXT, dst TEXT, type TEXT, line INTEGER, confidence TEXT, name TEXT);
+CREATE TABLE IF NOT EXISTS parsed (path TEXT PRIMARY KEY, blob TEXT);
+"""
+INDEXES = """
+CREATE INDEX IF NOT EXISTS ix_nodes_lname  ON nodes(lname);
+CREATE INDEX IF NOT EXISTS ix_nodes_lqname ON nodes(lqname);
+CREATE INDEX IF NOT EXISTS ix_nodes_file   ON nodes(file);
+CREATE INDEX IF NOT EXISTS ix_nodes_kind   ON nodes(kind);
+CREATE INDEX IF NOT EXISTS ix_nodes_parent ON nodes(parent);
+CREATE INDEX IF NOT EXISTS ix_edges_src    ON edges(src);
+CREATE INDEX IF NOT EXISTS ix_edges_dst    ON edges(dst);
+CREATE INDEX IF NOT EXISTS ix_edges_type   ON edges(type);
+"""
+NODE_COLS = ("id", "kind", "name", "qname", "file", "line", "end_line", "signature",
+             "annotations", "parent", "extra")
 
+
+def _row_to_node(r):
+    return {"id": r[0], "kind": r[1], "name": r[2], "qname": r[3], "file": r[4], "line": r[5],
+            "end_line": r[6], "signature": r[7], "annotations": json.loads(r[8] or "[]"),
+            "parent": r[9], "extra": json.loads(r[10] or "{}")}
+
+
+_NODE_SELECT = ("SELECT id,kind,name,qname,file,line,end_line,signature,annotations,parent,extra "
+                "FROM nodes")
+
+
+def _row_to_edge(r):
+    e = {"src": r[0], "dst": r[1], "type": r[2], "line": r[3], "confidence": r[4]}
+    if r[5] is not None:
+        e["name"] = r[5]
+    return e
+
+
+_EDGE_SELECT = "SELECT src,dst,type,line,confidence,name FROM edges"
+
+
+def write_store(path, graph, files):
+    """Write nodes, edges, meta and the per-file parse cache to a fresh database."""
+    tmp = path + ".tmp"
+    for p in (tmp, tmp + "-journal"):
+        if os.path.exists(p):
+            os.remove(p)
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    con = sqlite3.connect(tmp)
+    con.executescript(SCHEMA)
+    con.executemany(
+        "INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(n["id"], n["kind"], n["name"], n["name"].lower(), n["qname"], n["qname"].lower(),
+          n["file"], n["line"], n["end_line"], n["signature"],
+          json.dumps(n.get("annotations") or []), n.get("parent"),
+          json.dumps(n.get("extra") or {})) for n in graph["nodes"]])
+    con.executemany(
+        "INSERT INTO edges VALUES (?,?,?,?,?,?)",
+        [(e["src"], e["dst"], e["type"], e.get("line"), e.get("confidence"), e.get("name"))
+         for e in graph["edges"]])
+    con.executemany("INSERT OR REPLACE INTO parsed VALUES (?,?)",
+                    [(rel, json.dumps(info, separators=(",", ":"))) for rel, info in files.items()])
+    con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",
+                    [(k, json.dumps(graph.get(k))) for k in ("version", "engine", "root", "built_at", "stats")])
+    con.executescript(INDEXES)
+    con.commit()
+    con.close()
+    os.replace(tmp, path)
+
+
+class NodeView:
+    """`g.nodes` without holding every node in memory: point lookups hit an index and are cached."""
+
+    def __init__(self, store):
+        self.s = store
+        self._c = {}
+
+    def __getitem__(self, nid):
+        n = self.get(nid)
+        if n is None:
+            raise KeyError(nid)
+        return n
+
+    def get(self, nid, default=None):
+        if nid in self._c:
+            return self._c[nid]
+        r = self.s.con.execute(_NODE_SELECT + " WHERE id=?", (nid,)).fetchone()
+        n = _row_to_node(r) if r else None
+        self._c[nid] = n
+        return n if n is not None else default
+
+    def __contains__(self, nid):
+        return self.get(nid) is not None
+
+    def values(self):
+        return self.s.iter_nodes()
+
+    def __iter__(self):
+        return (n["id"] for n in self.s.iter_nodes())
+
+
+class AdjView:
+    """`g.out[src]` / `g.inc[dst]`: the edges on one node, fetched by index."""
+
+    def __init__(self, store, column):
+        self.s, self.col = store, column
+        self._c = {}
+
+    def __getitem__(self, key):
+        return self.get(key)
+
+    def get(self, key, default=None):
+        if key not in self._c:
+            rows = self.s.con.execute(f"{_EDGE_SELECT} WHERE {self.col}=?", (key,)).fetchall()
+            self._c[key] = [_row_to_edge(r) for r in rows]
+        return self._c[key] or (default if default is not None else [])
+
+
+class LazyGraph:
+    """Stands in for the old graph dict. `nodes` and `edges` stream from SQLite when a command
+    genuinely needs every row (find, overview, summary, path); everything else avoids them."""
+
+    def __init__(self, store):
+        self.s = store
+
+    def __getitem__(self, key):
+        if key == "nodes":
+            return list(self.s.iter_nodes())
+        if key == "edges":
+            return list(self.s.iter_edges())
+        if key == "files":
+            return self.s.parsed()
+        v = self.s.meta(key)
+        if v is None:
+            raise KeyError(key)
+        return v
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
+class Store:
+    def __init__(self, path):
+        self.path = path
+        self.con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        self.con.execute("PRAGMA query_only=ON")
+        self._meta, self._parsed = {}, None
+
+    def meta(self, key):
+        if key not in self._meta:
+            r = self.con.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+            self._meta[key] = json.loads(r[0]) if r and r[0] is not None else None
+        return self._meta[key]
+
+    def iter_nodes(self, where="", params=()):
+        for r in self.con.execute(_NODE_SELECT + (" " + where if where else ""), params):
+            yield _row_to_node(r)
+
+    def iter_edges(self, where="", params=()):
+        for r in self.con.execute(_EDGE_SELECT + (" " + where if where else ""), params):
+            yield _row_to_edge(r)
+
+    def by_name(self, lowered):
+        rows = self.con.execute(_NODE_SELECT + " WHERE lname=? OR lqname=?", (lowered, lowered)).fetchall()
+        out = [_row_to_node(r) for r in rows]
+        # A qualified name the caller wrote without its namespace: `OpKernel::Compute` is stored as
+        # `tensorflow.OpKernel.Compute`. Match on the suffix here rather than letting resolve() fall
+        # through to a substring scan, which materialised all 443k nodes (673 MB) on TensorFlow.
+        if not out and "." in lowered:
+            rows = self.con.execute(_NODE_SELECT + " WHERE lqname LIKE ?", ("%." + lowered,)).fetchall()
+            out = [_row_to_node(r) for r in rows]
+        # file nodes are also addressable by path
+        rows = self.con.execute(_NODE_SELECT + " WHERE kind='file' AND lower(file)=?", (lowered,)).fetchall()
+        seen = {n["id"] for n in out}
+        return out + [n for n in (_row_to_node(r) for r in rows) if n["id"] not in seen]
+
+    def substring(self, ql, limit=5000):
+        """Nodes whose qname or path contains `ql`. Filtered in SQL: the Python equivalent built a
+        list of every node in the graph to find a handful of matches."""
+        pat = f"%{ql}%"
+        rows = self.con.execute(
+            _NODE_SELECT + " WHERE lqname LIKE ? OR lower(file) LIKE ? LIMIT ?",
+            (pat, pat, limit)).fetchall()
+        return [_row_to_node(r) for r in rows]
+
+    def kind_histogram(self, table, column):
+        """{value: count} for one column, counted in SQL."""
+        assert table in ("nodes", "edges") and column in ("kind", "type", "confidence")
+        return dict(sorted(self.con.execute(
+            f"SELECT {column}, COUNT(*) FROM {table} GROUP BY {column}")))
+
+    def nodes_of_kind(self, kinds, names=None):
+        """Nodes of the given kinds, optionally restricted to a set of names. Both columns are
+        indexed, so this replaces a pass over every node in the graph."""
+        q = _NODE_SELECT + " WHERE kind IN (" + ",".join("?" * len(kinds)) + ")"
+        params = list(kinds)
+        if names:
+            q += " AND lname IN (" + ",".join("?" * len(names)) + ")"
+            params += [n.lower() for n in names]
+        return [_row_to_node(r) for r in self.con.execute(q, params)]
+
+    def degree_counts(self):
+        """(indegree, outdegree) per node id, aggregated in SQL.
+
+        The fast path for a plain `overview`: with no --no-tests or --lang filter nothing is
+        decided per edge, so there is no reason to hand 1.43M rows to Python. GROUP BY returns
+        ~108k and ~210k rows instead."""
+        base = "FROM edges WHERE type != 'contains' AND confidence != 'ambiguous' GROUP BY "
+        indeg = {r[0]: r[1] for r in self.con.execute("SELECT dst, COUNT(*) " + base + "dst")}
+        outdeg = {r[0]: r[1] for r in self.con.execute("SELECT src, COUNT(*) " + base + "src")}
+        return indeg, outdeg
+
+    def ranking_edges(self):
+        """(src, dst, src_file, dst_file, dst_kind) for every edge that counts toward centrality.
+
+        One join instead of the old shape, which listed all 1.43M edges and then did two point
+        lookups per edge to find their files -- 2.86M queries, ~15s and 1.4 GB on TensorFlow.
+        `contains` and `ambiguous` are dropped in SQL because they never count."""
+        q = ("SELECT e.src, e.dst, ns.file, nd.file, nd.kind "
+             "FROM edges e JOIN nodes ns ON ns.id=e.src JOIN nodes nd ON nd.id=e.dst "
+             "WHERE e.type != 'contains' AND e.confidence != 'ambiguous'")
+        return self.con.execute(q)
+
+    def node_meta_closure(self, ids):
+        """{id: {id, kind, qname, file, parent}} for `ids` and their parent chains.
+
+        Slim on purpose -- the centrality rollup reads only kind/file/parent/qname, never the
+        signature, annotations or `extra` that make up most of a row -- and targeted on purpose:
+        on TensorFlow only 108k of 443k nodes have an incoming edge, so fetching every node's
+        metadata (an earlier attempt) cost more, not less. Parents are closed over iteratively
+        because containment is shallow; the bound stops a cycle from looping forever."""
+        meta, want, rounds = {}, {i for i in ids if i}, 0
+        while want and rounds < 24:
+            batch = list(want)
+            for i in range(0, len(batch), 500):
+                chunk = batch[i:i + 500]
+                q = ("SELECT id,kind,qname,file,parent FROM nodes WHERE id IN ("
+                     + ",".join("?" * len(chunk)) + ")")
+                for r in self.con.execute(q, chunk):
+                    meta[r[0]] = {"id": r[0], "kind": r[1], "qname": r[2], "file": r[3], "parent": r[4]}
+            want = {m["parent"] for m in meta.values() if m["parent"] and m["parent"] not in meta}
+            rounds += 1
+        return meta
+
+    def nodes_by_ids(self, ids):
+        """{id: node} for many ids in a few queries rather than one query each."""
+        out, ids = {}, list(ids)
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            rows = self.con.execute(
+                _NODE_SELECT + " WHERE id IN (" + ",".join("?" * len(chunk)) + ")", chunk).fetchall()
+            for r in rows:
+                n = _row_to_node(r)
+                out[n["id"]] = n
+        return out
+
+    def substring_wide(self, ql, limit=20000):
+        """Like `substring`, but also matches the bare name -- what `find` searches."""
+        pat = f"%{ql}%"
+        rows = self.con.execute(
+            _NODE_SELECT + " WHERE lname LIKE ? OR lqname LIKE ? OR lower(file) LIKE ? LIMIT ?",
+            (pat, pat, pat, limit)).fetchall()
+        return [_row_to_node(r) for r in rows]
+
+    def kotlin_methods(self):
+        """Methods declared in Kotlin files -- the only candidates for extension-method cards."""
+        return list(self.iter_nodes(
+            "WHERE kind='method' AND (file LIKE '%.kt' OR file LIKE '%.kts')"))
+
+    def resolved_lines_for(self, src_ids):
+        """{(src, line, name)} for the edges leaving `src_ids` -- used to tell which of a file's
+        raw refs the linker managed to resolve."""
+        ids = list(src_ids)
+        out = set()
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            q = "SELECT src,line,name FROM edges WHERE src IN (" + ",".join("?" * len(chunk)) + ")"
+            out.update((r[0], r[1], r[2]) for r in self.con.execute(q, chunk))
+        return out
+
+    def count_ambiguous_into(self, dst_ids):
+        """How many `ambiguous` edges point at any of `dst_ids`, without materialising the table."""
+        ids = list(dst_ids)
+        if not ids:
+            return 0
+        total = 0
+        for i in range(0, len(ids), 500):          # stay under SQLite's variable limit
+            chunk = ids[i:i + 500]
+            q = ("SELECT COUNT(*) FROM edges WHERE confidence='ambiguous' AND dst IN ("
+                 + ",".join("?" * len(chunk)) + ")")
+            total += self.con.execute(q, chunk).fetchone()[0]
+        return total
+
+    def file_langs(self):
+        return {r[0]: (json.loads(r[1] or "{}") or {}).get("language")
+                for r in self.con.execute("SELECT file, extra FROM nodes WHERE kind='file'")}
+
+    def parsed(self):
+        if self._parsed is None:
+            self._parsed = {r[0]: json.loads(r[1])
+                            for r in self.con.execute("SELECT path, blob FROM parsed")}
+        return self._parsed
+
+    def parsed_one(self, path):
+        r = self.con.execute("SELECT blob FROM parsed WHERE path=?", (path,)).fetchone()
+        return json.loads(r[0]) if r else None
+
+    def parsed_all_for_build(self):
+        return self.parsed()
+
+    def close(self):
+        self.con.close()
+
+
+class NameView:
+    """`g.by_name[x]`: an indexed lookup instead of a prebuilt dictionary of every node."""
+
+    def __init__(self, store):
+        self.s = store
+        self._c = {}
+
+    def __getitem__(self, key):
+        return self.get(key)
+
+    def get(self, key, default=None):
+        if key not in self._c:
+            self._c[key] = self.s.by_name(key)
+        return self._c[key] or (default if default is not None else [])
+
+
+class G:
+    def __init__(self, store):
+        self.store = store
+        self.g = LazyGraph(store)
+        self.nodes = NodeView(store)
+        self.out = AdjView(store, "src")
+        self.inc = AdjView(store, "dst")
+        self.by_name = NameView(store)
+        self.file_lang = store.file_langs()
+
+    def parse_cache(self):
+        """EVERY file's parse cache, materialised. Prefer `store.parsed_one(path)` -- this loads
+        20,805 rows and ~2.5 GB on a repo the size of TensorFlow. Kept for whole-graph tooling."""
+        return self.store.parsed()
     def children(self, nid):
         return sorted((self.nodes[e["dst"]] for e in self.out.get(nid, []) if e["type"] == "contains"), key=lambda n: n["line"])
 
@@ -4668,6 +5660,14 @@ class G:
         q = query.strip()
         if q in self.nodes:
             return [self.nodes[q]]
+        # C++ names are written with `::` but stored with the engine's `.` qname separator, so
+        # `MatMulOp::Compute` and `tensorflow::ops::MatMulOp` resolve like any other qname.
+        if "::" in q:
+            dotted = q.replace("::", ".")
+            hit = self.by_name.get(dotted.lower(), [])
+            if hit:
+                return list({n["id"]: n for n in hit}.values())
+            q = dotted
         if ":" in q and "::" not in q:
             fpart, npart = q.split(":", 1)
             line = None
@@ -4684,7 +5684,7 @@ class G:
         if exact:
             return list({n["id"]: n for n in exact}.values())
         ql = q.lower()
-        subs = [n for n in self.g["nodes"] if ql in n["qname"].lower() or ql in n["file"].lower()]
+        subs = self.store.substring(ql)
         if kinds:
             subs = [n for n in subs if n["kind"] in kinds]
         return subs
@@ -4711,8 +5711,16 @@ def ensure_one(g, query, kinds=None):
         sys.exit(f"no symbol or file matches '{query}'. Try: query find {bare}" + (" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
     if len(matches) > 1 and not all(m["id"] == matches[0]["id"] for m in matches):
         qn = query.split(":", 1)[1] if ":" in query and "::" not in query else query
-        exact = [m for m in matches if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower() or m["file"] == query]
-        for narrow in (lambda m: not is_test_file(m["file"]), lambda m: m.get("parent") == m.get("file")):
+        qn = qn.replace("::", ".")      # C++ callers write `Class::member`; qnames are dotted
+        exact = [m for m in matches
+                 if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower()
+                 or m["qname"].lower().endswith("." + qn.lower())   # `MatMulOp.Compute` in a namespace
+                 or m["file"] == query]
+        for narrow in (lambda m: not is_test_file(m["file"]),
+                       # A C++ member matches twice: the header declaration and the .cc definition.
+                       # The body is what a reader wants, so prefer it over the prototype.
+                       lambda m: not m.get("extra", {}).get("is_declaration"),
+                       lambda m: m.get("parent") == m.get("file")):
             sub = [m for m in exact if narrow(m)]   # production code before tests, top-level before nested
             if sub and len(sub) < len(exact):
                 exact = sub
@@ -4733,9 +5741,12 @@ def q_find(g, args):
     langs = set(getattr(args, "lang", None) or [])
 
     def lang_of(n):
-        return g.g.get("files", {}).get(n["file"], {}).get("file_node", {}).get("extra", {}).get("language") if n.get("file") else None
+        return g.file_lang.get(n["file"]) if n.get("file") else None
 
-    res = [n for n in g.g["nodes"] if (ql in n["name"].lower() or ql in n["qname"].lower() or ql in n["file"].lower())
+    # Candidates come from SQL (`lname`/`lqname`/`file` LIKE) instead of a pass over every node:
+    # the Python scan built 443k dicts on TensorFlow to return a page of matches.
+    cands = g.store.substring_wide(ql)
+    res = [n for n in cands if (ql in n["name"].lower() or ql in n["qname"].lower() or ql in n["file"].lower())
            and (not args.kind or n["kind"] in args.kind) and n["kind"] != "file" or (n["kind"] == "file" and ql in n["file"].lower() and (not args.kind or "file" in args.kind))]
     if langs:
         res = [n for n in res if lang_of(n) in langs]
@@ -4782,9 +5793,13 @@ def q_find(g, args):
         print(f"... {total - len(res)} more matches (exact-name matches are listed first; narrow with --kind, --lang or a longer query)")
 
 
-def overrides_of(g, n):
+def overrides_of(g, n, want_down=True):
     """(methods this one overrides, methods overriding it): same-named members across extends/implements,
-    three levels each way. Empty for anything that is not a member of a container."""
+    three levels each way. Empty for anything that is not a member of a container.
+
+    `want_down=False` skips the descendant walk. That direction is unbounded on a hub base class --
+    walking OpKernel's subclasses three levels deep cost 670 MB on TensorFlow -- so callers that
+    only need the ancestors (dispatch_note) must not pay for it."""
     par = g.nodes.get(n.get("parent"))
     if n["kind"] not in ("method", "function") or par is None or par["kind"] not in CONTAINER_KINDS:
         return [], []
@@ -4804,12 +5819,12 @@ def overrides_of(g, n):
                 out.extend(k for k in g.children(nxt["id"]) if k["name"] == n["name"] and k["kind"] in ("method", "function"))
                 frontier.append((nxt, depth + 1))
         return out
-    return related(par, False), related(par, True)
+    return related(par, False), (related(par, True) if want_down else [])
 
 
 def dispatch_note(g, n):
     """One line telling the reader that callers may reach `n` through the method it overrides."""
-    ups, _ = overrides_of(g, n)
+    ups, _ = overrides_of(g, n, want_down=False)
     if not ups:
         return None
     base = ups[0]
@@ -4833,9 +5848,9 @@ def q_symbol(g, args):
     ups, downs = overrides_of(g, n)
     if ups or downs:
         if ups:
-            print("├── Overrides: " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in ups[:8]))
+            print("├── Overrides: " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in ups[:CAP_OVERRIDES]))
         if downs:
-            print(f"├── Overridden by ({len(downs)}): " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in downs[:12]) + (" ..." if len(downs) > 12 else ""))
+            print(f"├── Overridden by ({len(downs)}): " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in downs[:CAP_OVERRIDDEN_BY]) + (" ..." if len(downs) > CAP_OVERRIDDEN_BY else ""))
 
     def collapse(edge_list, key_node):
         """Identical (type, target, confidence) rows from several lines become one row with a count."""
@@ -4864,8 +5879,11 @@ def q_symbol(g, args):
     if n["kind"] in CONTAINER_KINDS:
         # Kotlin extension functions `fun X.f()` belong on X's card even though they live at file level
         own = {k["id"] for k in kids}
-        exts = [m for m in g.g["nodes"] if m["kind"] == "method" and m.get("extra", {}).get("receiver_type") == n["name"]
-                and m["id"] not in own and m.get("parent") != n["id"] and m["file"].endswith((".kt", ".kts"))
+        # Kotlin extension methods declared on this type. Narrowed in SQL to Kotlin methods first:
+        # scanning every node here cost ~1 GB on TensorFlow looking for a language it does not use.
+        exts = [m for m in g.store.kotlin_methods()
+                if m.get("extra", {}).get("receiver_type") == n["name"]
+                and m["id"] not in own and m.get("parent") != n["id"]
                 and (is_test_file(n["file"]) or not is_test_file(m["file"]))]   # test-only extensions stay off production cards
         if exts:
             kids = kids + [dict(m, signature=m["signature"] + f"   [extension, {m['file']}]") for m in sorted(exts, key=lambda m: (m["file"], m["line"]))]
@@ -4891,9 +5909,14 @@ def q_symbol(g, args):
                 print(f"│   ├── {e['type']}: {t['qname']}  ({t['file']}:{t['line']}, {e['confidence']}){times}" if t["file"] else f"│   ├── {e['type']}: {t['name']}  ({t['kind']}){times}")
         if cap and len(outs) > cap:
             print(f"│   └── ... {len(outs) - cap} more; " + by_file_summary([g.nodes[e["dst"]] for e, _ in outs if e["dst"] in g.nodes]))
-    finfo = g.g.get("files", {}).get(n["file"], {})
+    # One row, not the whole cache: `parse_cache()` materialises every file's refs, which on
+    # TensorFlow is 20,805 rows and 2.5 GB of RSS -- to print a handful of unresolved names.
+    finfo = g.store.parsed_one(n["file"]) or {}
     member_ids = {n["id"]} | {k["id"] for k in kids}
-    resolved_lines = {(e["src"], e.get("line"), e.get("name")) for e in g.g["edges"]}
+    # Only this symbol's own members can have resolved refs, so ask for their edges rather than
+    # building a set from every edge in the graph: that scan alone cost 3.6 GB on TensorFlow, for
+    # a card that displays at most a few dozen rows.
+    resolved_lines = g.store.resolved_lines_for(member_ids)
     unresolved = []
     for r in finfo.get("refs", []):
         if r["src"] in member_ids and r["kind"] in ("call", "extends", "implements", "instantiates", "import") \
@@ -4902,7 +5925,7 @@ def q_symbol(g, args):
             if label not in unresolved:
                 unresolved.append(label)
     if unresolved:
-        print("├── Unresolved (external or not indexed): " + ", ".join(unresolved[:12]) + (f" (+{len(unresolved) - 12})" if len(unresolved) > 12 else ""))
+        print("├── Unresolved (external or not indexed): " + ", ".join(unresolved[:CAP_UNRESOLVED]) + (f" (+{len(unresolved) - CAP_UNRESOLVED})" if len(unresolved) > CAP_UNRESOLVED else ""))
     ins = [e for e in g.inc.get(n["id"], []) if e["type"] != "contains"]
     # also include incoming edges to members (e.g. callers of a class's methods)
     member_ins = []
@@ -5143,7 +6166,9 @@ def q_trace_deps(g, args):
             print(head + ":" + tail)
             for t in shown_t:
                 print(f"  - {t}")
-    amb = sum(1 for e in g.g["edges"] if e["confidence"] == "ambiguous" and e["dst"] in start_set)
+    # Counted in SQL rather than by scanning every edge: on TensorFlow that scan alone pulled the
+    # whole edge table into memory for what is otherwise a targeted, indexed query.
+    amb = g.store.count_ambiguous_into(start_set)
     if amb and not args.include_ambiguous:
         print(f"Note: {amb} ambiguous edge(s) to the target were excluded; re-run with --include-ambiguous to see them.")
 
@@ -5151,7 +6176,7 @@ def q_trace_deps(g, args):
 def q_overview(g, args):
     """Centrality overview: hub symbols, hub files, and directory summary."""
     indeg, outdeg = defaultdict(int), defaultdict(int)
-    test_files = {f for f in g.g.get("files", {}) if is_test_file(f)} if getattr(args, "no_tests", False) else set()
+    test_files = {f for f in g.file_lang if is_test_file(f)} if getattr(args, "no_tests", False) else set()
 
     def in_test_module(nid):
         """Rust `mod tests` / `#[cfg(test)]` modules and similar inline test containers."""
@@ -5164,30 +6189,32 @@ def q_overview(g, args):
             hops += 1
         return False
     langs_ok = set(getattr(args, "lang", None) or [])
-    lang_files = {f for f, i in g.g.get("files", {}).items() if i["file_node"]["extra"].get("language") in langs_ok} if langs_ok else None
-    for e in g.g["edges"]:
-        if e["type"] == "contains" or e["confidence"] == "ambiguous":
-            continue
-        sf = g.nodes.get(e["src"], {}).get("file")
-        if test_files and (sf in test_files or in_test_module(e["src"])):
-            continue   # --no-tests: usage from test files or inline test modules does not make a symbol a hub
-        dst_node = g.nodes.get(e["dst"], {})
-        if lang_files is not None and (sf not in lang_files or (dst_node.get("file") not in lang_files and dst_node.get("kind") not in ("external", "external_module"))):
-            continue   # --lang: rank only within the requested language(s); externals keep their counts
-        indeg[e["dst"]] += 1
-        outdeg[e["src"]] += 1
+    lang_files = {f for f, lg in g.file_lang.items() if lg in langs_ok} if langs_ok else None
+    if not test_files and lang_files is None:
+        indeg, outdeg = g.store.degree_counts()          # nothing to decide per edge: aggregate in SQL
+    else:
+        for src, dst, sf, df, dk in g.store.ranking_edges():
+            if test_files and (sf in test_files or in_test_module(src)):
+                continue   # --no-tests: usage from test files or inline test modules does not make a symbol a hub
+            if lang_files is not None and (sf not in lang_files or (df not in lang_files and dk not in ("external", "external_module"))):
+                continue   # --lang: rank only within the requested language(s); externals keep their counts
+            indeg[dst] += 1
+            outdeg[src] += 1
     # roll member usage up to the containing symbol and file
     file_in = defaultdict(int)
     sym_in = defaultdict(int)
+    # Slim metadata for every node, once: the loop below reads only kind/file/parent/qname, and
+    # the parent walk would otherwise issue a point query per hop.
+    meta = g.store.node_meta_closure(indeg)
     for nid, c in indeg.items():
-        n = g.nodes.get(nid)
+        n = meta.get(nid)
         if not n:
             continue
         if n["file"]:
             file_in[n["file"]] += c
         p = n
         while p is not None and p["kind"] not in CONTAINER_KINDS and p.get("parent"):
-            p = g.nodes.get(p["parent"])
+            p = meta.get(p["parent"])
         if p is not None and p["kind"] == "impl":
             # a Rust impl block is not a symbol of its own: credit the struct/enum of that name in the same file
             owner = next((x for x in g.by_name.get(p["qname"].lower(), []) if x["file"] == p["file"] and x["kind"] in ("struct", "enum", "trait")), None)
@@ -5204,9 +6231,8 @@ def q_overview(g, args):
         return
     print(f"Graph: {s['files']} files, {s['nodes']} nodes, {s['edges']} edges; languages: " + ", ".join(f"{k}={v}" for k, v in sorted(s["languages"].items())))
     dirs = defaultdict(lambda: defaultdict(int))
-    for n in g.g["nodes"]:
-        if n["kind"] == "file":
-            dirs[os.path.dirname(n["file"]) or "."][n["extra"].get("language", "?")] += 1
+    for f, lg in g.file_lang.items():          # already loaded; no need to list every node again
+        dirs[os.path.dirname(f) or "."][lg or "?"] += 1
     print("\nDirectories (files by language):")
     shown_dirs = sorted(dirs.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))[: args.top * 2]   # largest first
     for d, langs in shown_dirs:
@@ -5227,29 +6253,38 @@ def q_overview(g, args):
     print(f"\nMost depended-upon files (top {args.top}):")
     for f, c in sorted(file_in.items(), key=lambda kv: -kv[1])[: args.top]:
         print(f"  {c:4d}  {f}")
-    ext = [n for n in g.g["nodes"] if n["kind"] in ("external", "external_module")]
+    # Both of the lookups below are indexed on `kind`. Listing every node to find them cost
+    # 0.64 GB and 2.8s on TensorFlow -- to select 477 externals and a handful of entry points.
+    ext = g.store.nodes_of_kind(("external", "external_module"))
     if ext:
         ext_in = sorted(((indeg.get(n["id"], 0), n["name"]) for n in ext), reverse=True)[: args.top]
         print(f"\nExternal dependencies (by import count, top {args.top}): " + ", ".join(f"{name} ({c})" for c, name in ext_in))
-    entry = [n for n in g.g["nodes"] if n["kind"] == "function" and n["name"] in ("main", "lambda_handler", "cli")
-             and indeg.get(n["id"], 0) == 0 and not (test_files and n["file"] in test_files) and not is_test_file(n["file"])]
+    entry = [n for n in g.store.nodes_of_kind(("function",), names=("main", "lambda_handler", "cli"))
+             if indeg.get(n["id"], 0) == 0 and not (test_files and n["file"] in test_files) and not is_test_file(n["file"])]
     if entry:
         print("\nLikely entry points: " + ", ".join(f"{n['qname']} ({n['file']})" for n in entry[: args.top]))
 
 
 def q_file(g, args):
     n = ensure_one(g, args.path, kinds={"file"})
-    info = g.g["files"].get(n["file"])
+    # The parse cache lives in a sidecar so that ordinary queries never load it (62% of the bytes
+    # on a large C++ repo). `query file` is the one command that needs it, so it pays here.
+    info = g.store.parsed_one(n["file"])
     if not info:
-        sys.exit("file not in graph")
+        sys.exit(f"{n['file']} has no parse-cache row; re-run `build`")
     ins = [e for e in g.inc.get(n["id"], []) if e["type"] == "imports"]
     if args.json:
         print(json.dumps({"file": info["file_node"], "nodes": info["nodes"], "refs": info["refs"],
                           "imported_by": sorted({g.nodes[e["src"]]["file"] for e in ins if e["src"] in g.nodes})}))
         return
-    print(render_skeleton(info["file_node"], info["nodes"], info["refs"], show_calls=not args.no_calls))
+    elided = Counter()
+    print(render_skeleton(info["file_node"], info["nodes"], info["refs"], show_calls=not args.no_calls, elided=elided))
+    # `query file` has no --max-calls/--max-imports of its own; point at the command that does.
+    if elided:
+        what = ", ".join(f"{n:,} {k}" for k, n in sorted(elided.items(), key=lambda kv: -kv[1]))
+        print(f"-- elided: {what} (raise with `skeleton {info['file_node']['file']} --max-calls N --max-imports N`)")
     if ins:
-        print("  imported by: " + ", ".join(sorted({g.nodes[e['src']]['file'] for e in ins if e['src'] in g.nodes})[:20]))
+        print("  imported by: " + ", ".join(sorted({g.nodes[e['src']]['file'] for e in ins if e['src'] in g.nodes})[:CAP_IMPORTED_BY]))
 
 
 def q_path(g, args):
@@ -5295,14 +6330,10 @@ def q_stats(g, args):
     s = dict(g.g["stats"])
     s["built_at"] = g.g.get("built_at")
     s["root"] = g.g.get("root")
-    kinds = defaultdict(int)
-    for n in g.g["nodes"]:
-        kinds[n["kind"]] += 1
-    s["node_kinds"] = dict(sorted(kinds.items()))
-    et = defaultdict(int)
-    for e in g.g["edges"]:
-        et[e["type"]] += 1
-    s["edge_types"] = dict(sorted(et.items()))
+    # Histograms come from GROUP BY; the Python equivalent built 443k node dicts and 1.43M edge
+    # dicts to produce two dozen counters.
+    s["node_kinds"] = g.store.kind_histogram("nodes", "kind")
+    s["edge_types"] = g.store.kind_histogram("edges", "type")
     print(json.dumps(s, indent=2))
 
 
@@ -5321,7 +6352,11 @@ def main(argv=None):
     sk.add_argument("--keep-dir", action="append", help="directory name to index although it is excluded by default (build, dist, target, vendor ...)")
     sk.add_argument("--no-calls", action="store_true", help="omit the 'calls:' lines")
     sk.add_argument("--no-lines", action="store_true", help="omit line ranges")
-    sk.add_argument("--no-stats", action="store_true")
+    sk.add_argument("--max-calls", type=int, default=CAP_SKELETON_CALLS,
+                    help=f"calls listed per symbol before '(+N more)' (default {CAP_SKELETON_CALLS}; 0 = no cap)")
+    sk.add_argument("--max-imports", type=int, default=CAP_SKELETON_IMPORTS,
+                    help=f"imports listed per file before '(+N more)' (default {CAP_SKELETON_IMPORTS}; 0 = no cap)")
+    sk.add_argument("--no-stats", action="store_true", help="omit the trailing token-estimate line")
     sk.add_argument("--json", action="store_true")
     sk.set_defaults(fn=cmd_skeleton)
 
@@ -5341,13 +6376,13 @@ def main(argv=None):
     qs = q.add_subparsers(dest="qcmd", required=True)
 
     x = qs.add_parser("find", help="search symbols/files by name (exact-name matches first)")
-    x.add_argument("name"); x.add_argument("--kind", action="append"); x.add_argument("--limit", type=int, default=50); x.add_argument("--json", action="store_true")
+    x.add_argument("name"); x.add_argument("--kind", action="append"); x.add_argument("--limit", type=int, default=CAP_FIND); x.add_argument("--json", action="store_true")
     x.add_argument("--lang", action="append", help="only symbols from files of this language (repeatable)")
     x.add_argument("--no-tests", action="store_true", help="hide symbols defined in test files")
     x.set_defaults(qfn=q_find)
     x = qs.add_parser("symbol", help="architecture card for one symbol: members, dependencies, dependents")
     x.add_argument("name"); x.add_argument("--json", action="store_true")
-    x.add_argument("--limit", type=int, default=40, help="max rows per section (default 40; hubs get a per-file summary for the rest)")
+    x.add_argument("--limit", type=int, default=CAP_SYMBOL_SECTION, help=f"max rows per section (default {CAP_SYMBOL_SECTION}; hubs get a per-file summary for the rest)")
     x.add_argument("--all", action="store_true", help="no caps")
     x.set_defaults(qfn=q_symbol)
     for cmd, direction, helptext in (("callers", "in", "who calls/extends/instantiates this symbol (transitive)"),
@@ -5356,21 +6391,21 @@ def main(argv=None):
         x.add_argument("name"); x.add_argument("--depth", type=int, default=2); x.add_argument("--include-ambiguous", action="store_true"); x.add_argument("--json", action="store_true")
         x.add_argument("--summary", action="store_true", help="directories, most frequent symbols and relationship mix instead of rows")
         x.add_argument("--files-only", action="store_true", help="only the files, grouped by hop")
-        x.add_argument("--max-rows", type=int, default=200, help="above this many rows the listing degrades to --summary (default 200)")
-        x.add_argument("--top", type=int, default=15, help="rows per section in --summary")
+        x.add_argument("--max-rows", type=int, default=CAP_ROWS, help=f"above this many rows the listing degrades to --summary (default {CAP_ROWS})")
+        x.add_argument("--top", type=int, default=CAP_SUMMARY_TOP, help="rows per section in --summary")
         x.add_argument("--no-members", action="store_true", help="for a class/file target: only edges to the class itself (instantiations, extends, references), not to its members")
         x.set_defaults(qfn=(lambda d: (lambda g, a: q_callers(g, a, d)))(direction))
     x = qs.add_parser("trace-deps", help="blast radius: every file/symbol that depends on a target")
     x.add_argument("target", help="file path, symbol name, qualified name, or node id")
-    x.add_argument("--depth", type=int, default=3); x.add_argument("--per-file", type=int, default=6)
+    x.add_argument("--depth", type=int, default=3); x.add_argument("--per-file", type=int, default=CAP_PER_FILE)
     x.add_argument("--include-ambiguous", action="store_true"); x.add_argument("--json", action="store_true")
     x.add_argument("--summary", action="store_true", help="directories, most-connected dependents and relationship mix instead of the per-edge table")
     x.add_argument("--files-only", action="store_true", help="only the affected files, grouped by hop")
-    x.add_argument("--max-rows", type=int, default=200, help="above this many dependency rows the table degrades to --summary (default 200)")
-    x.add_argument("--top", type=int, default=15, help="rows per section in --summary")
+    x.add_argument("--max-rows", type=int, default=CAP_ROWS, help=f"above this many dependency rows the table degrades to --summary (default {CAP_ROWS})")
+    x.add_argument("--top", type=int, default=CAP_SUMMARY_TOP, help="rows per section in --summary")
     x.set_defaults(qfn=q_trace_deps)
     x = qs.add_parser("overview", help="centrality ranking: hub symbols, hub files, directories, externals")
-    x.add_argument("--top", type=int, default=15); x.add_argument("--json", action="store_true")
+    x.add_argument("--top", type=int, default=CAP_SUMMARY_TOP); x.add_argument("--json", action="store_true")
     x.add_argument("--no-tests", action="store_true", help="ignore usage coming from test files when ranking hubs")
     x.add_argument("--lang", action="append", help="rank only symbols/files of this language (repeatable, e.g. --lang python)")
     x.set_defaults(qfn=q_overview)
@@ -5389,7 +6424,11 @@ def main(argv=None):
             a.graph = os.path.join(a.root, DEFAULT_GRAPH)
         if not os.path.exists(a.graph):
             sys.exit(f"graph not found at {a.graph}. Build it first: astgraph.py build --root <repo>")
-        g = G(load_graph(a.graph))
+        try:
+            g = G(Store(a.graph))
+        except sqlite3.Error as e:
+            sys.exit(f"{a.graph} is not a readable graph ({e}). Rebuild it: astgraph.py build --root <repo>")
+        g.graph_path = a.graph
         a.qfn(g, a)
     q.set_defaults(fn=run_query)
 

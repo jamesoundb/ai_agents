@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "Skeleton a large file instead of reading it whole"
+context:
+  scaffold_script: "../scaffold/prepare.sh"
+  add_dirs: ["../fixtures/orders/"]

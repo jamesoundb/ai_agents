@@ -19,6 +19,11 @@ invoke the agents. If skills are unavailable in your harness, run
 - Engine changes to `skills/code-graph/scripts/astgraph.py` must pass
   `skills/code-graph/tests/run_tests.sh` (9-language fixture in `skills/code-graph/tests/fixture/`);
   extend the fixture with a regression case for every linker fix.
+- Behavioral tests for the skills themselves live in `evals/` (does the right skill fire, and is
+  its output used correctly?). `python3 evals/validate.py` checks the suite structurally and runs
+  in CI. Executing the cases spends model tokens: `python3 evals/run_agy.py` drives Antigravity
+  (`agy`), `claude plugin eval .` drives Claude Code, from the same case files. Verify a new
+  grader's assertion against real tool output before committing it -- see `evals/README.md`.
 - Architecture reference lives in `.github/instructions.md`; worklogs stay local in
   `.github/troubleshooting/` (git-ignored).
 - Every change goes through a merge request whose pipeline (`.gitlab-ci.yml`) must pass. Run the

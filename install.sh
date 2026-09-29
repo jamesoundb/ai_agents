@@ -103,8 +103,13 @@ ours_agent() {  # <renderer> <agent> <file> [prefix]
 }
 refuse() {
   echo "refusing to replace $1" >&2
-  echo "  it was not installed by this tool, so overwriting it could destroy your own work." >&2
-  echo "  move it aside, or re-run with --force to replace it." >&2
+  echo "  it does not prove it came from this installer, so overwriting it could destroy your work." >&2
+  echo "  two cases look identical here:" >&2
+  echo "    - you edited it, or it is your own file: move it aside." >&2
+  echo "    - it is an older install from before the ownership marker existed, and the agent" >&2
+  echo "      definition has since changed upstream. Diff it against the canonical file under" >&2
+  echo "      agents/<name>/AGENT.md; if the only differences are the upstream ones, re-run with" >&2
+  echo "      --force. Installs from this version onward carry the marker and upgrade cleanly." >&2
   exit 1
 }
 guard_skill() {  # stop before replacing a skill path we did not create

@@ -45,7 +45,7 @@ depending on the harness). Locate it once, then:
    If the graph reports 0 files or the target language is missing, check `run.sh query stats`
    and the exclude list (`--keep-dir NAME` re-includes `build`, `dist`, `target`, `vendor` ...)
    before continuing. When your working directory is not the repo, pass `--root DIR` to `build`
-   and to every `query` (the graph is read from `DIR/.ast-graph/graph.json`).
+   and to every `query` (the graph is read from `DIR/.ast-graph/graph.db`).
 2. Orient: `run.sh query overview --no-tests` (hub symbols, hub files, directories, externals,
    entry points); add `--lang <language>` in mixed repos so one language's hubs do not hide
    another's.

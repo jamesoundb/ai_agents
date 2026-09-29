@@ -54,3 +54,16 @@ class Board:
 def use_with() -> str:
     with Board(True) as b:                      # `with X() as b` types b
         return b.first()
+
+
+def format_report(rows, title):
+    """Regression: a call on a literal receiver must be attributed to the literal's TYPE,
+    not recorded with the literal's text as the receiver. `", ".join(...)` is str.join."""
+    body = ", ".join(str(r) for r in rows)
+    header = "== {} ==".format(title)
+    counted = [1, 2, 3].count(1)
+    looked_up = {"k": 1}.get("k")
+    positioned = (1, 2).index(2)
+    wrapped = ("a long literal spread "
+               "across two source lines").upper()
+    return body, header, counted, looked_up, positioned, wrapped

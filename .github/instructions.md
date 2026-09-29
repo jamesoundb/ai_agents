@@ -112,7 +112,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), company policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
 | `terraform-plan-review` | risk model over `terraform show -json` (or `plan -json` stream); stdlib only; exit 1 at `--fail-on` | `skills/terraform-plan-review/scripts/planreview.py` |
 | `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; templates are the company standard | `skills/terraform-module-scaffold/scripts/scaffold.py` |
-| `code-graph` | build/refresh `.ast-graph/graph.json`; `find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
+| `code-graph` | build/refresh `.ast-graph/graph.db`; `find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
 | `code-skeleton` | read-before-cat skeleton of files/directories with exact line ranges | `run.sh skeleton PATH...` |
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
 | `install-agents` | bootstrap: harness-driven install/update/uninstall of this repo's agents and skills | `skills/install-agents/scripts/install.sh` -> `install.sh` |
@@ -143,12 +143,18 @@ different one rather than adding vendor-neutral fallbacks.
   Python that has them or creates `~/.cache/astgraph/venv` on first use from `python3` (or
   `ASTGRAPH_PYTHON`), after checking that interpreter is 3.10+ (exit 2 with a message
   otherwise). Override with `ASTGRAPH_PYTHON=/path/to/python` or `ASTGRAPH_VENV=/path/to/venv`.
-- Languages: Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, HCL (Terraform), YAML
+- Languages: C, C++/CUDA, Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, HCL (Terraform), YAML
   (Kubernetes manifests, Kustomization, Helm values). Coverage and limits:
   `skills/code-graph/reference/languages.md`. Schema:
   `skills/code-graph/reference/graph-schema.md`.
-- Graph artifact `.ast-graph/graph.json` is per-repo and incremental by file hash; the
-  `graph.json.stamp` sidecar (git HEAD + status + dirty-file content) lets `build` return without
+- Storage is SQLite (`nodes`, `edges`, `parsed`, `meta`; 8 indexes). It replaced a single JSON
+  document that every query loaded in full — on TensorFlow that was 1.3 GB on disk and 5.3 GB of
+  RSS per query, of which 62% was the parse cache only `build` reads. Queries reach it through
+  lazy views (`NodeView`, `AdjView`, `NameView`, `LazyGraph`), so `g.nodes[id]` and `g.out[src]`
+  are indexed lookups. A graph in the old format, or from an older engine, is treated as absent
+  and rebuilt rather than misread.
+- Graph artifact `.ast-graph/graph.db` is per-repo and incremental by file hash; the
+  `graph.db.stamp` sidecar (git HEAD + status + dirty-file content) lets `build` return without
   linking when the working tree is unchanged. Add `.ast-graph/` to each consuming repo's
   `.gitignore`.
 - `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes
@@ -156,16 +162,29 @@ different one rather than adding vendor-neutral fallbacks.
   and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo
   with a pre-existing AGENTS.md and .github/.
 - Cost model: parsing is hash-incremental (cached parses are discarded when `astgraph.py`
-  changes); linking is always full but linear (~4s per 3.6k
-  files); graph load/dump is proportional to graph size (~1-3s per 100-300 MB). A git-unchanged
-  tree returns in ~0.1s. Query output is capped (`symbol --limit`, `trace-deps --max-rows`).
+  changes); linking is always full but linear. A git-unchanged tree returns in ~0.1s.
+  Measured on TensorFlow (20,805 indexed files, 443k nodes, 1.43M edges, C/C++ + Python):
+  cold build ~11 min at 3.2 GB RSS, producing a 1.7 GB `graph.db`. **Build is now the expensive
+  half; querying is not.** Targeted queries (`symbol`, `callers`, `callees`, `trace-deps`,
+  `file`, `find`, `path`, `stats`) each cost 0.2-0.4s and ~50 MB because they go through SQLite
+  indexes; `overview` weighs the whole graph at ~3s/265 MB (~5.5s/500 MB with `--no-tests`).
+  The next lever, if build time becomes painful, is incremental *linking* (today always full).
+- Output budget: every cap lives in the `CAP_*` block at the top of `astgraph.py`, and each one
+  must leave a stated way back — a flag that raises it (`skeleton --max-calls/--max-imports`,
+  `symbol --limit/--all`, `trace-deps --max-rows/--files-only`) or an exact line range to read.
+  `skeleton` reports what it hid once per run (`-- elided: N calls (raise with --max-calls)`),
+  not per line, and applies a never-worse guard: a file no larger than its own skeleton is
+  printed as source instead, and a run that saves nothing says so rather than reporting a
+  negative percentage.
 - Engine regression tests: `skills/code-graph/tests/run_tests.sh` copies the nine-language fixture
-  (Python, JavaScript, TypeScript, Go, Java, Kotlin, Rust, HCL, Kubernetes YAML) from
+  (C/C++, Python, JavaScript, TypeScript, Go, Java, Kotlin, Rust, HCL, Kubernetes YAML) from
   `skills/code-graph/tests/fixture/` to a temp dir, builds it there and asserts resolution
   confidence per language, overload and return-type choices, test-file detection, query output
   shapes (`path` text and `--json`, method-card overrides, `file:name` root preference, overview
   de-duplication, `--root`), Terraform `dynamic`/`moved`/registry-lead handling, `--keep-dir`,
-  the parse-error line, incremental == full, determinism across hash seeds, the git fast path and
+  the parse-error line, the skeleton output budget (never-worse guard, `(+N more)` elisions, the
+  once-per-run recovery notice, `--max-calls`/`--max-imports` including `0` = no cap),
+  incremental == full, determinism across hash seeds, the git fast path and
   the engine-hash cache key. Run it
   after any change to `astgraph.py` and add a regression case for every linker fix.
 - Adding a language: map the extension in `EXT_LANG`, add a handler dict keyed by tree-sitter node
