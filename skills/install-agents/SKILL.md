@@ -32,6 +32,11 @@ Do not hand-copy files or write harness config yourself.
 - **Link or copy**: symlinks (default) keep installs in sync with this clone; use `--copy` on
   Windows without developer mode, in CI images, or when the clone will be deleted.
 - **Which agents/skills**: everything by default. `--agents a,b` / `--skills x,y` to narrow.
+- **Loose or plugin**: loose skills and agents by default. Add `--plugin` when the developer
+  says the agents do not show up in their IDE extension (VS Code, JetBrains), or asks for a
+  plugin. It installs one `ai-agents` plugin bundle per harness instead (README "Install as a
+  plugin"). Do not install both ways, or every skill is listed twice. To switch, first re-run
+  the original command with `--uninstall`. Gemini CLI plugins are user scope only.
 
 ## 2. Run the installer
 
@@ -55,6 +60,11 @@ Add `--uninstall` to remove what a previous run installed. Re-running is idempot
   `agy agents` must list the agents) or `ls -la ~/.claude/skills ~/.claude/agents`; project scope, e.g.
   `ls -la <target>/.claude/skills` and `cat <target>/.claude/agents/<agent>.md | head -20`
   (adjust per harness).
+- With `--plugin`, check each plugin with its harness's own tool:
+  `agy plugin validate ~/.gemini/config/plugins/ai-agents` (then `agy agents` after a restart),
+  `claude plugin list` (shows `ai-agents@skills-dir`), `gemini extensions list`. For Copilot
+  and Codex, pass on the `next` line the installer printed: the `chat.pluginLocations` setting,
+  or installing from `/plugins`. Do not edit the developer's settings yourself.
 - Project scope only: confirm `AGENTS.md` in the target contains the managed block, and if the
   target is a git repository confirm `.ast-graph/` is in its `.gitignore`; add the line if the
   developer agrees (the code-graph skill writes its graph there).

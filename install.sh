@@ -6,11 +6,14 @@
 #   ./install.sh --harness claude,codex --target ~/work/app
 #   ./install.sh --harness antigravity --copy        # copy instead of symlink (Windows, CI images)
 #   ./install.sh --harness antigravity --uninstall
+#   ./install.sh --harness antigravity,claude --scope user --plugin   # as one plugin per harness
 #
 # Options:
 #   --harness LIST   claude, codex, gemini, antigravity, copilot (comma list) or all   (required)
 #   --scope S        project (default: files in --target) or user (your home directory)
 #   --target DIR     project to install into (default: current directory; must already exist)
+#   --plugin         install one plugin bundle per harness (layouts below) instead of loose
+#                    skills and agents; IDE front ends load plugins the same way as the CLIs
 #   --copy           copy files instead of symlinking them into this clone
 #   --agents LIST    install only these agents (comma list)
 #   --skills LIST    install only these skills (comma list)
@@ -24,6 +27,14 @@
 #   antigravity .agents/skills/<s>, .agents/agents/<a>/agent.md      | ~/.gemini/config/skills, ~/.gemini/config/agents
 #   gemini      .gemini/skills/<s>, .gemini/skills/<a>/SKILL.md, GEMINI.md (@AGENTS.md) | ~/.gemini/skills
 #   copilot     .github/skills/<s>, .github/agents/<a>.agent.md      | ~/.copilot/skills, ~/.copilot/agents
+# Plugin layouts with --plugin (project scope | user scope), each holding skills/ and agents:
+#   claude      .claude/skills/ai-agents/.claude-plugin/plugin.json  | ~/.claude/skills/ai-agents (loads as ai-agents@skills-dir)
+#   antigravity .agents/plugins/ai-agents/plugin.json                | ~/.gemini/config/plugins/ai-agents
+#   gemini      (user scope only)                                    | ~/.gemini/extensions/ai-agents/gemini-extension.json
+#   copilot     .github/plugins/ai-agents/plugin.json                | ~/.copilot/plugins/ai-agents (VS Code: add the
+#               printed path to the chat.pluginLocations setting)
+#   codex       plugins/ai-agents/.codex-plugin/plugin.json + .agents/plugins/marketplace.json
+#               | ~/plugins/ai-agents + ~/.agents/plugins/marketplace.json (then install it from /plugins)
 # Project scope also maintains a managed block in AGENTS.md (read by Codex, Gemini, Copilot, Cursor)
 # and, for claude, a CLAUDE.md that imports AGENTS.md.
 set -euo pipefail
@@ -33,7 +44,7 @@ SKILLS_SRC="$REPO/skills"
 AGENTS_SRC="$REPO/agents"
 RENDER="$REPO/tools/render.py"
 
-HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0
+HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0
 
 # Print the comment header (line 2 up to the first line that is not a comment) as the help text.
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
@@ -45,6 +56,7 @@ while [ $# -gt 0 ]; do
     --target) [ -d "$2" ] || { echo "--target: directory not found: $2 (create it first)" >&2; exit 1; }
               TARGET="$(cd "$2" && pwd)"; shift 2 ;;
     --copy) MODE="copy"; shift ;;
+    --plugin) PLUGIN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --force) FORCE=1; shift ;;
     --agents) ONLY_AGENTS="$2"; shift 2 ;;
@@ -58,7 +70,7 @@ case "$SCOPE" in
   project|user) ;;
   *) echo "--scope must be project or user (got: $SCOPE); for a global install use --scope user" >&2; exit 1 ;;
 esac
-[ "$HARNESSES" = "all" ] && HARNESSES="claude,codex,gemini,antigravity,copilot"
+[ "$HARNESSES" = "all" ] && { HARNESSES="claude,codex,gemini,antigravity,copilot"; ALL=1; }
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 
 # Which agents/skills to install: explicit lists or everything in the repo.
@@ -230,9 +242,129 @@ remove_empty_dirs() {  # remove_empty_dirs <dir>...  (leave no empty harness fol
   for d in "$@"; do [ -d "$d" ] && [ -z "$(ls -A "$d" 2>/dev/null)" ] && rmdir "$d" 2>/dev/null && log "removed empty $d"; done; return 0
 }
 
+# ---------------------------------------------------------------------------------------------
+# Plugin bundles (--plugin): one folder per harness, in the place that harness discovers plugins,
+# holding skills/, the rendered agents and that harness's manifest. The folder is ours when it
+# carries MARKER_FILE; it is rebuilt from scratch on every install so removed skills disappear.
+PLUGIN_NAME="ai-agents"
+# Manifests carry the newest vX.Y.Z tag; Gemini CLI requires a version field.
+VERSION="$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)"
+VERSION="${VERSION:-0.1.0}"
+
+plugin_layout() {  # plugin_layout <harness>: sets PD (plugin folder), MANIFEST (inside PD), LOOSE_SK
+  # (where a loose install of the same harness keeps skills) and, for codex, MKT/MKT_REL.
+  local root
+  MKT=""; MKT_REL=""
+  case "$1" in
+    claude)
+      if [ "$SCOPE" = user ]; then LOOSE_SK="$HOME/.claude/skills"; else LOOSE_SK="$TARGET/.claude/skills"; fi
+      PD="$LOOSE_SK/$PLUGIN_NAME"; MANIFEST=".claude-plugin/plugin.json" ;;
+    antigravity)
+      if [ "$SCOPE" = user ]; then PD="$HOME/.gemini/config/plugins/$PLUGIN_NAME"; LOOSE_SK="$HOME/.gemini/config/skills"
+      else PD="$TARGET/.agents/plugins/$PLUGIN_NAME"; LOOSE_SK="$TARGET/.agents/skills"; fi
+      MANIFEST="plugin.json" ;;
+    gemini)
+      PD="$HOME/.gemini/extensions/$PLUGIN_NAME"; LOOSE_SK="$HOME/.gemini/skills"; MANIFEST="gemini-extension.json" ;;
+    copilot)
+      if [ "$SCOPE" = user ]; then PD="$HOME/.copilot/plugins/$PLUGIN_NAME"; LOOSE_SK="$HOME/.copilot/skills"
+      else PD="$TARGET/.github/plugins/$PLUGIN_NAME"; LOOSE_SK="$TARGET/.github/skills"; fi
+      MANIFEST="plugin.json" ;;
+    codex)
+      # Codex marketplace entries point at ./plugins/<name> relative to the marketplace root.
+      if [ "$SCOPE" = user ]; then root="$HOME"; else root="$TARGET"; fi
+      PD="$root/plugins/$PLUGIN_NAME"; LOOSE_SK="$root/.agents/skills"; MANIFEST=".codex-plugin/plugin.json"
+      MKT="$root/.agents/plugins/marketplace.json"; MKT_REL="./plugins/$PLUGIN_NAME" ;;
+    *) echo "unknown harness: $1" >&2; exit 1 ;;
+  esac
+}
+
+guard_plugin() {  # stop before replacing a plugin folder we did not create
+  { [ -e "$1" ] || [ -L "$1" ]; } || return 0
+  marked_dir "$1" && return 0
+  [ "$FORCE" = 1 ] && { log "force  replacing $1 (not installed by this tool)"; return 0; }
+  refuse "$1"
+}
+
+plugin_next_step() {  # what the developer has to do before the plugin shows up
+  case "$1" in
+    claude)      log "next   loads as $PLUGIN_NAME@skills-dir in the next session (or /reload-plugins in a running one)" ;;
+    antigravity) log "next   restart Antigravity (IDE extension or agy); new plugin folders are discovered on startup" ;;
+    gemini)      log "next   restart Gemini CLI / Gemini Code Assist; check with: gemini extensions list" ;;
+    copilot)
+      if [ "$SCOPE" = user ]; then log "next   VS Code user settings: \"chat.pluginLocations\": { \"$PD\": true }"
+      else log "next   VS Code .vscode/settings.json: \"chat.pluginLocations\": { \".github/plugins/$PLUGIN_NAME\": true }"; fi ;;
+    codex)       log "next   in Codex open /plugins and install $PLUGIN_NAME from the \"Local plugins\" marketplace" ;;
+  esac
+  local s
+  for s in $SKILLS; do
+    if symlink_into_repo "$LOOSE_SK/$s" || marked_dir "$LOOSE_SK/$s"; then
+      log "note   loose skills from an earlier install are still in $LOOSE_SK and will show up twice;"
+      log "       remove them with the same command plus --uninstall and without --plugin"
+      break
+    fi
+  done
+}
+
+install_plugin() {  # install_plugin <harness>
+  local h="$1" s a prefix out r
+  plugin_layout "$h"
+  guard_plugin "$PD"
+  [ "$DRY" = 1 ] && return 0
+  rm -rf "$PD"
+  mkdir -p "$PD/skills" "$(dirname "$PD/$MANIFEST")"
+  printf '%s\n' "$REPO" > "$PD/$MARKER_FILE"   # proves we wrote this folder
+  python3 "$RENDER" plugin-manifest "$h" "$VERSION" > "$PD/$MANIFEST"
+  for s in $SKILLS; do
+    if [ "$MODE" = copy ]; then cp -R "$SKILLS_SRC/$s" "$PD/skills/$s"; else ln -s "$SKILLS_SRC/$s" "$PD/skills/$s"; fi
+  done
+  # Antigravity agents name their skills by path: absolute for user scope, workspace-relative otherwise.
+  if [ "$SCOPE" = user ]; then prefix="$PD/skills"; else prefix=".agents/plugins/$PLUGIN_NAME/skills"; fi
+  for a in $AGENTS; do
+    case "$h" in
+      claude)       mkdir -p "$PD/agents"; out="$PD/agents/$a.md"; r=claude ;;
+      antigravity)  mkdir -p "$PD/agents"; out="$PD/agents/$a.md"; r=antigravity ;;
+      copilot)      mkdir -p "$PD/agents"; out="$PD/agents/$a.agent.md"; r=copilot ;;
+      codex|gemini) mkdir -p "$PD/skills/$a"; out="$PD/skills/$a/SKILL.md"; r=skill ;;  # persona skills
+    esac
+    if [ "$r" = antigravity ]; then
+      { python3 "$RENDER" antigravity "$AGENTS_SRC/$a/AGENT.md" "$prefix"; printf '%s\n' "$MARKER"; } > "$out"
+    else
+      { python3 "$RENDER" "$r" "$AGENTS_SRC/$a/AGENT.md"; printf '%s\n' "$MARKER"; } > "$out"
+    fi
+  done
+  log "plugin $PD  <- $(echo "$SKILLS" | wc -w | tr -d ' ') skills, $(echo "$AGENTS" | wc -w | tr -d ' ') agents ($( [ "$MODE" = copy ] && echo copy || echo symlink ))"
+  if [ -n "$MKT" ]; then python3 "$RENDER" codex-marketplace add "$MKT" "$MKT_REL"; log "wrote  $MKT (entry $PLUGIN_NAME)"; fi
+  plugin_next_step "$h"
+}
+
+remove_plugin() {  # remove_plugin <harness>: only a folder carrying our marker is removed
+  plugin_layout "$1"
+  if [ -e "$PD" ] || [ -L "$PD" ]; then
+    if marked_dir "$PD" || [ "$FORCE" = 1 ]; then rm -rf "$PD"; log "removed $PD"
+    else log "kept   $PD (not installed by this tool)"; fi
+  fi
+  if [ -n "$MKT" ] && [ -f "$MKT" ]; then python3 "$RENDER" codex-marketplace remove "$MKT"; log "removed entry $PLUGIN_NAME from $MKT"; fi
+  remove_empty_dirs "$(dirname "$PD")"
+  # codex: the folder above plugins/ is the project root or HOME itself, never a candidate
+  if [ -n "$MKT" ]; then remove_empty_dirs "$(dirname "$MKT")" "$(dirname "$(dirname "$MKT")")"
+  else remove_empty_dirs "$(dirname "$(dirname "$PD")")"; fi
+}
+
 run_harnesses() {
   for h in ${HARNESSES//,/ }; do
-    echo "[$h] scope=$SCOPE target=$TARGET"
+    echo "[$h] scope=$SCOPE target=$TARGET$( [ "$PLUGIN" = 1 ] && echo ' (plugin)')"
+    if [ "$PLUGIN" = 1 ]; then
+      if [ "$h" = gemini ] && [ "$SCOPE" = project ]; then
+        # Gemini CLI reads extensions from ~/.gemini/extensions only; there is no project location.
+        [ "$ALL" = 1 ] && { log "skip   gemini has no project-scope plugins (extensions are user scope only)"; continue; }
+        echo "gemini: Gemini CLI loads extensions only from ~/.gemini/extensions; use --scope user with --plugin" >&2; exit 1
+      fi
+      if [ $UNINSTALL = 1 ]; then remove_plugin "$h"; else install_plugin "$h"; fi
+      if [ "$h" = claude ] && [ "$SCOPE" = project ] && [ "$DRY" = 0 ]; then
+        if [ $UNINSTALL = 1 ]; then remove_import "$TARGET/CLAUDE.md" "@AGENTS.md"; else ensure_import "$TARGET/CLAUDE.md" "@AGENTS.md"; fi
+      fi
+      continue
+    fi
     case "$h" in
       claude)
         if [ "$SCOPE" = user ]; then SK="$HOME/.claude/skills"; AG="$HOME/.claude/agents"; else SK="$TARGET/.claude/skills"; AG="$TARGET/.claude/agents"; fi

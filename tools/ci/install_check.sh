@@ -90,6 +90,54 @@ check "uninstall keeps a foreign path"              grep -qx THEIRS "$OWN/.claud
 check "uninstall says what it kept"                 grep -q 'kept .*not installed by this tool' "$WORK/unin.log"
 check "uninstall removed its own skills"            test "$(count "$OWN/.claude/skills")" -eq 1
 
+echo "== plugin bundles (--plugin) =="
+N_SKILLS_PLUGIN=$((N_SKILLS_NO_BOOT + N_AGENTS))   # codex/gemini carry the personas as skills
+PH="$WORK/plugin-home"
+mkdir -p "$PH/.agents/plugins"
+# a marketplace the developer already has: our entry must be added beside theirs and removed alone
+printf '{"name": "mine", "plugins": [{"name": "theirs", "source": {"source": "local", "path": "./plugins/theirs"}}]}\n' \
+  > "$PH/.agents/plugins/marketplace.json"
+HOME="$PH" run_install "$WORK/plugin-user.log" "$REPO/install.sh" --harness all --scope user --plugin
+check "claude plugin manifest"                  test -f "$PH/.claude/skills/ai-agents/.claude-plugin/plugin.json"
+check "claude plugin agents = $N_AGENTS"        test "$(count "$PH/.claude/skills/ai-agents/agents")" -eq "$N_AGENTS"
+check "antigravity plugin manifest"             test -f "$PH/.gemini/config/plugins/ai-agents/plugin.json"
+check "antigravity plugin skills = $N_SKILLS_NO_BOOT" test "$(count "$PH/.gemini/config/plugins/ai-agents/skills")" -eq "$N_SKILLS_NO_BOOT"
+check "gemini extension skills = $N_SKILLS_PLUGIN"    test "$(count "$PH/.gemini/extensions/ai-agents/skills")" -eq "$N_SKILLS_PLUGIN"
+check "copilot plugin agents = $N_AGENTS"       test "$(count "$PH/.copilot/plugins/ai-agents/agents")" -eq "$N_AGENTS"
+check "codex plugin skills = $N_SKILLS_PLUGIN"  test "$(count "$PH/plugins/ai-agents/skills")" -eq "$N_SKILLS_PLUGIN"
+check "plugin manifests are valid JSON"         python3 -c 'import json,sys; [json.load(open(p)) for p in sys.argv[1:]]' \
+  "$PH/.claude/skills/ai-agents/.claude-plugin/plugin.json" "$PH/.gemini/config/plugins/ai-agents/plugin.json" \
+  "$PH/.gemini/extensions/ai-agents/gemini-extension.json" "$PH/.copilot/plugins/ai-agents/plugin.json" \
+  "$PH/plugins/ai-agents/.codex-plugin/plugin.json"
+check "codex marketplace keeps their entry"     grep -q '"theirs"' "$PH/.agents/plugins/marketplace.json"
+check "codex marketplace lists ai-agents"       grep -q '"ai-agents"' "$PH/.agents/plugins/marketplace.json"
+check "no loose skills next to the plugins"     test ! -e "$PH/.claude/skills/code-graph"
+HOME="$PH" run_install "$WORK/plugin-unin.log" "$REPO/install.sh" --harness all --scope user --plugin --uninstall
+check "plugin uninstall keeps their marketplace entry" grep -q '"theirs"' "$PH/.agents/plugins/marketplace.json"
+check "plugin uninstall removes our entry"      test -z "$(grep '"ai-agents"' "$PH/.agents/plugins/marketplace.json")"
+check "plugin uninstall leaves only their file" test "$(cd "$PH" && find . -type f)" = "./.agents/plugins/marketplace.json"
+
+PP="$WORK/plugin-project"
+mkdir -p "$PP" && git -C "$PP" init -q
+run_install "$WORK/plugin-proj.log" "$REPO/install.sh" --harness all --target "$PP" --plugin
+check "project: gemini skipped, not failed"     grep -q 'skip   gemini' "$WORK/plugin-proj.log"
+check "project: antigravity plugin"             test -f "$PP/.agents/plugins/ai-agents/plugin.json"
+run_install "$WORK/plugin-proj-unin.log" "$REPO/install.sh" --harness all --target "$PP" --plugin --uninstall
+check "project: plugin uninstall leaves it clean" test -z "$(git -C "$PP" status --porcelain)"
+mkdir -p "$WORK/gem-proj"
+# shellcheck disable=SC2016  # single quotes are intended: $0/$1 expand inside bash -c
+check "gemini --plugin at project scope is rejected" bash -c '! "$0" --harness gemini --plugin --target "$1" >/dev/null 2>&1' "$REPO/install.sh" "$WORK/gem-proj"
+check "the rejected gemini install wrote nothing"    test -z "$(ls -A "$WORK/gem-proj")"
+
+PO="$WORK/plugin-own"
+mkdir -p "$PO/.gemini/config/plugins/ai-agents"
+echo '{"name": "theirs"}' > "$PO/.gemini/config/plugins/ai-agents/plugin.json"
+HOME="$PO" "$REPO/install.sh" --harness antigravity --scope user --plugin > "$WORK/plugin-clash.log" 2>&1 && prc=0 || prc=$?
+check "plugin install refuses a foreign folder" test "$prc" -ne 0
+check "their plugin is untouched"               grep -q theirs "$PO/.gemini/config/plugins/ai-agents/plugin.json"
+HOME="$PO" "$REPO/install.sh" --harness antigravity --scope user --plugin --uninstall > "$WORK/plugin-keep.log" 2>&1
+check "plugin uninstall keeps a foreign folder" grep -q theirs "$PO/.gemini/config/plugins/ai-agents/plugin.json"
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then

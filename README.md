@@ -67,8 +67,8 @@ echo '.ast-graph/' >> .gitignore                # graph artifact of the code-gra
 ```
 
 Other options: `--copy` to copy instead of symlink (Windows, CI images), `--target DIR` to install
-somewhere other than the current directory (the directory must already exist), `--uninstall` to
-remove.
+somewhere other than the current directory (the directory must already exist), `--plugin` to
+install as a plugin bundle (see below), `--uninstall` to remove.
 
 The installer never destroys work it did not create. If a skill or agent of yours already sits
 where one of ours would go, it stops and names the path instead of overwriting it; `--force`
@@ -86,6 +86,31 @@ so. Your own unrelated skills in the same folder are never touched either way.
 
 User-scope locations: `~/.claude/{agents,skills}`, `~/.agents/skills` (Codex),
 `~/.gemini/config/{agents,skills}` (Antigravity), `~/.gemini/skills` (Gemini CLI), `~/.copilot/{agents,skills}`.
+
+### Install as a plugin (IDE extensions)
+
+Add `--plugin` to install one plugin bundle per harness instead of loose skills and agents. Use it
+when the agents do not show up in your IDE. Each IDE extension loads plugins through the same
+backend as its CLI: the Antigravity extension runs `agy`, and Gemini Code Assist's agent mode is
+built on Gemini CLI, which loads only extensions.
+
+```bash
+~/ai_agents/install.sh --harness antigravity --scope user --plugin
+```
+
+| harness | plugin location (user scope) | project scope | before it shows up |
+|---|---|---|---|
+| Antigravity | `~/.gemini/config/plugins/ai-agents/` | `.agents/plugins/ai-agents/` | restart the IDE extension or `agy` |
+| Claude Code | `~/.claude/skills/ai-agents/` (`.claude-plugin/plugin.json`) | `.claude/skills/ai-agents/` | next session (`/reload-plugins`); listed as `ai-agents@skills-dir` |
+| Gemini CLI | `~/.gemini/extensions/ai-agents/` | none (extensions are user scope only) | restart; `gemini extensions list` |
+| GitHub Copilot | `~/.copilot/plugins/ai-agents/` | `.github/plugins/ai-agents/` | add the printed path to VS Code's `chat.pluginLocations` setting |
+| Codex | `~/plugins/ai-agents/` + entry in `~/.agents/plugins/marketplace.json` | `plugins/ai-agents/` + `.agents/plugins/marketplace.json` | install `ai-agents` from `/plugins` |
+
+Plugin skills are namespaced in some harnesses (`ai-agents:code-graph` in Claude Code). Install
+either loose or as a plugin, not both, or every skill is listed twice. To switch, first run your
+original command with `--uninstall` added. Antigravity, Claude Code and Gemini CLI plugins were
+verified with each tool's own validator and listing commands. Copilot and Codex were built from
+their published formats and have not been run.
 
 ## Agents
 

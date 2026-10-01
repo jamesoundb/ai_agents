@@ -27,7 +27,8 @@ tools/ci/                       the CI checks as plain scripts (run locally or i
 .gitlab-ci.yml                  GitLab pipeline: MR checks, and a GitLab Release per vX.Y.Z tag
 .gitlab/merge_request_templates/Default.md   MR checklist
 install.sh                      installs into a harness: symlink (default) or --copy, project or
-                                --scope user, --target DIR, --uninstall; maintains AGENTS.md block
+                                --scope user, --target DIR, --plugin (one plugin bundle per harness),
+                                --uninstall; maintains AGENTS.md block
 AGENTS.md                       repo instructions read by Codex, Gemini CLI, Copilot, Cursor
 CLAUDE.md, GEMINI.md            "@AGENTS.md" import so Claude Code / Gemini read the same instructions
 skills/install-agents/          bootstrap skill: the harness installs the agents for the developer by
@@ -61,6 +62,31 @@ install. `--uninstall` keeps anything it does not own and logs `kept <path>`.
 | Antigravity CLI/IDE | `.agents/skills/<s>`, `.agents/agents/<a>/agent.md` | `~/.gemini/config/{skills,agents}` | native custom agent (frontmatter: name, description, tools, mainAgent, subagent, model, commandExecutionPolicy, skills as paths) |
 | Gemini CLI | `.gemini/skills/<s>`, `GEMINI.md` (`@AGENTS.md`) | `~/.gemini/skills` | persona skill |
 | GitHub Copilot | `.github/skills/<s>`, `.github/agents/<a>.agent.md` | `~/.copilot/{skills,agents}` | custom agent (frontmatter: name, description, tools) |
+
+Plugin layout (`install.sh --plugin`, one bundle named `ai-agents` per harness: `skills/` plus the
+rendered agents, or persona skills where the harness has no agent files). Manifests come from
+`render.py plugin-manifest`. The folder is owned through `.installed-by-ai-agents` and rebuilt
+whole on every install:
+
+| harness | user scope | project scope | manifest | discovery |
+|---|---|---|---|---|
+| Antigravity | `~/.gemini/config/plugins/ai-agents` | `.agents/plugins/ai-agents` | `plugin.json` | automatic, on startup |
+| Claude Code | `~/.claude/skills/ai-agents` | `.claude/skills/ai-agents` | `.claude-plugin/plugin.json` | automatic as `ai-agents@skills-dir` |
+| Gemini CLI | `~/.gemini/extensions/ai-agents` | none (Gemini CLI scans only the user dir) | `gemini-extension.json` | automatic |
+| Copilot (VS Code) | `~/.copilot/plugins/ai-agents` | `.github/plugins/ai-agents` | bare `plugin.json` (no `$schema`) | only via the `chat.pluginLocations` setting |
+| Codex | `~/plugins/ai-agents` | `plugins/ai-agents` | `.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` entry (`render.py codex-marketplace`) | install from `/plugins` |
+
+Verified 2026-10-01 against the binaries on the development machine. Antigravity
+(`agy` 1.2.13): `agy plugin validate`, and `agy agents` lists the plugin's agents in a HOME with
+no loose install. A print-mode session listed all 13 plugin skills. Claude Code (2.1.286):
+`claude plugin validate`, `claude plugin details ai-agents@skills-dir` reports 13 skills and 5
+agents; a plugin agent's bare `skills:` names resolve to `<plugin>:<skill>`. Gemini CLI (0.62):
+`gemini extensions validate`, `gemini skills list`. Copilot's format and discovery were read from
+VS Code 1.139's workbench (manifest order: Copilot `plugin.json` with `$schema` ->
+`.plugin/plugin.json` -> `.claude-plugin/plugin.json` -> bare `plugin.json`). Codex's format comes
+from its published plugin spec. Neither Copilot nor Codex has been executed. The Antigravity docs
+(embedded in `agy`) allow only `name, description, version, displayName, logo,
+suggestedPrompts, disabled` in `plugin.json`; other fields are silently dropped.
 
 Neutral tool names in AGENT.md (`shell, read, glob, grep, edit, write, web, search`) are mapped per
 harness in `tools/render.py` (`TOOL_MAP`). Vendor locations were verified against vendor docs and

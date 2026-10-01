@@ -11,6 +11,11 @@ render.py — render a harness-neutral agents/<name>/AGENT.md into vendor format
   render.py skill    AGENT.md      -> "agent-as-skill" SKILL.md for harnesses without agent files
                                       (Codex, Gemini CLI): invoke as $<name> / /<name>
   render.py agents-md AGENTS_DIR SKILLS_DIR -> the managed block for a root AGENTS.md
+  render.py plugin-manifest HARNESS VERSION -> the plugin/extension manifest for install.sh --plugin
+                                      (claude, antigravity, gemini, copilot, codex)
+  render.py codex-marketplace add|remove FILE [PATH]
+                                   -> add or remove our entry in a Codex marketplace.json; PATH is
+                                      the plugin folder relative to the marketplace root
 
 Only the standard library is used. AGENT.md frontmatter supports scalars, `[a, b]` lists and
 `>` folded multi-line strings; that is deliberately all the canonical file needs.
@@ -180,12 +185,74 @@ def render_agents_md(agents_dir, skills_dir):
     return "\n".join(out) + "\n"
 
 
+# Plugin bundles (install.sh --plugin). One folder per harness holds skills/ and the rendered agents
+# next to the manifest that harness reads. Each format was checked against the harness itself on
+# 2026-10-01: Antigravity (`agy plugin validate`, `agy agents`), Claude Code (`claude plugin
+# validate`, `claude plugin details`), Gemini CLI (`gemini extensions validate`, `gemini skills
+# list`); Copilot from VS Code's plugin loader, Codex from its published plugin spec.
+PLUGIN_NAME = "ai-agents"
+PLUGIN_DESCRIPTION = ("Organization agents and skills: tree-sitter code graph and blast radius, "
+                      "Terraform, Kubernetes, Helm and TeamCity reviews for Google Cloud.")
+
+
+def render_plugin_manifest(harness, version):
+    """Manifest text for one harness. Keep fields minimal: Antigravity silently drops unknown
+    top-level fields, and Copilot only treats plugin.json as its own namespaced format when a
+    $schema is present -- without one VS Code reads skills/ and agents/ from the plugin root."""
+    import json
+    base = {"name": PLUGIN_NAME, "version": version, "description": PLUGIN_DESCRIPTION}
+    if harness in ("claude", "antigravity", "gemini", "copilot"):
+        return json.dumps(base, indent=2) + "\n"
+    if harness == "codex":
+        # Codex reads skills from the path the manifest names; personas are installed as skills.
+        return json.dumps({**base, "skills": "./skills/",
+                           "interface": {"displayName": "AI agents",
+                                         "shortDescription": PLUGIN_DESCRIPTION,
+                                         "category": "Developer Tools"}}, indent=2) + "\n"
+    sys.exit(f"plugin-manifest: unknown harness {harness}")
+
+
+def codex_marketplace(action, path, plugin_path=None):
+    """Add (or replace) / remove our entry in a Codex marketplace.json, keeping every other entry.
+    A marketplace file that would be left with no plugins and that we created is deleted."""
+    import json
+    data = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    plugins = [p for p in data.get("plugins", []) if p.get("name") != PLUGIN_NAME]
+    if action == "add":
+        data.setdefault("name", "local")
+        data.setdefault("interface", {"displayName": "Local plugins"})
+        plugins.append({"name": PLUGIN_NAME,
+                        "source": {"source": "local", "path": plugin_path},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Developer Tools"})
+    elif action != "remove":
+        sys.exit(f"codex-marketplace: unknown action {action}")
+    data["plugins"] = plugins
+    if not plugins and data.get("name") == "local":
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
 def main(argv):
     if len(argv) < 2:
         sys.exit(__doc__)
     cmd = argv[0]
     if cmd == "agents-md":
         sys.stdout.write(render_agents_md(argv[1], argv[2]))
+        return
+    if cmd == "plugin-manifest":
+        sys.stdout.write(render_plugin_manifest(argv[1], argv[2] if len(argv) > 2 else "0.1.0"))
+        return
+    if cmd == "codex-marketplace":
+        codex_marketplace(argv[1], argv[2], argv[3] if len(argv) > 3 else None)
         return
     fm, body = parse(argv[1])
     if cmd == "antigravity":
