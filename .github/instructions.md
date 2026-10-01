@@ -88,6 +88,20 @@ from its published plugin spec. Neither Copilot nor Codex has been executed. The
 (embedded in `agy`) allow only `name, description, version, displayName, logo,
 suggestedPrompts, disabled` in `plugin.json`; other fields are silently dropped.
 
+Antigravity front ends do not share one binary (measured on macOS, 2026-10-01). The `agy` CLI is
+whatever is on PATH. The VS Code extension spawns its own `~/.gemini/bin/agy --hub
+--app_data_dir=antigravity`, downloaded only when older than the extension's target version.
+IntelliJ runs JetBrains' ACP agent (`~/Library/Caches/JetBrains/<IDE>/acp-agents/antigravity-acp/
+<ver>/agy_acp_server.par` + `localharness_external`, state in `~/.gemini/antigravity-acp`). Its
+version (1.2.1, no update offered) is the ACP package's own; it is not comparable with `agy`'s,
+which added Markdown agents in 1.1.6 and plugins in 1.1.15. That IntelliJ build reads loose
+skills from `~/.gemini/config/skills` but not `config/agents` or `config/plugins`, so the loose
+layout is the only one all three front ends read. `--app_data_dir` only moves session state; the
+customization root stays `~/.gemini/config` (`agy --app_data_dir=<x> agents` lists the same agents
+for `antigravity-cli`, `antigravity` and `antigravity-acp`). `agy` additionally reads Gemini CLI's
+`~/.gemini/skills`, while the IDEs do not, so a mistaken `--harness gemini` install shows skills in
+the `agy` CLI only and installs no agents. That happened on the first macOS install.
+
 Neutral tool names in AGENT.md (`shell, read, glob, grep, edit, write, web, search`) are mapped per
 harness in `tools/render.py` (`TOOL_MAP`). Vendor locations were verified against vendor docs and
 community guides on 2026-09-07 and re-checked on 2026-09-16 (Antigravity: antigravity.google/docs/skills

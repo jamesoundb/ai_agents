@@ -89,18 +89,39 @@ User-scope locations: `~/.claude/{agents,skills}`, `~/.agents/skills` (Codex),
 
 ### Install as a plugin (IDE extensions)
 
-Add `--plugin` to install one plugin bundle per harness instead of loose skills and agents. Use it
-when the agents do not show up in your IDE. Each IDE extension loads plugins through the same
-backend as its CLI: the Antigravity extension runs `agy`, and Gemini Code Assist's agent mode is
-built on Gemini CLI, which loads only extensions.
+Add `--plugin` to install one plugin bundle per harness instead of loose skills and agents. For
+Antigravity, the regular install is the better default. The loose layout is the only one that
+the CLI, the VS Code extension and IntelliJ all read. Use the plugin when you want our
+skills kept in their own folder and you do not use IntelliJ. Gemini Code Assist's agent mode is
+built on Gemini CLI, which loads extensions (`--harness gemini --plugin`).
+
+**Antigravity in the IDEs.** Measured on macOS, 2026-10-01:
+
+| front end | what it runs | loose skills | agents | plugins |
+|---|---|---|---|---|
+| `agy` CLI | `agy` on your PATH | yes | yes | yes |
+| VS Code extension | its own copy, `~/.gemini/bin/agy`, updated by the extension | yes | yes | yes |
+| IntelliJ | JetBrains' ACP agent `antigravity-acp` (1.2.1, no update offered), from `~/Library/Caches/JetBrains/<IDE>/acp-agents/` | yes | no | no |
+
+IntelliJ reads skills from `~/.gemini/config/skills` only. It does not load custom agents (it
+offers only its two built-in subagents) or plugins. To use an agent there, have it as a skill and
+name it in the prompt ("use the ast-treesitter skill to ..."). Codex and Gemini CLI installs
+already write the agents as skills. They reach IntelliJ only if those skills are also in
+`~/.gemini/config/skills`, for example when that folder is a link to `~/.agents/skills`
+(`--harness codex --scope user`).
+
+If Antigravity's IDEs show none of our skills while the `agy` CLI does, check that the install
+was `--harness antigravity`. `agy` also reads Gemini CLI's `~/.gemini/skills`, so a
+`--harness gemini` install looks right in the CLI. The IDEs never see it, and it installs no
+agents.
 
 ```bash
-~/ai_agents/install.sh --harness antigravity --scope user --plugin
+~/ai_agents/install.sh --harness claude --scope user --plugin
 ```
 
 | harness | plugin location (user scope) | project scope | before it shows up |
 |---|---|---|---|
-| Antigravity | `~/.gemini/config/plugins/ai-agents/` | `.agents/plugins/ai-agents/` | restart the IDE extension or `agy` |
+| Antigravity | `~/.gemini/config/plugins/ai-agents/` | `.agents/plugins/ai-agents/` | restart the VS Code extension or `agy` (IntelliJ does not load plugins) |
 | Claude Code | `~/.claude/skills/ai-agents/` (`.claude-plugin/plugin.json`) | `.claude/skills/ai-agents/` | next session (`/reload-plugins`); listed as `ai-agents@skills-dir` |
 | Gemini CLI | `~/.gemini/extensions/ai-agents/` | none (extensions are user scope only) | restart; `gemini extensions list` |
 | GitHub Copilot | `~/.copilot/plugins/ai-agents/` | `.github/plugins/ai-agents/` | add the printed path to VS Code's `chat.pluginLocations` setting |

@@ -23,6 +23,9 @@ Do not hand-copy files or write harness config yourself.
   explicitly asks for more than one harness. Google Antigravity, IDE or `agy` CLI, is
   `antigravity`; `gemini` is the separate Gemini CLI. In Antigravity the result is
   `--harness antigravity --scope user`, which writes `~/.gemini/config/{agents,skills}`.
+  Do not pick `gemini` because the model is Gemini: `agy` also reads Gemini CLI's
+  `~/.gemini/skills`, so a `gemini` install looks correct in the `agy` CLI but is invisible in
+  the Antigravity IDEs and installs no agents.
 - **Scope**: `user` (files in the developer's home directory, available in every project) or
   `project` (files in one repository, e.g. to commit them for that repo's team). **Default `user`**,
   the organization's standard install (README "Quick start"). Use `project` only when the developer
@@ -32,11 +35,12 @@ Do not hand-copy files or write harness config yourself.
 - **Link or copy**: symlinks (default) keep installs in sync with this clone; use `--copy` on
   Windows without developer mode, in CI images, or when the clone will be deleted.
 - **Which agents/skills**: everything by default. `--agents a,b` / `--skills x,y` to narrow.
-- **Loose or plugin**: loose skills and agents by default. Add `--plugin` when the developer
-  says the agents do not show up in their IDE extension (VS Code, JetBrains), or asks for a
-  plugin. It installs one `ai-agents` plugin bundle per harness instead (README "Install as a
-  plugin"). Do not install both ways, or every skill is listed twice. To switch, first re-run
-  the original command with `--uninstall`. Gemini CLI plugins are user scope only.
+- **Loose or plugin**: loose skills and agents by default. Add `--plugin` only when the developer
+  asks for a plugin. It installs one `ai-agents` plugin bundle per harness instead (README "Install as a
+  plugin"). For Antigravity, prefer loose: IntelliJ's Antigravity agent reads loose skills only,
+  and loads neither plugins nor custom agents. Do not install both ways, or every skill is listed
+  twice. To switch, first re-run the original command with `--uninstall`. Gemini CLI plugins are
+  user scope only.
 
 ## 2. Run the installer
 
