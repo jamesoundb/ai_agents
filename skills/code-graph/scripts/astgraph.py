@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 from collections import Counter, defaultdict, deque
+from functools import lru_cache
 
 try:
     from tree_sitter_language_pack import get_parser
@@ -106,6 +107,7 @@ TEST_FILE_RES = tuple(re.compile(p) for p in (
 ))
 
 
+@lru_cache(maxsize=None)   # pure in `path`; the linker asks about the same few thousand files millions of times
 def is_test_file(path):
     parts = path.replace(os.sep, "/").split("/")
     if "src" in parts[:-1]:
@@ -3626,7 +3628,66 @@ def git_stamp(root_dir, includes, excludes, out_path=None, keep_dirs=None):
     return h.hexdigest()
 
 
-def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False, keep_dirs=None):
+PARALLEL_MIN_FILES = 200   # below this a worker pool costs more to start than it saves
+
+
+def _parse_one(job):
+    """Pool worker: read, hash and parse one file. Reads the file itself so only a path crosses the
+    process boundary on the way in; returns None for a file that vanished or is not a source file."""
+    root_dir, rel = job
+    try:
+        with open(os.path.join(root_dir, rel), "rb") as f:
+            src = f.read()
+    except OSError:
+        return rel, None
+    res = extract_file(rel, root_dir, src)
+    if res is None:
+        return rel, None
+    fnode, nodes, refs = res
+    return rel, {"hash": file_hash(src), "file_node": fnode, "nodes": nodes, "refs": refs}
+
+
+def default_jobs():
+    """Worker count: ASTGRAPH_JOBS if set, else the CPUs this process may run on."""
+    env = os.environ.get("ASTGRAPH_JOBS", "").strip()
+    if env.isdigit() and int(env) > 0:
+        return int(env)
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:          # macOS / Windows have no sched_getaffinity
+        return max(1, os.cpu_count() or 1)
+
+
+def parse_files(root_dir, rels, jobs=None):
+    """Yield (rel, parsed-or-None) for every path in `rels`, in the order given.
+
+    Parsing is per-file and independent, so it is spread over a process pool (tree-sitter work
+    holds the GIL; threads would not help). Results come back in input order (imap), so the graph
+    is identical to a serial build. Any failure to start the pool -- a sandbox without a writable
+    /dev/shm for the pool's semaphores is the usual one -- falls back to parsing serially here.
+    Linux uses fork (workers inherit the loaded parsers); elsewhere the platform default (spawn)
+    is used. NOT VERIFIED on macOS or Windows."""
+    jobs = default_jobs() if jobs is None else max(1, jobs)
+    if jobs > 1 and len(rels) >= PARALLEL_MIN_FILES:
+        import multiprocessing as mp
+        pool = None
+        try:
+            ctx = mp.get_context("fork") if sys.platform.startswith("linux") else mp.get_context()
+            pool = ctx.Pool(min(jobs, len(rels)))
+        except (OSError, ValueError, ImportError) as exc:
+            print(f"note: parallel parse unavailable ({exc}); parsing serially", file=sys.stderr)
+        if pool is not None:
+            try:
+                yield from pool.imap(_parse_one, ((root_dir, rel) for rel in rels), chunksize=16)
+            finally:
+                pool.terminate()
+                pool.join()
+            return
+    for rel in rels:
+        yield _parse_one((root_dir, rel))
+
+
+def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False, keep_dirs=None, jobs=None):
     t0 = time.time()
     root_dir = os.path.abspath(root_dir)
     # Fast path: if the git working tree is byte-identical to the one the graph was built from, the
@@ -3662,8 +3723,11 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
             old = None
     tf_modules = terraform_module_map(root_dir)
     extra_dirs = sorted({v["dir"] for v in tf_modules.values() if os.path.isdir(os.path.join(root_dir, v["dir"]))})
+    # `files` keeps walk order (link order, and so the graph, depends on it): unchanged files are
+    # filled from the cache now, changed ones hold a placeholder until the parse pass fills them.
     files = {}
-    changed, reused = 0, 0
+    to_parse = []
+    reused = 0
     for rel in iter_source_files(root_dir, includes, excludes, extra_dirs=extra_dirs, keep_dirs=keep_dirs):
         try:
             with open(os.path.join(root_dir, rel), "rb") as f:
@@ -3676,13 +3740,34 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
             files[rel] = prev
             reused += 1
             continue
-        res = extract_file(rel, root_dir, src)
-        if res is None:
+        files[rel] = None
+        to_parse.append(rel)
+    changed = 0
+    for rel, parsed in parse_files(root_dir, to_parse, jobs):
+        if parsed is None:
+            del files[rel]
             continue
-        fnode, nodes, refs = res
-        files[rel] = {"hash": h, "file_node": fnode, "nodes": nodes, "refs": refs}
+        files[rel] = parsed
         changed += 1
-    graph = link_graph(root_dir, files, tf_modules)
+    prev = None
+    if old is not None:
+        old_files = old.get("files", {})
+        delta = set(to_parse) | (set(old_files) - set(files))   # edited, added, removed
+        iface, names, old_b = set(), set(), {}
+        for rel in delta:
+            o, n = old_files.get(rel), files.get(rel)
+            if o is not None and o.get("links"):
+                old_b[rel] = o["links"].get("b")
+            if o is None or n is None:
+                iface.add(rel)
+                names |= parse_names(o if n is None else n)
+                continue
+            d = interface_delta(o, n)
+            if d is not None:
+                iface.add(rel)
+                names |= d
+        prev = {"changed": delta, "iface": iface, "names": names, "old_b": old_b}
+    graph = link_graph(root_dir, files, tf_modules, prev)
     graph["version"] = GRAPH_VERSION
     graph["engine"] = engine_hash
     graph["root"] = root_dir
@@ -3698,7 +3783,8 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
         print(note, file=sys.stderr)
     if not quiet:
         s = graph["stats"]
-        print(f"graph written to {out_path}: {s['files']} files ({changed} parsed, {reused} unchanged), "
+        print(f"graph written to {out_path}: {s['files']} files ({changed} parsed, {reused} unchanged, "
+              f"{graph['relinked']} re-linked), "
               f"{s['nodes']} nodes, {s['edges']} edges, {s['unresolved_refs']} unresolved refs, {time.time() - t0:.1f}s")
         for lang, c in sorted(s["languages"].items()):
             print(f"  {lang}: {c} files")
@@ -3707,6 +3793,79 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
                   + ", ".join(sorted(EXT_LANG)) + "; directories skipped by default: "
                   + ", ".join(sorted(DEFAULT_EXCLUDE_DIRS)) + ". Check --root, --include and --exclude.", file=sys.stderr)
     return graph
+
+
+def parse_names(info):
+    """Every index key a lookup could use to reach this parsed file: its definitions' names and
+    qualified names, and the names its imports bind or re-export. Incremental linking re-resolves a
+    file whose recorded lookups hit any of these for a file that changed."""
+    out = set()
+    for n in info["nodes"]:
+        out.add(n["name"])
+        out.add(n["qname"])
+    for r in info["refs"]:
+        if r["kind"] == "import":
+            out.add(r["name"])
+            out.update(r.get("names") or ())
+            am = r.get("alias_map") or {}
+            out.update(am.keys())
+            out.update(am.values())
+    return out
+
+
+# Fields the linker writes into parsed nodes (and so into the parse cache): they are recomputed on
+# every link, so they are not part of what a file "defines" when two parses are compared.
+_LINK_WRITTEN = ("defined_at", "resolved_dir")
+
+
+def _iface_key(n):
+    extra = {k: v for k, v in (n.get("extra") or {}).items() if k not in _LINK_WRITTEN}
+    if not extra.get("forward"):
+        extra.pop("is_declaration", None)    # C++ decl/def pairing mark; forward declarations keep theirs
+    parent = None if extra.get("receiver_type") else n.get("parent")   # Go methods are re-parented at link
+    return json.dumps([n["id"], n["kind"], n["name"], n["qname"], n["line"], n.get("end_line"),
+                       n.get("signature"), n.get("annotations"), parent, extra], sort_keys=True, default=str)
+
+
+def _import_keys(info):
+    return sorted(json.dumps([r["name"], sorted(r.get("names") or ()), sorted((r.get("alias_map") or {}).items())],
+                             default=str) for r in info["refs"] if r["kind"] == "import")
+
+
+def interface_delta(old, new):
+    """What another file can observe changing between two parses of one file: None when nothing
+    (a body-only edit that moved no definition), else the names whose definitions or imports
+    differ. Another file sees this one only through its definition nodes, its file-level metadata
+    (package) and its import bindings; bindings and inheritance are fingerprinted separately."""
+    ok, nk = Counter(map(_iface_key, old["nodes"])), Counter(map(_iface_key, new["nodes"]))
+    oi, ni = _import_keys(old), _import_keys(new)
+    if ok == nk and oi == ni and old["file_node"].get("extra") == new["file_node"].get("extra"):
+        return None
+    if old["file_node"].get("extra") != new["file_node"].get("extra"):
+        return parse_names(old) | parse_names(new)   # package moved: everything in it is somewhere else now
+    names = set()
+    by_key = {_iface_key(n): n for n in old["nodes"]}
+    by_key.update({_iface_key(n): n for n in new["nodes"]})
+    by_id = {n["id"]: n for n in old["nodes"]}
+    by_id.update({n["id"]: n for n in new["nodes"]})
+    for k in (ok - nk) + (nk - ok):
+        n = by_key[k]
+        # the node and every container above it: a type's members (fields, methods, companion
+        # objects, impl blocks) are part of what a lookup of the type's name sees
+        while n is not None:
+            names.add(n["name"])
+            names.add(n["qname"])
+            n = by_id.get(n.get("parent"))
+    if oi != ni:
+        for info in (old, new):
+            for r in info["refs"]:
+                if r["kind"] == "import":
+                    names.add(r["name"])
+                    names.update(r.get("names") or ())
+                    am = r.get("alias_map") or {}
+                    names.update(am.keys())
+                    names.update(am.values())
+    return names
 
 
 def external_name(name, lang):
@@ -3721,8 +3880,14 @@ def external_name(name, lang):
     return name
 
 
-def link_graph(root_dir, files, tf_modules):
-    """Turn per-file nodes + raw refs into a global node list with resolved, confidence-labelled edges."""
+def link_graph(root_dir, files, tf_modules, prev=None):
+    """Turn per-file nodes + raw refs into a global node list with resolved, confidence-labelled edges.
+
+    `prev` ({"changed": paths added/edited/removed since the last build, "iface": the subset whose
+    definitions, imports or metadata differ, "names": the names that differ, "old_b": their previous
+    binding fingerprints}) enables incremental linking: a file whose recorded call-resolution
+    dependencies (info["links"], written by the previous build) do not touch anything that changed
+    gets its call edges replayed instead of re-resolved. The graph is the same either way."""
     nodes, edges = [], []
     node_by_id = {}
     by_name = defaultdict(list)        # simple name -> nodes (definitions only)
@@ -3782,6 +3947,11 @@ def link_graph(root_dir, files, tf_modules):
             continue
         if os.path.splitext(n["file"])[1].lower() not in CPP_EXTS:
             continue
+        # The marks below are written into the node, and so into the parse cache of an unchanged
+        # header: clear the previous build's pairing first, or a definition that was renamed or
+        # deleted leaves its declaration pointing at it (found by the incremental-vs-full trials).
+        n["extra"].pop("is_declaration", None)
+        n["extra"].pop("defined_at", None)
         cpp_defs[n["qname"]].append(n)
     for group in cpp_defs.values():
         if len(group) < 2:
@@ -4027,11 +4197,83 @@ def link_graph(root_dir, files, tf_modules):
                         if sub and ("terraform_module", sub) in dir_nodes:
                             add_edge(r["src"], dir_nodes[("terraform_module", sub)]["id"], "uses_module", r["line"], "ambiguous")
 
+    def binding_fp(rel):
+        """Hash of everything pass 1 bound for `rel` (its imports, namespaces, re-export links). A
+        file whose bindings moved -- a new module now shadows an external one, tsconfig paths
+        changed -- cannot reuse its call edges, and neither can anything that followed its re-exports."""
+        return hashlib.sha1(json.dumps([
+            sorted(imports_of.get(rel, ())),
+            sorted((k, sorted(v)) for k, v in ns_repo.get(rel, {}).items()),
+            sorted(ns_ext.get(rel, ())),
+            [[sorted(nm), sorted(am.items()), sorted(t)] for nm, am, t in import_links.get(rel, ())],
+            sorted(alias_orig.get(rel, {}).items()),
+        ]).encode()).hexdigest()
+
     # Names defined at the top level of each file (for re-export following)
     top_defs = defaultdict(dict)   # file -> {name: [nodes]}
     for n in nodes:
         if n.get("file") and n.get("parent") == n["file"] and n["kind"] not in ("file",):
             top_defs[n["file"]].setdefault(n["name"], []).append(n)
+
+    # Dependency tracking for incremental linking. While a file's calls are resolved (pass 2b,
+    # ~80% of link time), every name looked up in the definition indexes (including a type's name
+    # when its members, impls or generic bounds are read), every file whose import bindings are
+    # followed for a re-export, and every inheritance list consulted is recorded. The next build
+    # replays the file's call edges unless one of those meets what changed: a name whose definition
+    # (or a member of it) differs (interface_delta), a file whose bindings moved, or a parent list
+    # that resolves differently. Memoized helpers keep the footprint of the computation that filled
+    # them and replay it on a hit; otherwise a cache warmed by one file would hide the dependency
+    # from every later file.
+    _dep = [None]    # {"n": names looked up, "b": files whose import bindings were followed, "p": {node id: [parent ids]}}
+
+    def _dn(name):
+        d = _dep[0]
+        if d is not None:
+            d["n"].add(name)
+
+    def _db(f):
+        d = _dep[0]
+        if d is not None:
+            d["b"].add(f)
+
+    def _new_dep():
+        return {"n": set(), "b": set(), "p": {}}
+
+    def _merge(fp):
+        d = _dep[0]
+        if d is not None and fp is not None:
+            d["n"].update(fp["n"])
+            d["b"].update(fp["b"])
+            d["p"].update(fp["p"])
+
+    def _footprinted(compute):
+        """(value, footprint) of compute(); the footprint is also merged into the caller's record."""
+        outer = _dep[0]
+        _dep[0] = _new_dep()
+        try:
+            val = compute()
+        finally:
+            fp = _dep[0]
+            _dep[0] = outer
+        _merge(fp)
+        return val, fp
+
+    def _memo(cache, key, compute):
+        hit = cache.get(key)
+        if hit is None:
+            hit = cache[key] = _footprinted(compute)
+        else:
+            _merge(hit[1])
+        return hit[0]
+
+    def _parents(nid):
+        """parents_of[nid], recorded: an inheritance change elsewhere can re-route a call whose own
+        names never mention the changed file."""
+        ps = parents_of.get(nid, [])
+        d = _dep[0]
+        if d is not None:
+            d["p"][nid] = [x["id"] for x in ps]
+        return ps
 
     _fd_cache = {}
 
@@ -4039,16 +4281,14 @@ def link_graph(root_dir, files, tf_modules):
         """Files among `fset` that define `name` at top level, following `from x import name` re-exports
         (and wildcard imports) up to `depth` levels. Memoized on (name, files) for the top-level call."""
         if seen is None:
-            key = (name, frozenset(fset))
-            hit = _fd_cache.get(key)
-            if hit is None:
-                hit = _fd_cache[key] = files_defining(name, fset, depth, {})
-            return hit
+            return _memo(_fd_cache, (name, frozenset(fset)), lambda: files_defining(name, fset, depth, {}))
         out = set()
         for f in sorted(fset):   # sorted: the result must not depend on set iteration order
             if seen.get((f, name), -1) >= depth:
                 continue         # already explored from here with at least this much depth left
             seen[(f, name)] = depth
+            _dn(name)
+            _db(f)
             if name in top_defs.get(f, {}):
                 out.add(f)
                 continue
@@ -4101,8 +4341,18 @@ def link_graph(root_dir, files, tf_modules):
                    and not any(a.split(".")[-1].startswith("overload") for a in c.get("annotations", [])) for c in group):
                 overload_stub.add(st["id"])
 
+    _cands_cache = {}
+
     def candidates(name, kinds):
-        return [c for c in by_name.get(name, []) if c["kind"] in kinds and c["id"] not in overload_stub]
+        """Definitions named `name` of the given kinds. Memoized: by_name and overload_stub are final
+        once resolution starts, and callers only read the list (it is shared between calls). TensorFlow
+        asks for the same few thousand C++ method names millions of times."""
+        _dn(name)
+        key = (name, frozenset(kinds))
+        hit = _cands_cache.get(key)
+        if hit is None:
+            hit = _cands_cache[key] = [c for c in by_name.get(name, []) if c["kind"] in kinds and c["id"] not in overload_stub]
+        return hit
 
     _arity_cache = {}
     _params_cache = {}
@@ -4183,9 +4433,9 @@ def link_graph(root_dir, files, tf_modules):
 
     def is_subtype(sub_name, sup_name):
         """True when a repo type named sub_name extends/implements (transitively) one named sup_name."""
-        key = (sub_name, sup_name)
-        if key in _sub_cache:
-            return _sub_cache[key]
+        return _memo(_sub_cache, (sub_name, sup_name), lambda: _is_subtype(sub_name, sup_name))
+
+    def _is_subtype(sub_name, sup_name):
         res = False
         for start in candidates(sub_name, TYPE_LIKE_KINDS):
             seen, frontier = set(), [start]
@@ -4194,14 +4444,13 @@ def link_graph(root_dir, files, tf_modules):
                 if x["id"] in seen:
                     continue
                 seen.add(x["id"])
-                for pn in parents_of.get(x["id"], []):
+                for pn in _parents(x["id"]):
                     if pn["name"] == sup_name:
                         res = True
                         break
                     frontier.append(pn)
             if res:
                 break
-        _sub_cache[key] = res
         return res
 
     def compat_score(param, arg):
@@ -4462,16 +4711,14 @@ def link_graph(root_dir, files, tf_modules):
         files_defining this returns the definition nodes, so an aliased re-export resolves to the
         definition under its original name."""
         if seen is None:
-            key = (name, frozenset(fset))
-            hit = _defs_cache.get(key)
-            if hit is None:
-                hit = _defs_cache[key] = defs_in(name, fset, depth, {})
-            return hit
+            return _memo(_defs_cache, (name, frozenset(fset)), lambda: defs_in(name, fset, depth, {}))
         out = []
         for f in sorted(fset):
             if seen.get((f, name), -1) >= depth:
                 continue
             seen[(f, name)] = depth
+            _dn(name)
+            _db(f)
             if name in top_defs.get(f, {}):
                 out.extend(top_defs[f][name])
                 continue
@@ -4506,19 +4753,30 @@ def link_graph(root_dir, files, tf_modules):
 
     def lead_pick(cands, rel):
         """Receiver of unknown type: a same-file definition is plausible; otherwise a few same-language leads."""
-        cands = same_family(cands, rel)
-        cands = [c for c in cands if c["id"] != _cur.get("src")]   # `self._pool.handle_request()` is not a self-call
-        cands = [c for c in cands if admits_argc(c)] or []
-        if not is_test_file(rel):
-            cands = [c for c in cands if not is_test_file(c["file"])]   # main code never leads into a test helper
-        if not cands:
-            return [], None
-        same = [c for c in cands if c["file"] == rel]
-        if same:
-            return same[:1], "same_file"
-        if len(cands) > 3:
-            return [], None   # 3 of 40 `copy` methods is noise, not a lead
-        return cands, "ambiguous"
+        fam = LANG_FAMILY.get(lang_of(rel))
+        src = _cur.get("src")
+        main_code = not is_test_file(rel)
+
+        def admissible(c):
+            return ((not fam or LANG_FAMILY.get(lang_of(c["file"])) == fam)
+                    and c["id"] != src                                    # `self._pool.handle_request()` is not a self-call
+                    and admits_argc(c)
+                    and not (main_code and is_test_file(c["file"])))      # main code never leads into a test helper
+
+        # Same-file first, then the rest with an early exit: more than 3 survivors is no lead at all,
+        # so there is no need to filter all of them. Common C++ method names (`Compute`, `Run`) have
+        # thousands of candidates in TensorFlow, and filtering every one of them per call dominated
+        # the link. Same result as filtering the whole list and then splitting it.
+        for c in cands:
+            if c["file"] == rel and admissible(c):
+                return [c], "same_file"
+        leads = []
+        for c in cands:
+            if admissible(c):
+                leads.append(c)
+                if len(leads) > 3:
+                    return [], None   # 3 of 40 `copy` methods is noise, not a lead
+        return (leads, "ambiguous") if leads else ([], None)
 
     def type_node(type_name, rel, fset=None):
         """Container node for a type name in the context of `rel` (or of an import binding). None when ambiguous."""
@@ -4531,17 +4789,35 @@ def link_graph(root_dir, files, tf_modules):
             return None
         return targets[0]
 
+    # Kotlin companion objects by their enclosing class id. Parents are final by now (the Go
+    # re-parenting above runs before any resolution), so this is computed once instead of scanning
+    # every node of the owner's file on each lookup -- that scan was ~half the link time on TensorFlow.
+    companions_of = defaultdict(list)
+    impls_of = defaultdict(list)    # (name, file) -> Rust `impl` blocks, so owner_ids never scans by_name
+    for kids in by_file.values():
+        for kid in kids:
+            if kid["kind"] == "class" and kid["extra"].get("companion"):
+                companions_of[kid.get("parent")].append(kid["id"])
+            elif kid["kind"] == "impl":
+                impls_of[(kid["name"], kid["file"])].append(kid)
+    _owner_cache = {}
+
     def owner_ids(tn):
         """Node ids whose children are members of type `tn`: the node itself plus, for Rust, the `impl`
         blocks of that name in its file. Ordered (the type first, impls by line) so nothing depends on
-        set iteration order; two unrelated same-named classes in one file are never merged."""
+        set iteration order; two unrelated same-named classes in one file are never merged.
+        Memoized per node id: by_name and the parent links do not change once resolution starts."""
+        _dn(tn["name"])   # impls and companions: a change to either touches the type's name
+        _dn(tn["qname"])
+        hit = _owner_cache.get(tn["id"])
+        if hit is not None:
+            return hit
         ids = [tn["id"]]
-        for alt in sorted((a for a in by_name.get(tn["name"], []) if a["file"] == tn["file"] and a["kind"] == "impl" and a["id"] != tn["id"]),
+        for alt in sorted((a for a in impls_of.get((tn["name"], tn["file"]), ()) if a["id"] != tn["id"]),
                           key=lambda a: a["line"]):
             ids.append(alt["id"])
-        for kid in by_file.get(tn["file"], []):   # Kotlin: companion object members are reachable as Outer.member()
-            if kid.get("parent") == tn["id"] and kid["kind"] == "class" and kid["extra"].get("companion"):
-                ids.append(kid["id"])
+        ids.extend(companions_of.get(tn["id"], ()))   # Kotlin: companion object members are reachable as Outer.member()
+        _owner_cache[tn["id"]] = ids
         return ids
 
     def typed_match(cands, tn):
@@ -4604,6 +4880,8 @@ def link_graph(root_dir, files, tf_modules):
     def generic_bounds(tn):
         """{type parameter: first bound or None} from a container's `<...>`/`where` text and, for Rust,
         from the impl blocks of that type in the same file."""
+        _dn(tn["name"])   # its signature and same-file impl blocks: a change to either touches this name
+        _dn(tn["qname"])
         if tn["id"] in _bounds_cache:
             return _bounds_cache[tn["id"]]
         texts = [tn.get("signature") or ""]
@@ -4750,7 +5028,7 @@ def link_graph(root_dir, files, tf_modules):
                 if seg in field_types.get(oid, {}):
                     return x, field_types[oid][seg], field_qual[oid].get(seg)
             if len(seen) < 12:
-                frontier.extend(parents_of.get(x["id"], []))
+                frontier.extend(_parents(x["id"]))
         return None
 
     def follow_chain(tn, chain, flags=None):
@@ -4920,7 +5198,7 @@ def link_graph(root_dir, files, tf_modules):
             return by_arity(typed)[:1], "typed"
         if depth >= 3:
             return [], None
-        for pn in parents_of.get(tn["id"], []):
+        for pn in _parents(tn["id"]):
             t2, c2 = typed_pick(cands, pn, depth + 1)
             if t2:
                 return t2, c2
@@ -4958,7 +5236,7 @@ def link_graph(root_dir, files, tf_modules):
             return "external", None   # `", ".join(...)`, `b"".join(...)`, `{...}.get(...)`, `[...].append(...)`
         if first == "super" and cont is not None:
             # Python `super().m()`, Java/Kotlin `super.m()`: the method lives on an ancestor
-            parents = parents_of.get(cont["id"], [])
+            parents = _parents(cont["id"])
             if not parents:
                 return "external", None
             return from_node(parents[0], chain[1:], flags[1:])
@@ -5003,7 +5281,7 @@ def link_graph(root_dir, files, tf_modules):
                 return "unknown", None
         if cont is not None and not flags[0]:
             # a property inherited from an ancestor, used without `this.` (Kotlin/Java/Python)
-            anc, seen_anc, frontier = None, set(), list(parents_of.get(cont["id"], []))
+            anc, seen_anc, frontier = None, set(), list(_parents(cont["id"]))
             while frontier and anc is None:
                 pn = frontier.pop(0)
                 if pn["id"] in seen_anc:
@@ -5012,7 +5290,7 @@ def link_graph(root_dir, files, tf_modules):
                 if any(first in field_types.get(oid, {}) for oid in owner_ids(pn)):
                     anc = pn
                     break
-                frontier.extend(parents_of.get(pn["id"], []))
+                frontier.extend(_parents(pn["id"]))
             if anc is not None:
                 return from_node(anc, chain, flags)
         if lang != "rust" and "::" not in hint:
@@ -5052,6 +5330,7 @@ def link_graph(root_dir, files, tf_modules):
 
     def toplevel_var(name, rel, repo):
         """The unique file-level variable `name` with a declared type that is visible from `rel`."""
+        _dn(name)
         cands = var_by_name.get(name, [])
         if not cands:
             return None
@@ -5068,6 +5347,7 @@ def link_graph(root_dir, files, tf_modules):
         try:
             targets, conf, mode = _resolve_call(r, rel, lang, cont)
             if targets and _cur.get("overload_undecided") and conf in ("typed", "same_file", "package", "import"):
+                _dn(r["name"])
                 group = [c for c in by_name.get(r["name"], []) if c["qname"] == targets[0]["qname"] and c["file"] == targets[0]["file"]
                          and c["kind"] == targets[0]["kind"] and c["id"] not in overload_stub]
                 group = by_arity(group)
@@ -5230,13 +5510,50 @@ def link_graph(root_dir, files, tf_modules):
             targets, conf = lead_pick(candidates(name, {"method"}), rel)
         return targets, conf, mode
 
+    # Incremental linking: decide which files' call edges can be replayed from the previous build.
+    bfp = {rel: binding_fp(rel) for rel in files}
+    reuse = {}
+    if prev is not None:
+        # A changed file counts as changed for others only if what they can see of it changed:
+        # its definitions/imports/metadata (iface) or what pass 1 bound for it. A body-only edit
+        # re-links that file alone.
+        rebound = {rel for rel in prev["changed"] if rel in files and prev["old_b"].get(rel) != bfp[rel]}
+        rebound.update(rel for rel, info in files.items()
+                       if info.get("links") is not None and info["links"].get("b") != bfp[rel])
+        eff = set(prev["iface"]) | rebound
+        touched = set(prev["names"])
+        for rel, info in files.items():
+            lk = info.get("links")
+            if (lk is None or rel in eff or not rebound.isdisjoint(lk["fb"])
+                    or not touched.isdisjoint(lk["n"])):
+                continue
+            if any([x["id"] for x in parents_of.get(nid, [])] != pids for nid, pids in lk["p"].items()):
+                continue
+            reuse[rel] = lk
+    relinked = 0
+
     # Pass 2b: calls, then HCL/K8s references
     for rel, info in files.items():
         lang = lang_of(rel)
         d = os.path.dirname(rel) or "."
+        lk = reuse.get(rel)
+        replay = iter(lk["c"]) if lk is not None else None
+        calls_out = []
+        if lk is None:
+            relinked += 1
+            _dep[0] = _new_dep()
         for r in info["refs"]:
             k = r["kind"]
-            if k == "call":
+            if k == "call" and replay is not None:
+                ent = next(replay)
+                if ent is None:
+                    unresolved += 1
+                else:
+                    for dst, conf in ent:
+                        add_edge(r["src"], dst, "calls", r["line"], conf, name=r["name"])
+            elif k == "call":
+                # Each call's outcome is recorded for replay: None = unresolved, [] = no edge
+                # (builtin), else [[target id before the C++ decl->def rewrite, confidence], ...].
                 cont = container_of(r["src"])
                 name = r["name"]
                 targets, conf, mode = resolve_call(r, rel, lang, cont)
@@ -5245,21 +5562,27 @@ def link_graph(root_dir, files, tf_modules):
                     # a pybind11 export from a C++ extension module. Only taken when exactly one
                     # binding carries the name and no Python definition does, because a wrong
                     # cross-language edge is worse than the honest gap it replaces.
+                    _dn(name)
                     bind = py_binding_index.get(name)
                     if bind is not None and not [c for c in by_name.get(name, [])
                                                  if c["file"].endswith(".py")]:
                         add_edge(r["src"], bind["id"], "calls", r["line"], "binding", name=name)
+                        calls_out.append([[bind["id"], "binding"]])
                         continue
                 if mode == "external":
                     unresolved += 1
+                    calls_out.append(None)
                     continue
                 if mode == "builtin":
+                    calls_out.append([])
                     continue
                 if not targets:
                     unresolved += 1
+                    calls_out.append(None)
                     continue
                 for t in targets:
                     add_edge(r["src"], t["id"], "calls", r["line"], conf, name=name)
+                calls_out.append([[t["id"], conf] for t in targets])
             elif k == "registers_op":
                 # REGISTER_KERNEL_BUILDER(Name("MatMul")..., MatMulOp<...>): the kernel class
                 # implements the registered op. Both sides are C++, but the op name is what the
@@ -5298,6 +5621,10 @@ def link_graph(root_dir, files, tf_modules):
                 conf = "exact" if len(targets) == 1 else "ambiguous"
                 for t in targets[:5]:
                     add_edge(r["src"], t["id"], "references", r["line"], conf, name=r["name"], via=r.get("via"))
+        if lk is None:
+            dep, _dep[0] = _dep[0], None
+            info["links"] = {"c": calls_out, "n": sorted(dep["n"]), "fb": sorted(dep["b"]),
+                             "p": dep["p"], "b": bfp[rel]}
 
     # Pass 3: k8s selectors -> workloads
     workloads = [n for n in nodes if n["kind"] == "k8s_object" and n["extra"].get("template_labels")]
@@ -5319,7 +5646,7 @@ def link_graph(root_dir, files, tf_modules):
         uniq.append(e)
     stats = {"files": len(files), "nodes": len(nodes), "edges": len(uniq), "unresolved_refs": unresolved,
              "asset_imports": assets, "languages": dict(langs), "edge_confidence": dict(stats_conf)}
-    return {"nodes": nodes, "edges": uniq, "stats": stats}
+    return {"nodes": nodes, "edges": uniq, "stats": stats, "relinked": relinked}
 
 
 # ----------------------------------------------------------------------------------------------
@@ -5660,6 +5987,20 @@ class Store:
             chunk = ids[i:i + 500]
             q = "SELECT src,line,name FROM edges WHERE src IN (" + ",".join("?" * len(chunk)) + ")"
             out.update((r[0], r[1], r[2]) for r in self.con.execute(q, chunk))
+        return out
+
+    def inbound_files(self, dst_ids):
+        """{dst: Counter(source file -> rows)} for the non-structural, non-ambiguous edges into
+        `dst_ids`. Grouped in SQL so a 6,000-line file's symbols cost one indexed pass."""
+        out = defaultdict(Counter)
+        ids = list(dst_ids)
+        for i in range(0, len(ids), 500):          # stay under SQLite's variable limit
+            chunk = ids[i:i + 500]
+            q = ("SELECT e.dst, n.file, COUNT(*) FROM edges e JOIN nodes n ON n.id = e.src "
+                 "WHERE e.type != 'contains' AND e.confidence != 'ambiguous' AND e.dst IN ("
+                 + ",".join("?" * len(chunk)) + ") GROUP BY e.dst, n.file")
+            for dst, f, c in self.con.execute(q, chunk):
+                out[dst][f] += c
         return out
 
     def count_ambiguous_into(self, dst_ids):
@@ -6348,9 +6689,16 @@ def q_file(g, args):
         sys.exit(f"{n['file']} has no parse-cache row; re-run `build`")
     ins = [e for e in g.inc.get(n["id"], []) if e["type"] == "imports"]
     if args.json:
-        print(json.dumps({"file": info["file_node"], "nodes": info["nodes"], "refs": info["refs"],
-                          "imported_by": sorted({g.nodes[e["src"]]["file"] for e in ins if e["src"] in g.nodes})}))
+        out = {"file": info["file_node"], "nodes": info["nodes"], "refs": info["refs"],
+               "imported_by": sorted({g.nodes[e["src"]]["file"] for e in ins if e["src"] in g.nodes})}
+        if args.used_by:
+            out["used_by"] = [{"id": n["id"], "files": nf, "refs": nr}
+                              for nf, nr, n in used_by_rows(g, n["file"], info["nodes"], args.no_tests, args.within)[:args.used_by]]
+        print(json.dumps(out))
         return
+    if args.used_by:
+        # first, so `| head` keeps it: a large file's skeleton runs to hundreds of lines
+        print_used_by(g, n["file"], info["nodes"], args.used_by, args.no_tests, args.within)
     elided = Counter()
     print(render_skeleton(info["file_node"], info["nodes"], info["refs"], show_calls=not args.no_calls, elided=elided))
     # `query file` has no --max-calls/--max-imports of its own; point at the command that does.
@@ -6359,6 +6707,43 @@ def q_file(g, args):
         print(f"-- elided: {what} (raise with `skeleton {info['file_node']['file']} --max-calls N --max-imports N`)")
     if ins:
         print("  imported by: " + ", ".join(sorted({g.nodes[e['src']]['file'] for e in ins if e['src'] in g.nodes})[:CAP_IMPORTED_BY]))
+
+
+def in_scope(f, within):
+    """`--within` match: a directory prefix (`app`, `app/`) or a glob (`src/**/api_*.py`)."""
+    for w in within:
+        if any(ch in w for ch in "*?["):
+            if fnmatch.fnmatch(f, w):
+                return True
+        elif f == w or f.startswith(w.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def used_by_rows(g, path, nodes, no_tests, within=None):
+    """The file's symbols ranked by how many *other* files use them: [(files, refs, node)].
+    Answers "what in this file matters to the rest of the repo" (or to one part of it, with
+    `within`) in one call instead of a `callers` query per symbol."""
+    inbound = g.store.inbound_files(n["id"] for n in nodes)
+    rows = []
+    for n in nodes:
+        files = {f: c for f, c in inbound.get(n["id"], {}).items()
+                 if f and f != path and not (no_tests and is_test_file(f))
+                 and (not within or in_scope(f, within))}
+        if files:
+            rows.append((len(files), sum(files.values()), n))
+    rows.sort(key=lambda r: (-r[0], -r[1], r[2]["line"]))
+    return rows
+
+
+def print_used_by(g, path, nodes, top, no_tests, within=None):
+    rows = used_by_rows(g, path, nodes, no_tests, within)
+    scope = "non-test files" if no_tests else "files"
+    if within:
+        scope += " under " + ", ".join(within)
+    print(f"{path}: symbols used by other {scope} (top {min(top, len(rows))} of {len(rows)} with outside users; skeleton follows)")
+    for nf, nr, n in rows[:top]:
+        print(f"    {nf:5d} files {nr:6d} refs  {n['kind']} {n['qname']}  [L{n['line']}]")
 
 
 def q_path(g, args):
@@ -6442,7 +6827,9 @@ def main(argv=None):
     b.add_argument("--keep-dir", action="append", help="directory name to index although it is excluded by default (build, dist, target, vendor ...)")
     b.add_argument("--full", action="store_true", help="ignore the cached graph and re-parse everything")
     b.add_argument("--quiet", action="store_true")
-    b.set_defaults(fn=lambda a: build_graph(a.root, a.out or os.path.join(a.root, DEFAULT_GRAPH), a.include, a.exclude, a.full, a.quiet, a.keep_dir))
+    b.add_argument("--jobs", type=int, default=None,
+                   help="parser processes (default: all CPUs, or $ASTGRAPH_JOBS; 1 = serial)")
+    b.set_defaults(fn=lambda a: build_graph(a.root, a.out or os.path.join(a.root, DEFAULT_GRAPH), a.include, a.exclude, a.full, a.quiet, a.keep_dir, a.jobs))
 
     q = sub.add_parser("query", help="query a built graph")
     q.add_argument("--graph", default=DEFAULT_GRAPH)
@@ -6485,6 +6872,11 @@ def main(argv=None):
     x.set_defaults(qfn=q_overview)
     x = qs.add_parser("file", help="skeleton of a file from the graph, plus who imports it")
     x.add_argument("path"); x.add_argument("--no-calls", action="store_true"); x.add_argument("--json", action="store_true")
+    x.add_argument("--used-by", type=int, nargs="?", const=15, default=0, metavar="N",
+                   help="also rank the file's symbols by how many other files use them (top N, default 15)")
+    x.add_argument("--no-tests", action="store_true", help="with --used-by: ignore usage from test files")
+    x.add_argument("--within", action="append", metavar="DIR_OR_GLOB",
+                   help="with --used-by: count only users in this directory or glob (repeatable)")
     x.set_defaults(qfn=q_file)
     x = qs.add_parser("path", help="shortest dependency path from one symbol/file to another")
     x.add_argument("src"); x.add_argument("dst"); x.add_argument("--json", action="store_true")
@@ -6505,7 +6897,14 @@ def main(argv=None):
         except sqlite3.Error as e:
             sys.exit(f"{a.graph} is not a readable graph ({e}). Rebuild it: astgraph.py build --root <repo>")
         g.graph_path = a.graph
-        a.qfn(g, a)
+        try:
+            a.qfn(g, a)
+            sys.stdout.flush()
+        except BrokenPipeError:
+            # `query ... | head` is how agents read long output; a closed pipe is the reader being
+            # done, not an error worth a stderr message in their context.
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+            sys.exit(0)
     q.set_defaults(fn=run_query)
 
     args = ap.parse_args(argv)

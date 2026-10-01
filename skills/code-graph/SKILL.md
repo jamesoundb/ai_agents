@@ -27,10 +27,15 @@ it writes into the repo is the graph under `.ast-graph/`).
 1. **Build or refresh the graph** from the repo root. Always do this first; nothing watches the
    filesystem. In a git checkout an unchanged working tree returns in well under a second (the
    graph carries a git stamp in `<graph>.stamp`); otherwise only changed files are re-parsed
-   (by content hash) but every file is re-linked, so the cost scales with the whole repo, not
-   with your edit. Measured on TensorFlow (20,805 indexed files, 443k symbols, 1.43M edges,
-   C/C++ and Python): a cold build takes ~11 minutes and ~3.2 GB RSS and writes a 1.7 GB
-   `graph.db`. **Querying it is cheap**: targeted commands (`symbol`, `callers`, `callees`,
+   (by content hash), and only the files whose call resolution the edit can affect are
+   re-linked (the build line says how many). Parsing runs on every CPU (`--jobs N` or
+   `ASTGRAPH_JOBS` to limit it). Measured on TensorFlow (20,780 indexed files, 445k symbols,
+   1.35M edges, C/C++ and Python, 8 CPUs): a cold build takes ~100s and ~3.7 GB RSS and writes a
+   1.9 GB `graph.db`; after a body-only or leaf-file edit a rebuild takes ~30s (1-3 files
+   re-linked; the rest is loading the cache and writing the database), after an edit that moves
+   definitions in a hub file like `ops.py` ~55s (~3,400 re-linked), ~4.5 GB. On a repo
+   that size give the first build a long command timeout (10 minutes) and wait for it rather
+   than falling back to grep. **Querying it is cheap**: targeted commands (`symbol`, `callers`, `callees`,
    `trace-deps`, `file`, `find`, `path`, `stats`) each return in 0.2-0.4s using ~50 MB, because
    they read through SQLite indexes instead of loading the graph. `overview` is the one command
    that weighs the whole graph (~3s/265 MB; ~5.5s/500 MB with `--no-tests`). Use `--include` if
@@ -76,6 +81,8 @@ it writes into the repo is the graph under `.ast-graph/`).
    scripts/run.sh query callees DataService.convert_to_entity
    scripts/run.sh query path PaymentOrchestratorTest PaymentGatewayClient
    scripts/run.sh query file src/app/service.py     # skeleton + importers (--json for nodes/refs)
+   scripts/run.sh query file src/app/service.py --no-calls --used-by --no-tests   # + its symbols ranked by outside users
+   scripts/run.sh query file src/app/service.py --no-calls --used-by --within src/api   # ... counting only users under src/api
    scripts/run.sh query trace-deps DataDTO           # blast radius (see blast-radius skill)
    scripts/run.sh query trace-deps ReplaceVars --summary     # hub target: directories + top dependents, no per-edge rows
    scripts/run.sh query trace-deps ReplaceVars --files-only  # just the affected files by hop
@@ -174,73 +181,13 @@ name anywhere), `ambiguous` (several candidates, all recorded, or a call on a re
 is unknown). Treat `ambiguous` edges as leads, not facts; `trace-deps` and `overview` exclude
 them unless `--include-ambiguous` is passed.
 
-The linker is receiver-aware and import-aware:
-
-- Imports bind local names to files: `from pkg import mod` binds `mod` to `pkg/mod.py`,
-  `import pandas as pd` binds `pd` to `pandas/__init__.py`, and re-exports are followed up to
-  three levels (`pd.DataFrame` reaches `pandas/core/frame.py`; `test.TestCase` reaches the class
-  it aliases). A qualified call (`ops.convert_to_tensor(...)`) resolves only inside the bound
-  files, with `import` confidence, never to a same-named function elsewhere.
-- `x.f()` is resolved only when the linker knows what `x` is (a declared or inferred type, a
-  field type, `self`/`this`, an import binding, or the return type of a call: `r = make()`,
-  `let s = build()?`, `var g = getGateway()`, `getStyle().getNullText()`, `self.repo().save()`
-  are all typed from the callee's declared return type, unwrapping `Result`/`Option`/`Promise`
-  where the code does). A field typed by a generic parameter resolves through the parameter's
-  bound (`sink: S` with `S: Sink` reaches `Sink.matched`), and an unbounded one yields no edge. Members are matched by the resolved type
-  node and its resolved ancestors, so two classes named `TestCase` are never confused. If `x`
-  belongs to an external package or is a builtin (`error`, `string`, `List`), the call is left
-  unresolved. A call on a value of unknown type yields a `same_file` edge at most, otherwise up
-  to three `ambiguous` leads in the same language; more candidates than that is noise, not a lead.
-- An unqualified call (`f()`) resolves through a from-import binding, then the same file, then the
-  same Go/Java/Kotlin package, then wildcard imports. It never targets a method (except the
-  implicit `this` of Java and Kotlin), never a language builtin (`len`, `type`, `map`, `require`,
-  `make`), and is never guessed by name alone.
-- Base classes and signature types carry their qualifier: `collections_abc.Iterable` is external,
-  `data_types.DatasetV2` resolves inside the bound module, fully-qualified names
-  (`org.apache.commons.lang3.builder.Builder<T>`, `pkg.sub.Class`) resolve through the package,
-  a class's own nested members are never candidates for its `extends`/`implements` clause, and a
-  bare type name that is neither imported nor in scope produces no edge.
-- Re-exports are followed everywhere they occur: Python `from x import y` in `__init__.py`,
-  JS/TS `export { a as b } from` / `export * from` barrels, Rust `pub use` (grouped paths
-  expanded).
-- Python: `Optional["X"]`, `X | None`, `Union[X, None]`, `Final[X]` and string annotations all
-  mean `X`; an `Enum` member (`Status.PAID`) has the enum's type; `x = flask.Blueprint(...)` keeps
-  its module qualifier; `from a import B as C` resolves `class D(C)` to `B`; `*args`/`**kwargs` are
-  builtin containers (their `.pop()`/`.add()` never lead to repo methods); in a test file an
-  untyped parameter that names a `@pytest.fixture` function with a return annotation (same file,
-  then `conftest.py` up the tree) is typed from it, so `def test_x(app): app.route(...)` links.
-  Loop and comprehension variables are typed from the iterable (`for it in self.items` with
-  `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
-  (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields
-  `V`, `with X() as x` types `x` as `X`, `self.x = ...` inside an `if`/`try` of `__init__` is still
-  a field, `super().m()` resolves on the class's parents, `@property`/`@cached_property` segments
-  type a chain (`item.heavy.area()`), and literal receivers (`", ".join(..)`, `{...}.get(..)`) or
-  builtin-typed values (`dict`, `list`, `str` ...) never lead into repo methods.
-- Kotlin: inside `fun T.f()` the receiver `this` (and `this@f`) is `T`; a top-level
-  `val currentDialect: Dialect` is a typed variable node, so `currentDialect.functionProvider.f()`
-  resolves through the property chain from any file that imports it (explicitly or by wildcard)
-  or shares its package. Lambdas: the implicit receiver of `x.apply { }` / `x.run { }` and of a
-  DSL builder `order(id) { add(..) }` (a function whose parameter is `T.() -> R`) is that type;
-  `it` in `x.also { }` / `x.let { }` is `x`, and in `xs.forEach { }` / `map` / `filter` / `sumOf`
-  / `first` ... on a `List<T>`/`Set<T>`/`Sequence<T>` (declared or `mutableListOf<T>()`) it is `T`.
-  Builder setters `fun x(v) = apply { }` return the receiver; `a + b` / `*` / `-` / `/` / `%` on
-  a repo-typed left operand are calls of `plus`/`times`/...; `val r = x as T` and `x ?: return`
-  type the local; enum entries are fields typed as the enum; `chain: Interceptor.Chain` (nested
-  type of an imported class) and `: Interceptor.Chain` supertypes resolve; an inner class calls
-  outer members; multi-line builder chains (`Request\n  .Builder()\n  .url(u)`) are one chain.
-  Smart casts type the variable inside `if (e is T)` (also `&&`-joined) and `when (e) { is T -> }`
-  branches; `val x by lazy { X() }` types `x`; `Topic::slug` callable references are calls;
-  `useCase()` on a parameter or property whose type declares `operator fun invoke` resolves to
-  it; a `fun interface` constructor call `Listener { }` links the interface; plain (non-`val`)
-  constructor parameters are in scope for property initialisers; data-class `copy(..)` and enum
-  `valueOf(..)` keep the receiver's type without inventing a member edge; `@Composable` (any
-  annotation) on a function type is blanked before parsing because the grammar rejects it, so
-  Compose components are indexed.
-- Terraform: references are resolved within a directory (root module or one module), `module.x.y`
-  reaches `output.y` in the called module's directory, and a registry source whose `//subdir`
-  exists in the repo (`ns/name/google//modules/x` with a local `modules/x`) gets an `ambiguous`
-  lead to that directory next to the `external` edge, so `trace-deps modules/x
-  --include-ambiguous` finds the examples that exercise it.
+How resolution works, in one paragraph: imports bind names to files and re-exports are followed
+three levels; `x.f()` resolves only when the type of `x` is known (declared, inferred, field,
+`self`/`this`, import binding or a callee's return type) and is matched by the resolved type and
+its ancestors; a call on an unknown receiver gets a `same_file` edge at most, else up to three
+`ambiguous` leads; an unqualified `f()` goes from-import, same file, same package, wildcard import,
+and is never a builtin or guessed by name alone. Per-language details (Python typing, Kotlin
+lambdas and smart casts, Terraform module paths): `reference/linker.md`.
 
 Anything the graph could not resolve appears under "Unresolved" in a symbol card and is usually
 an external library, a builtin, or generated/unindexed code.
@@ -249,11 +196,18 @@ an external library, a builtin, or generated/unindexed code.
 
 - Never `cat` a whole file to find out what is in it. Use `query file` or the `code-skeleton`
   skill, then read the specific range.
+- "What is in this file and what matters to the rest of the repo" is one call: `query file PATH
+  --no-calls --used-by` ranks its symbols by how many other files use them (`--within DIR` or a
+  glob for one part of the repo, `--no-tests` to ignore tests). Do not script a `callers` query
+  per symbol.
 - Refresh the graph after editing files (`build` again) before answering questions about them.
+- Call `scripts/run.sh` by its full path, one command per call -- not through a shell variable
+  (`S=.../run.sh; $S query ...`) or chained after other commands. Permission rules match the
+  literal command, so the indirect forms ask for approval (or are denied in headless runs).
 - Quote graph output (file:line, edge type, confidence) as evidence in your answer.
 - If a symbol is missing, check `query stats` for the file count and language mix; the file may be
   excluded (see `DEFAULT_EXCLUDE_DIRS` in the script) or in an unsupported language.
 - Graph file `.ast-graph/` is a build artifact: add it to `.gitignore`.
 
-Schema and per-language coverage: `reference/graph-schema.md` and
-`reference/languages.md`.
+Schema, per-language coverage and linker rules: `reference/graph-schema.md`,
+`reference/languages.md` and `reference/linker.md`.

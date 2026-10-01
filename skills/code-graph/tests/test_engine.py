@@ -6,7 +6,10 @@ unknown receivers, typed edges through fields/locals/inheritance, namespace call
 packages), test-file detection, Terraform/Kubernetes edges, incremental == full, and the git
 stamp fast path. Run via run_tests.sh (needs tree-sitter). Exit code 1 on any failure.
 """
+import contextlib
+import io
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -771,6 +774,57 @@ def test_determinism(root):
     check(outs[0][0] == outs[1][0] and outs[0][1] == outs[1][1], f"graph identical under PYTHONHASHSEED=1 and =2 (edge diff {len(outs[0][1] ^ outs[1][1])})")
 
 
+def test_parallel_parse(root):
+    print("# parallel parse == serial parse, and the serial fallback")
+    import multiprocessing
+
+    def snapshot(out):
+        st = astgraph.Store(out)
+        try:
+            return (sorted(json.dumps(n, sort_keys=True) for n in st.iter_nodes()),
+                    sorted(json.dumps(e, sort_keys=True) for e in st.iter_edges()))
+        finally:
+            st.close()
+
+    saved_min, saved_ctx = astgraph.PARALLEL_MIN_FILES, multiprocessing.get_context
+    astgraph.PARALLEL_MIN_FILES = 1   # the fixture is far below the real threshold; force the pool
+    try:
+        outs = {}
+        for jobs in (1, 4):
+            outs[jobs] = os.path.join(root, f"jobs{jobs}.db")
+            astgraph.build_graph(root, outs[jobs], [], [], full=True, quiet=True, jobs=jobs)
+        serial = snapshot(outs[1])
+        check(serial == snapshot(outs[4]), f"--jobs 4 graph identical to --jobs 1 ({len(serial[0])} nodes, {len(serial[1])} edges)")
+
+        def no_pool(*a, **k):   # what a sandbox without a writable /dev/shm does to Pool()
+            raise OSError("[Errno 38] Function not implemented")
+        multiprocessing.get_context = no_pool
+        fb = os.path.join(root, "fallback.db")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            astgraph.build_graph(root, fb, [], [], full=True, quiet=True, jobs=4)
+        check(snapshot(fb) == serial, "pool start failure falls back to a serial parse with the same graph")
+        check("parsing serially" in err.getvalue(), "fallback is reported on stderr")
+    finally:
+        astgraph.PARALLEL_MIN_FILES, multiprocessing.get_context = saved_min, saved_ctx
+
+
+def test_file_used_by(root):
+    print("# query file --used-by")
+    build(root)
+    out = run("query", "--root", root, "file", "python/app/models.py", "--no-calls", "--used-by")
+    # User <- nested.py (2 refs), service.py (1), tests/test_service.py (1); same-file uses never count
+    check("3 files      4 refs  class User" in out, "--used-by counts distinct other files and refs (User: 3 files, 4 refs)")
+    out = run("query", "--root", root, "file", "python/app/models.py", "--no-calls", "--used-by", "--no-tests")
+    check("2 files      3 refs  class User" in out and "non-test files" in out, "--no-tests drops usage from test files")
+    out = run("query", "--root", root, "file", "python/app/models.py", "--no-calls", "--used-by", "--within", "python/tests")
+    check("1 files      1 refs  class User" in out and "under python/tests" in out, "--within DIR counts only users under DIR")
+    out = run("query", "--root", root, "file", "python/app/models.py", "--no-calls", "--used-by", "--within", "python/app/n*.py")
+    check("1 files      2 refs  class User" in out, "--within GLOB counts only matching files (nested.py: 2 refs)")
+    j = json.loads(run("query", "--root", root, "file", "python/app/models.py", "--json", "--used-by", "1"))
+    check(j.get("used_by") == [{"id": "python/app/models.py::User@1", "files": 3, "refs": 4}], f"--json --used-by 1: {j.get('used_by')}")
+
+
 def test_incremental(root):
     print("# incremental == full")
     build(root, "--full")
@@ -787,6 +841,60 @@ def test_incremental(root):
     ef = {(e["src"], e["dst"], e["type"], e.get("line")) for e in full["edges"]}
     check(ni == nf and ei == ef, f"incremental graph identical to full (nodes {len(ni)}/{len(nf)}, edges {len(ei)}/{len(ef)})")
     check(any(n["qname"] == "Extra" for n in inc["nodes"]), "edited file's new symbol present")
+
+
+def test_incremental_relink(tmp):
+    print("# incremental linking: only affected files re-linked, same graph as --full")
+    root = os.path.join(tmp, "relink")
+    os.makedirs(root)
+    srcs = {
+        "r1.py": "class R1:\n    def ping(self):\n        return 1\n",
+        "r2.py": "class R2:\n    def ping(self):\n        return 2\n",
+        "base.py": "from r1 import R1\nfrom r2 import R2\n\n\nclass Base(R1):\n    pass\n",
+        "sub.py": "from base import Base\n\n\nclass Sub(Base):\n    pass\n",
+        # use.py never names Base, R1 or R2: only the recorded inheritance lookup ties it to base.py
+        "use.py": "from sub import Sub\n\n\ndef go():\n    s = Sub()\n    return s.ping()\n",
+        "other.py": "def helper():\n    return 3\n\n\ndef caller():\n    return helper()\n",
+        "kernel.h": "class K {\n public:\n  void Compute();\n};\n",
+        "kernel.cc": "#include \"kernel.h\"\nvoid K::Compute() {}\n",
+    }
+    for name, body in srcs.items():
+        with open(os.path.join(root, name), "w") as f:
+            f.write(body)
+
+    def edges(db):
+        st = astgraph.Store(db)
+        try:
+            return sorted(json.dumps(e, sort_keys=True) for e in st.iter_edges()), \
+                   sorted(json.dumps(n, sort_keys=True) for n in st.iter_nodes())
+        finally:
+            st.close()
+    build(root, "--full")
+    with open(os.path.join(root, "base.py"), "w") as f:
+        f.write(srcs["base.py"].replace("class Base(R1)", "class Base(R2)"))
+    out = build(root)
+    m = re.search(r"(\d+) re-linked", out)
+    check(m and 0 < int(m.group(1)) < len(srcs), f"one edit re-links a subset of files ({m.group(0) if m else out.strip()})")
+    inc = edges(os.path.join(root, ".ast-graph", "graph.db"))
+    full_db = os.path.join(root, "full.db")
+    build(root, "--full", "--out", full_db)
+    check(inc == edges(full_db), "incremental graph (edges and nodes) identical to --full after a base-class change")
+    check(any('"dst": "r2.py::R2.ping@2"' in e and '"src": "use.py::go@4"' in e for e in inc[0]),
+          "caller two inheritance hops from the edit now reaches R2.ping")
+    # a body-only edit (no definition, signature or line moves) re-links the edited file alone
+    with open(os.path.join(root, "other.py"), "w") as f:
+        f.write(srcs["other.py"].replace("return 3", "return 4"))
+    out = build(root)
+    check("(1 parsed" in out and "1 re-linked" in out, f"body-only edit re-links only that file ({out.strip()[:120]})")
+    # a renamed C++ definition must not leave its header declaration marked as defined
+    with open(os.path.join(root, "kernel.cc"), "w") as f:
+        f.write(srcs["kernel.cc"].replace("K::Compute", "K::Run"))
+    build(root)
+    inc = edges(os.path.join(root, ".ast-graph", "graph.db"))
+    decl = [n for n in inc[1] if '"id": "kernel.h::K.Compute@3"' in n]
+    check(decl and "defined_at" not in decl[0], "header declaration loses its pairing mark when the definition is renamed")
+    build(root, "--full", "--out", full_db)
+    check(inc == edges(full_db), "incremental graph identical to --full after the C++ rename")
 
 
 def test_fast_path(root):
@@ -858,7 +966,10 @@ def main():
         test_cross_language_bridge(root)
         test_literal_receivers(root)
         test_output_budget(tmp)
+        test_parallel_parse(root)
+        test_file_used_by(root)
         test_incremental(root)
+        test_incremental_relink(tmp)
         # fresh copy for the git test
         root2 = os.path.join(tmp, "fixture-git")
         shutil.copytree(FIXTURE, root2)

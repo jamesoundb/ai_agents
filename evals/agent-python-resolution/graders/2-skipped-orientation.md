@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: 'run\.sh\s+query\s+overview'
+input_match: 'run\.sh[\s\S]*\bquery\b[\s\S]*\boverview\b'
 min: 0
 max: 0
 ---

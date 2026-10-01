@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: 'run\.sh\s+(skeleton|query)'
+input_match: 'run\.sh[\s\S]*\b(skeleton|query)\b'
 min: 1
 ---
 The question must be answered through the engine rather than by reading the file.

@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: 'run\.sh\s+skeleton'
+input_match: 'run\.sh[\s\S]*\bskeleton\b'
 min: 1
 ---
 The skill's whole point is to index before reading. Graded on the Bash call to the

@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: 'run\.sh\s+query\s+callers'
+input_match: 'run\.sh[\s\S]*\bquery\b[\s\S]*\bcallers\b'
 min: 1
 ---
 Same assertion as `agent-direct-lookup`, on Kotlin instead of Python. The engine's Kotlin

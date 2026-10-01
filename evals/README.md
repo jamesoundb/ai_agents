@@ -28,6 +28,7 @@ was described as testing the agents while none of the five personas was ever loa
 | `skeleton-small-file-guard` | Does a two-line file get *read*, rather than triggering the whole toolchain? |
 | `blast-radius-impact` | Does an impact question traverse the graph, reach the transitive dependent, and cite `file:line`? |
 | `code-graph-callers` | Does "who calls X" go through the graph rather than grep? |
+| `file-used-by-scoped` | "What in this file does `app/` rely on most": one `query file --used-by --within` call, or a `callers` loop per symbol? The fixture's repo-wide and `app/` rankings disagree, so an unscoped count gives the wrong order. |
 
 `skeleton-elision-recovery` is the load-bearing one. The output-budget contract added
 in 2026-09 only pays off if a model acts on the recovery notice. If that case fails
@@ -212,6 +213,11 @@ Targets: `last_message`, `trace`, `files`, `mock_calls`, or `{source: file, path
 and never flake. Reserve `llm` for genuine judgment calls, and write its `criteria`
 with explicit PASS and FAIL conditions — vague criteria are the main source of judge
 noise.
+
+**Match engine calls loosely: `run\.sh[\s\S]*\bquery\b[\s\S]*\bcallers\b`, not
+`run\.sh\s+query\s+callers`.** Models routinely write `S=.../run.sh; $S query callers X` and
+`run.sh query --root DIR callers X`. Checked against 21 recorded `callers` calls on TensorFlow
+(2026-10-01), the strict form missed 10 — and on a `max: 0` grader a miss is a false pass.
 
 ### One discipline that is not optional
 

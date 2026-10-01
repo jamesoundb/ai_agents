@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "Rank a file's symbols by their users in one part of the repo"
+context:
+  scaffold_script: "../scaffold/prepare.sh"
+  add_dirs: ["../fixtures/py-hub/"]

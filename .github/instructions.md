@@ -208,9 +208,26 @@ different one rather than adding vendor-neutral fallbacks.
   and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo
   with a pre-existing AGENTS.md and .github/.
 - Cost model: parsing is hash-incremental (cached parses are discarded when `astgraph.py`
-  changes); linking is always full but linear. A git-unchanged tree returns in ~0.1s.
-  Measured on TensorFlow (20,805 indexed files, 443k nodes, 1.43M edges, C/C++ + Python):
-  cold build ~11 min at 3.2 GB RSS, producing a 1.7 GB `graph.db`. **Build is now the expensive
+  changes) and runs in a process pool over all CPUs (`--jobs`/`ASTGRAPH_JOBS`; serial fallback
+  when a pool cannot start, e.g. a sandbox without a writable /dev/shm; results are consumed in
+  walk order so the graph is identical to a serial build). Linking is single-threaded and
+  incremental for calls: passes 1/2a and every index are rebuilt in full (~6s on TensorFlow),
+  but pass 2b replays a file's call edges from its `links` record in the parse cache unless its
+  recorded dependencies (names looked up, files whose import bindings it followed, inheritance
+  lists it read) meet what changed -- `interface_delta()` reduces an edit to the names whose
+  definitions (or members) differ, so a body-only edit re-links one file. Verified by
+  randomized incremental-vs-full trials (scratch harness, 420 trials over 12 repos on this engine, 0
+  differences) and `test_incremental_relink`. Any new lookup inside resolution must record its
+  dependency (`_dn`/`_db`/`_parents`, or a footprinted `_memo`), or incremental builds go stale.
+  A git-unchanged tree returns in ~0.1s.
+  Measured on TensorFlow (20,780 indexed files, 445k nodes, 1.35M edges, C/C++ + Python, 8 CPUs):
+  cold build ~100s at 3.7 GB RSS (link ~45s incl. dependency recording, write ~12s), producing a
+  1.9 GB `graph.db`; a body-only/leaf edit rebuilds in ~30s (load cache 9s, link 8s, write 12s),
+  an edit moving definitions in `ops.py` in ~55s (~3,400 files re-linked), at ~4.5 GB. It was
+  11-13 min (775s measured) before 2026-10-01: the linker re-scanned every same-named definition per call
+  (`candidates`, `lead_pick`, `owner_ids`), which is superlinear when thousands of C++ methods
+  share a name. Those lookups are memoized/indexed now; keep it that way -- any new per-call scan
+  over `by_name` or `by_file` inside link_graph will bring it back. **Build is the expensive
   half; querying is not.** Targeted queries (`symbol`, `callers`, `callees`, `trace-deps`,
   `file`, `find`, `path`, `stats`) each cost 0.2-0.4s and ~50 MB because they go through SQLite
   indexes; `overview` weighs the whole graph at ~3s/265 MB (~5.5s/500 MB with `--no-tests`).

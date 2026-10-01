@@ -27,7 +27,7 @@ Worth reading once, because the value is in the mechanism rather than the phrasi
 asks *"who calls `Ledger.post`?"* in a Python package. The agent runs four commands:
 
 ```
-run.sh build --root .                    # parse changed files, re-link the graph
+run.sh build --root .                    # parse changed files, re-link what they affect
 run.sh query callers Ledger.post         # the answer
 run.sh query symbol Ledger.post          # confirm the symbol it resolved
                                          # then open only the lines it is about to cite
@@ -87,7 +87,7 @@ those into `~/.cache/astgraph/venv` on first use and stops with a clear message 
 interpreter; override with `ASTGRAPH_PYTHON` (also used as the base for the venv) or
 `ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.db` plus a `graph.db.stamp` sidecar
 (gitignore both). A build is skipped outright when the git working tree is unchanged; otherwise
-files are re-parsed by content hash and the whole graph is re-linked.
+files are re-parsed by content hash and only the files an edit can affect are re-linked.
 
 ### Storage: why the graph is a database
 
@@ -109,9 +109,11 @@ Measured on TensorFlow, same output both sides:
 | `stats` | 12.8s / 5.3 GB | 4.74s / 992 MB |
 
 The queries a developer actually runs are ~100x leaner. `stats` and `overview` genuinely read the
-whole graph, so they improved but stay slow, and **build got slower** (~11 min and 3.2 GB on
-TensorFlow) because writing rows costs more than dumping a dict — the right trade when you build
-once and query all day. `meta` stores `GRAPH_VERSION` and a hash of `astgraph.py`, so a graph
+whole graph, so they improved but stay slow. A cold TensorFlow build took 11-13 min and 3.2 GB
+until 2026-10-01; the linker had per-call scans over every same-named definition (thousands of
+`Compute`/`Run` methods in TensorFlow's C++), so link time grew superlinearly. With those memoized
+and parsing spread over all CPUs it takes ~100s (8 CPUs, 3.7 GB RSS; ~30s after a body-only or leaf-file edit, since only affected files are re-linked), producing a byte-for-byte
+identical graph. `meta` stores `GRAPH_VERSION` and a hash of `astgraph.py`, so a graph
 written by an older engine is rebuilt rather than misread; the previous JSON format is treated as
 absent.
 Regression tests: `skills/code-graph/tests/run_tests.sh` (fixture in `tests/fixture/`).
