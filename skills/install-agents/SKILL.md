@@ -58,6 +58,11 @@ Always pass `--scope` explicitly: `install.sh` on its own defaults to project sc
 the repository's `install.sh`, so it works whether the skill is symlinked or opened in place.
 Add `--uninstall` to remove what a previous run installed. Re-running is idempotent.
 
+To **update** after `git pull`, run `scripts/install.sh --update` with no other options. It
+finds every install this clone made in the home directory and re-runs each with its own
+options. Add `--target DIR` for a project install. If it prints `keep ... no installer marker`,
+tell the developer; add `--force` only if they confirm those files came from an older install.
+
 ## 3. Verify (mandatory)
 
 - List what was created and confirm each path exists (the installer prints every path it wrote):

@@ -7,9 +7,11 @@
 #   ./install.sh --harness antigravity --copy        # copy instead of symlink (Windows, CI images)
 #   ./install.sh --harness antigravity --uninstall
 #   ./install.sh --harness antigravity,claude --scope user --plugin   # as one plugin per harness
+#   git pull && ./install.sh --update                 # refresh every install this clone made
 #
 # Options:
-#   --harness LIST   claude, codex, gemini, antigravity, copilot (comma list) or all   (required)
+#   --harness LIST   claude, codex, gemini, antigravity, copilot (comma list) or all
+#                    (required, except with --update)
 #   --scope S        project (default: files in --target) or user (your home directory)
 #   --target DIR     project to install into (default: current directory; must already exist)
 #   --plugin         install one plugin bundle per harness (layouts below) instead of loose
@@ -21,6 +23,10 @@
 #   --copy           copy files instead of symlinking them into this clone
 #   --agents LIST    install only these agents (comma list)
 #   --skills LIST    install only these skills (comma list)
+#   --update         refresh what this clone already installed, keeping each install's options
+#                    (harness, plugin or loose, copy or symlink, agent/skill lists,
+#                    --agents-as-skills). User scope by default; --target DIR (or --scope
+#                    project) updates that project instead; --harness narrows it.
 #   --uninstall      remove what an install with the same options added
 #   --force          overwrite (or remove) paths this installer did not create
 #   -h, --help       show this help
@@ -48,7 +54,7 @@ SKILLS_SRC="$REPO/skills"
 AGENTS_SRC="$REPO/agents"
 RENDER="$REPO/tools/render.py"
 
-HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0
+HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0; UPDATE=0; SCOPE_SET=0; TARGET_SET=0
 
 # Print the comment header (line 2 up to the first line that is not a comment) as the help text.
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
@@ -56,9 +62,10 @@ usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' 
 while [ $# -gt 0 ]; do
   case "$1" in
     --harness) HARNESSES="$2"; shift 2 ;;
-    --scope) SCOPE="$2"; shift 2 ;;
+    --scope) SCOPE="$2"; SCOPE_SET=1; shift 2 ;;
     --target) [ -d "$2" ] || { echo "--target: directory not found: $2 (create it first)" >&2; exit 1; }
-              TARGET="$(cd "$2" && pwd)"; shift 2 ;;
+              TARGET="$(cd "$2" && pwd)"; TARGET_SET=1; shift 2 ;;
+    --update) UPDATE=1; shift ;;
     --copy) MODE="copy"; shift ;;
     --plugin) PLUGIN=1; shift ;;
     --agents-as-skills) AGENT_SKILLS=1; shift ;;
@@ -70,6 +77,16 @@ while [ $# -gt 0 ]; do
     *) echo "unknown option: $1" >&2; usage 1 ;;
   esac
 done
+if [ "$UPDATE" = 1 ]; then
+  # Everything else is read back from what is installed; an option here would contradict it.
+  if [ "$UNINSTALL" = 1 ] || [ "$PLUGIN" = 1 ] || [ "$MODE" = copy ] || [ "$AGENT_SKILLS" = 1 ] \
+     || [ -n "$ONLY_AGENTS" ] || [ -n "$ONLY_SKILLS" ]; then
+    echo "--update takes only --harness, --scope, --target and --force; the rest is read from what is installed" >&2; exit 1
+  fi
+  [ -n "$HARNESSES" ] || HARNESSES="all"
+  # a global update unless a project was named
+  [ "$SCOPE_SET" = 1 ] || { [ "$TARGET_SET" = 1 ] && SCOPE=project || SCOPE=user; }
+fi
 [ -n "$HARNESSES" ] || { echo "--harness is required (claude, codex, gemini, antigravity, copilot, all)" >&2; exit 1; }
 case "$SCOPE" in
   project|user) ;;
@@ -153,7 +170,8 @@ guard_skill() {  # stop before replacing a skill path we did not create
 guard_agent() {  # <renderer> <agent> <file> [prefix]
   { [ -e "$3" ] || [ -L "$3" ]; } || return 0
   ours_agent "$1" "$2" "$3" ${4:+"$4"} && return 0
-  [ "$FORCE" = 1 ] && { log "force  replacing $3 (not installed by this tool)"; return 0; }
+  # --update --force: only the exact unmarked agent files detection named (TAKEOVER_FILES)
+  { [ "$FORCE" = 1 ] || case " ${TAKEOVER_FILES:-} " in *" $3 "*) true ;; *) false ;; esac; } && { log "force  replacing $3 (not installed by this tool)"; return 0; }
   refuse "$3"
 }
 DRY=0   # 1 = check destinations only, write nothing (pre-flight pass)
@@ -384,6 +402,36 @@ remove_plugin() {  # remove_plugin <harness>: only a folder carrying our marker 
   else remove_empty_dirs "$(dirname "$(dirname "$PD")")"; fi
 }
 
+loose_layout() {  # loose_layout <harness>: sets SK (skills dir), AG (agents dir; empty when the
+  # harness has no agent files) and PREFIX (Antigravity's `skills:` path prefix) for $SCOPE
+  AG=""; PREFIX=""
+  case "$1" in
+    claude)
+      if [ "$SCOPE" = user ]; then SK="$HOME/.claude/skills"; AG="$HOME/.claude/agents"; else SK="$TARGET/.claude/skills"; AG="$TARGET/.claude/agents"; fi ;;
+    codex)
+      if [ "$SCOPE" = user ]; then SK="$HOME/.agents/skills"; else SK="$TARGET/.agents/skills"; fi ;;
+    antigravity)
+      # Native custom agents: .agents/agents/<a>/agent.md; `skills:` entries are paths to the
+      # installed skill folders (workspace-relative for project scope, absolute for user scope).
+      if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/config/skills"; AG="$HOME/.gemini/config/agents"; PREFIX="$SK"
+      else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi ;;
+    gemini)
+      if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi ;;
+    copilot)
+      if [ "$SCOPE" = user ]; then SK="$HOME/.copilot/skills"; AG="$HOME/.copilot/agents"; else SK="$TARGET/.github/skills"; AG="$TARGET/.github/agents"; fi ;;
+    *) echo "unknown harness: $1" >&2; exit 1 ;;
+  esac
+}
+
+agent_file() {  # agent_file <harness> <agent>: where a loose install keeps that agent (after loose_layout)
+  case "$1" in
+    claude) printf '%s\n' "$AG/$2.md" ;;
+    copilot) printf '%s\n' "$AG/$2.agent.md" ;;
+    antigravity) printf '%s\n' "$AG/$2/agent.md" ;;
+    codex|gemini) printf '%s\n' "$SK/$2/SKILL.md" ;;   # persona skill
+  esac
+}
+
 run_harnesses() {
   for h in ${HARNESSES//,/ }; do
     echo "[$h] scope=$SCOPE target=$TARGET$( [ "$PLUGIN" = 1 ] && echo ' (plugin)')"
@@ -401,7 +449,7 @@ run_harnesses() {
     fi
     case "$h" in
       claude)
-        if [ "$SCOPE" = user ]; then SK="$HOME/.claude/skills"; AG="$HOME/.claude/agents"; else SK="$TARGET/.claude/skills"; AG="$TARGET/.claude/agents"; fi
+        loose_layout claude
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent claude "$a" "$AG/$a.md"; done
           [ "$SCOPE" = project ] && remove_import "$TARGET/CLAUDE.md" "@AGENTS.md"
@@ -412,7 +460,7 @@ run_harnesses() {
           [ "$SCOPE" = project ] && ensure_import "$TARGET/CLAUDE.md" "@AGENTS.md"
         fi ;;
       codex)
-        if [ "$SCOPE" = user ]; then SK="$HOME/.agents/skills"; else SK="$TARGET/.agents/skills"; fi
+        loose_layout codex
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true; done
           remove_empty_dirs ${AG:+"$AG"} "$SK" "$(dirname "$SK")"
@@ -421,10 +469,7 @@ run_harnesses() {
           for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
         fi ;;
       antigravity)
-        # Native custom agents: .agents/agents/<a>/agent.md; `skills:` entries are paths to the
-        # installed skill folders (workspace-relative for project scope, absolute for user scope).
-        if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/config/skills"; AG="$HOME/.gemini/config/agents"; PREFIX="$SK"
-        else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi
+        loose_layout antigravity
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent antigravity "$a" "$AG/$a" "$PREFIX"; done
           # agents installed as skills (--agents-as-skills): removed whether or not the flag is
@@ -445,7 +490,7 @@ run_harnesses() {
           fi
         fi ;;
       gemini)
-        if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi
+        loose_layout gemini
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true; done
           [ "$SCOPE" = project ] && remove_import "$TARGET/GEMINI.md" "@AGENTS.md"
@@ -456,7 +501,7 @@ run_harnesses() {
           [ "$SCOPE" = project ] && ensure_import "$TARGET/GEMINI.md" "@AGENTS.md"
         fi ;;
       copilot)
-        if [ "$SCOPE" = user ]; then SK="$HOME/.copilot/skills"; AG="$HOME/.copilot/agents"; else SK="$TARGET/.github/skills"; AG="$TARGET/.github/agents"; fi
+        loose_layout copilot
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent copilot "$a" "$AG/$a.agent.md"; done
           remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
@@ -469,6 +514,149 @@ run_harnesses() {
   done
   return 0   # the last branch may end on a false test (e.g. [ "$SCOPE" = project ]); that is not a failure
 }
+
+# ---------------------------------------------------------------------------------------------
+# --update: find what this clone installed and re-run each install with the same options. Like
+# ownership, this is read from the files (links into this clone, our markers); nothing is stored.
+ALL_AGENTS="$(for d in "$AGENTS_SRC"/*/; do basename "$d"; done | tr "\n" " ")"
+ALL_SKILLS="$(for d in "$SKILLS_SRC"/*/; do basename "$d"; done | tr "\n" " ")"
+
+ours_here() {  # a skill entry this clone installed: a symlink into it, or a copy it marked
+  symlink_into_repo "$1" && return 0
+  marked_dir "$1" && [ "$(cat "$1/$MARKER_FILE" 2>/dev/null)" = "$REPO" ]
+}
+
+# shellcheck disable=SC2034  # D_PLUGIN/D_MODE/D_AS are read through eval in the --update driver
+detect_install() {  # detect_install <harness>: sets D_PLUGIN D_MODE D_AGENTS D_SKILLS D_AS D_OTHER
+  local h="$1" s a f
+  D_PLUGIN=0; D_MODE="link"; D_AGENTS=""; D_SKILLS=""; D_AS=0; D_OTHER=""; D_UNMARKED=""
+  if ! { [ "$h" = gemini ] && [ "$SCOPE" = project ]; }; then
+    plugin_layout "$h"
+    if marked_dir "$PD"; then
+      if [ "$(cat "$PD/$MARKER_FILE")" != "$REPO" ]; then D_OTHER="$(cat "$PD/$MARKER_FILE")"; return 0; fi
+      D_PLUGIN=1
+      for s in $ALL_SKILLS; do
+        { [ -e "$PD/skills/$s" ] || [ -L "$PD/skills/$s" ]; } || continue
+        D_SKILLS="$D_SKILLS $s"; [ -L "$PD/skills/$s" ] || D_MODE=copy
+      done
+      for a in $ALL_AGENTS; do
+        case "$h" in
+          claude|antigravity) f="$PD/agents/$a.md" ;;
+          copilot) f="$PD/agents/$a.agent.md" ;;
+          *) f="$PD/skills/$a/SKILL.md" ;;
+        esac
+        [ -f "$f" ] && D_AGENTS="$D_AGENTS $a"
+      done
+      return 0
+    fi
+  fi
+  loose_layout "$h"
+  for s in $ALL_SKILLS; do
+    if ours_here "$SK/$s"; then
+      D_SKILLS="$D_SKILLS $s"; [ -L "$SK/$s" ] || D_MODE=copy
+    elif [ -L "$SK/$s" ] && [ -f "$(resolve_link "$SK/$s")/../../install.sh" ]; then
+      D_OTHER="$(cd "$(resolve_link "$SK/$s")/../.." && pwd)"   # linked into another clone
+    fi
+  done
+  for a in $ALL_AGENTS; do
+    f="$(agent_file "$h" "$a")"
+    if marked_file "$f"; then D_AGENTS="$D_AGENTS $a"
+    elif [ -f "$f" ]; then
+      # an agent file without our marker: an install older than the marker, or the developer's
+      # own file. Taken over only with --force; otherwise named so the developer can decide.
+      if [ "$FORCE" = 1 ]; then D_AGENTS="$D_AGENTS $a"; TAKEOVER_FILES="${TAKEOVER_FILES:-} $f"
+      else D_UNMARKED="$D_UNMARKED $f"; fi
+    fi
+    [ "$h" = antigravity ] && marked_file "$SK/$a/SKILL.md" && D_AS=1
+  done
+  # agents alone do not prove the install came from this clone (rendered files name no clone)
+  [ -n "$D_SKILLS" ] || D_AGENTS=""
+  return 0
+}
+
+prune_stale() {  # prune_stale <harness>: remove our loose files for agents/skills deleted upstream
+  local h="$1" e n
+  loose_layout "$h"
+  for e in "$SK"/* "$SK"/.[!.]*; do
+    { [ -e "$e" ] || [ -L "$e" ]; } || continue
+    n="$(basename "$e")"
+    case " $ALL_SKILLS $ALL_AGENTS " in *" $n "*) continue ;; esac
+    # a link or marked copy this clone installed, or an agent we rendered as a skill
+    if ours_here "$e" || marked_file "$e/SKILL.md"; then
+      rm -rf "$e"; log "removed $e (no longer in the repo)"
+    fi
+  done
+  [ -n "$AG" ] && [ -d "$AG" ] || return 0
+  for e in "$AG"/*; do
+    [ -e "$e" ] || continue
+    n="$(basename "$e")"; n="${n%.agent.md}"; n="${n%.md}"
+    case " $ALL_AGENTS " in *" $n "*) continue ;; esac
+    if marked_file "$e" || marked_file "$e/agent.md"; then rm -rf "$e"; log "removed $e (no longer in the repo)"; fi
+  done
+}
+
+with_declared_skills() {  # print skill list $2 plus every skill the agents in $1 declare
+  local out="$2" a s
+  for a in $1; do
+    for s in $(sed -n 's/^skills: *\[\(.*\)\]/\1/p' "$AGENTS_SRC/$a/AGENT.md" | tr ',' ' '); do
+      case " $out " in *" $s "*) ;; *) out="$out $s" ;; esac
+    done
+  done
+  printf '%s\n' "$out"
+}
+
+missing_from() {  # missing_from <installed> <available>: names in available but not installed
+  local n out=""
+  for n in $2; do case " $1 " in *" $n "*) ;; *) out="$out $n" ;; esac; done
+  printf '%s\n' "${out# }"
+}
+
+if [ "$UPDATE" = 1 ]; then
+  echo "update: scope=$SCOPE$( [ "$SCOPE" = project ] && echo " target=$TARGET") from $REPO"
+  FOUND=""
+  for h in ${HARNESSES//,/ }; do
+    detect_install "$h"
+    if [ -n "$D_OTHER" ] && [ -z "$D_SKILLS" ]; then
+      log "skip   $h: installed from another clone ($D_OTHER); run --update there, or uninstall it there and install from here"
+      continue
+    fi
+    [ -n "$D_SKILLS$D_AGENTS" ] || continue
+    for f in $D_UNMARKED; do
+      log "keep   $f: no installer marker (an install older than the marker, or your own file);"
+      log "       not updated. If it is ours, add --force to take it over"
+    done
+    FOUND="$FOUND $h"
+    # bash 3.2 has no associative arrays: one variable set per harness
+    eval "U_${h}_PLUGIN=\$D_PLUGIN U_${h}_MODE=\$D_MODE U_${h}_AGENTS=\$D_AGENTS U_${h}_SKILLS=\$D_SKILLS U_${h}_AS=\$D_AS"
+  done
+  # During --update, --force only takes over the unmarked agent files detection named
+  # (TAKEOVER_FILES); every other path keeps the normal guard, so a developer's own same-named
+  # skill is never replaced.
+  FORCE=0
+  [ -n "$FOUND" ] || { echo "update: nothing installed from this clone at scope=$SCOPE; install first (see --help)"; exit 0; }
+  use_detected() {  # load the stored detection for harness $1 into the variables run_harnesses reads
+    eval "PLUGIN=\$U_${1}_PLUGIN MODE=\$U_${1}_MODE AGENTS=\$U_${1}_AGENTS AGENT_SKILLS=\$U_${1}_AS"
+    eval "SKILLS=\$U_${1}_SKILLS"
+    SKILLS="$(with_declared_skills "$AGENTS" "$SKILLS")"
+    HARNESSES="$1"
+  }
+  # Pre-flight every install first, so a clash in one cannot leave the others half-updated.
+  DRY=1; for h in $FOUND; do use_detected "$h"; run_harnesses > /dev/null; done; DRY=0
+  for h in $FOUND; do
+    use_detected "$h"
+    run_harnesses
+    [ "$PLUGIN" = 1 ] || prune_stale "$h"   # plugins are rebuilt whole; loose installs need pruning
+    extra_a="$(missing_from "$AGENTS" "$ALL_AGENTS")"
+    extra_s="$(missing_from "$SKILLS" "$(missing_from install-agents "$ALL_SKILLS")")"
+    if [ -n "$extra_a$extra_s" ]; then
+      log "note   in the repo but not in this install:${extra_a:+ agents: $extra_a;}${extra_s:+ skills: $extra_s}"
+      log "       add them by re-installing with the lists you want (--agents/--skills), or without them for everything"
+    fi
+  done
+  [ "$SCOPE" = project ] && update_agents_md
+  echo "done (update: ${FOUND# })"
+  exit 0
+fi
 
 # Pre-flight: check every destination before writing anything, so a clash cannot leave a
 # half-finished install behind.

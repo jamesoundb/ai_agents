@@ -1,18 +1,18 @@
 # Project instructions
 
 ## Goals
-- Develop several agents with a corresponding AGENT.md file for use across the organization.
+- Develop several agents, each with a corresponding AGENT.md file, that anyone can bring into
+  their own setup and modify as they see fit.
 - Agent ideas: AST Tree-sitter agent (done, see below), terraform agent, helm agent, kubernetes
-  agent, build pipeline agent, plus others suggested through architectural conversations and
-  company needs.
-- Develop skills that the agents leverage to ensure repeatable results. Skills are tailored to
-  company needs.
+  agent, build pipeline agent, plus others as needs arise.
+- Develop skills that the agents leverage to ensure repeatable results. Skills are generic
+  starting points: use them as they are or adapt them to your own conventions.
 
 ## Repository layout (harness-neutral)
 ```
 agents/<name>/AGENT.md          canonical agent: neutral frontmatter (name, description, tools, skills,
                                 readonly, model) + system prompt. Single source of truth.
-agents/<name>/README.md         organization-facing spec (purpose, limits, adoption, measurements)
+agents/<name>/README.md         user-facing spec (purpose, limits, adoption, measurements)
 skills/<skill>/SKILL.md         Agent Skills standard; scripts/ and reference/ live beside it
 tools/render.py                 renders AGENT.md -> Claude / Copilot / Antigravity agents, agent-as-skill,
                                 and the managed block for AGENTS.md (stdlib only)
@@ -53,6 +53,22 @@ comment line, or (installs predating the marker) when its content equals what `r
 now. A conflict aborts the run with `refusing to replace <path>`; `--force` overrides. Installs run
 a pre-flight pass (`DRY=1`) over every destination first, so a conflict cannot leave a half-written
 install. `--uninstall` keeps anything it does not own and logs `kept <path>`.
+
+`--update` re-runs every install this clone made, without stored state. `detect_install()`
+reads, per harness and scope:
+- whether the plugin folder carries our marker with this clone's path;
+- which skills are symlinks into this clone or copies marked with its path, and whether they
+  are links or copies;
+- which agent files carry the marker;
+- whether `<skills>/<agent>/SKILL.md` exists (`--agents-as-skills`).
+
+Per-harness folder paths live in one place, `loose_layout()` and `agent_file()`, shared with
+install/uninstall. Every detected install is pre-flighted before any is written. Loose installs
+are then pruned (`prune_stale`) of our files whose agent or skill no longer exists in the repo;
+plugins are rebuilt whole anyway. Agents or skills new in the repo are reported, not added.
+Installs linked into another clone are skipped with the path. An agent file without the marker
+is kept and named. `--update --force` takes over exactly those files (`TAKEOVER_FILES`); the
+plain `--force` is cleared during an update, so skill paths keep the normal guard.
 
 ## Harness mapping (what install.sh emits)
 | harness | project scope | user scope | agent representation |
@@ -171,9 +187,9 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `teamcity-config-review` | text rules over Kotlin DSL/XML; pod templates extracted from cloud images | `skills/teamcity-config-review/scripts/tcreview.py` |
 | `teamcity-build-triage` | REST/offline failure classifier (`CLASSES` table) and recent-failure histogram | `skills/teamcity-build-triage/scripts/tctriage.py` |
 | `gke-cost-discovery` | `collect.sh` (read-only gcloud/kubectl/Cloud Monitoring REST/Cloud Logging/TeamCity REST, every source optional, timeouts everywhere) + `analyze.py` (stdlib; two-bucket waste model, recommendations, tiers) + `synth.py` (demo dataset). Config: `gke-cost-discovery.env` (git-ignored) | `skills/gke-cost-discovery/scripts/` |
-| `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), company policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
+| `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), configurable policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
 | `terraform-plan-review` | risk model over `terraform show -json` (or `plan -json` stream); stdlib only; exit 1 at `--fail-on` | `skills/terraform-plan-review/scripts/planreview.py` |
-| `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; templates are the company standard | `skills/terraform-module-scaffold/scripts/scaffold.py` |
+| `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; the templates define the conventions; edit them to change them | `skills/terraform-module-scaffold/scripts/scaffold.py` |
 | `code-graph` | build/refresh `.ast-graph/graph.db`; `find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
 | `code-skeleton` | read-before-cat skeleton of files/directories with exact line ranges | `run.sh skeleton PATH...` |
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
@@ -185,8 +201,8 @@ installer always installs the skills an agent declares. SKILL.md files must not 
 harness-specific variables such as `${CLAUDE_SKILL_DIR}`.
 
 ## Target stack assumptions
-The agents and skills are tailored to this stack; adjust the policy files and templates for a
-different one rather than adding vendor-neutral fallbacks.
+The agents and skills default to this stack. For a different one, adapt the policy files and
+templates rather than adding vendor-neutral fallbacks.
 - Cloud: Google Cloud. Terraform state: GCS buckets (no Terraform Enterprise/Cloud assumed).
 - CI: TeamCity for tests and builds (build-pipeline agent). The Terraform agent makes no CI
   assumptions (its scripts just exit non-zero at the gate).
@@ -344,8 +360,7 @@ re-run `./install.sh --harness antigravity --scope user --force` after editing a
 the measurement tests the old prompt.
 
 ## CI and releases
-The repo is hosted in GitLab (company project; a personal GitLab project is the lower environment
-for pipeline changes). `.gitlab-ci.yml` only orchestrates; each job calls a script in `tools/ci/`
+The repo is hosted in GitLab. `.gitlab-ci.yml` only orchestrates; each job calls a script in `tools/ci/`
 so the same check runs on a laptop.
 
 - Pipelines: merge request pipelines, `main`, branches without an open MR, and tags

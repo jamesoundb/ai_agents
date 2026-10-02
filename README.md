@@ -27,8 +27,8 @@ git clone <this repo> ~/ai_agents
 ~/ai_agents/install.sh --harness antigravity --scope user
 ```
 
-`antigravity` covers Google Antigravity, both the IDE and the `agy` CLI; it is currently the only
-harness approved in the company. On another harness use its name instead: `claude`, `codex`,
+`antigravity` covers Google Antigravity, both the IDE and the `agy` CLI. On another harness use
+its name instead: `claude`, `codex`,
 `gemini` (the separate Gemini CLI, not Antigravity) or `copilot`. Install only the harness you use;
 `--harness all` (every harness at once) is there if you really use several. Skills are symlinked
 into the clone, so keep `~/ai_agents` where it is.
@@ -36,12 +36,29 @@ into the clone, so keep `~/ai_agents` where it is.
 Check it: `agy agents` lists `ast-treesitter`, `build-pipeline`, `helm`, `kubernetes` and
 `terraform`, and `/skills` inside a session lists the skills.
 
-To update, pull and re-run the installer (skills update with the pull; agents are rendered copies
-and need the re-run):
+### Updating
 
 ```bash
-cd ~/ai_agents && git pull && ./install.sh --harness antigravity --scope user   # same --harness as your install
+cd ~/ai_agents && git pull && ./install.sh --update
 ```
+
+Skills are symlinks into the clone, so the pull alone updates them. Agents are rendered copies
+and need the installer re-run. `--update` does that for every install this clone made in your
+home directory. It finds each one from the files themselves, so you do not have to remember how
+you installed. Each install keeps its own settings: tool, plugin or regular layout, symlink or
+`--copy`, a narrowed `--agents`/`--skills` list, and `--agents-as-skills`. It also removes our
+files for agents and skills deleted upstream. It does not add agents or skills that are new in
+the repo but missing from your install. It names them; add them by re-running your install
+command.
+
+- A project install: `./install.sh --update --target /path/to/project`.
+- Only some tools: `--harness antigravity,claude`.
+- `keep ... no installer marker`: an agent file from an install older than the ownership marker
+  (or your own file of the same name) is left alone. If it is ours, `--update --force` takes over
+  exactly those files and nothing else.
+- `skip ...: installed from another clone`: those links point into a different checkout. Run
+  `--update` from that clone, or uninstall there and install from here.
+- New sessions pick up the change: restart the CLI, or reload the IDE window.
 
 Prefer to let your AI tool do it? Open your harness in `~/ai_agents` and ask it to **install the
 agents globally (user scope)**, or invoke the `install-agents` skill (`/install-agents`,
@@ -150,7 +167,7 @@ their published formats and have not been run.
 | agent | purpose |
 |---|---|
 | [ast-treesitter](agents/ast-treesitter/README.md) | Deterministic code map: tree-sitter skeletons and a relationship graph for architecture, callers/callees, blast radius, Terraform and Kubernetes dependencies. Read-only. Developer guide: [GETTING-STARTED.md](agents/ast-treesitter/GETTING-STARTED.md). |
-| [terraform](agents/terraform/README.md) | Terraform engineer for Google Cloud: rule-based review (Google best practices, GCP security, company policy), risk-ranked plan review, compliant scaffolding, blast radius of variable/module changes. Never applies. |
+| [terraform](agents/terraform/README.md) | Terraform engineer for Google Cloud: rule-based review (Google best practices, GCP security, configurable policy), risk-ranked plan review, compliant scaffolding, blast radius of variable/module changes. Never applies. |
 | [kubernetes](agents/kubernetes/README.md) | GKE engineer with a cost-efficiency mandate: measures unused vs unallocated capacity, reviews and right-sizes build/test-environment manifests, generates tier-based guardrails and a janitor, tunes node pools. Read-only against clusters. |
 | [helm](agents/helm/README.md) | Helm and GitOps (ArgoCD/Flux) engineer: chart, values layering and delivery-object review, rendered manifests checked against build tiers, promotion by version bump. Never installs releases. |
 | [build-pipeline](agents/build-pipeline/README.md) | TeamCity engineer: settings review (timeouts, cleanup, triggers, secrets, caches, pod templates vs tiers, teardown of test environments), failure triage by class with evidence, CI health and cost review. Read-only against the server. |
@@ -163,9 +180,9 @@ their published formats and have not been run.
 | [code-skeleton](skills/code-skeleton/SKILL.md) | Token-light skeleton of files with exact line ranges; read-before-cat |
 | [blast-radius](skills/blast-radius/SKILL.md) | Downstream impact matrix for a file, symbol, Terraform address or Kubernetes object |
 | [install-agents](skills/install-agents/SKILL.md) | Bootstrap: lets the harness install/update/remove this repo's agents and skills via `install.sh` (not installed into target projects) |
-| [terraform-review](skills/terraform-review/SKILL.md) | Deterministic Terraform/GCP review: Google style rules, security rules, company policy from `tfreview.json`; optional terraform/tflint/trivy; CI gate |
+| [terraform-review](skills/terraform-review/SKILL.md) | Deterministic Terraform/GCP review: Google style rules, security rules, configurable policy from `tfreview.json`; optional terraform/tflint/trivy; CI gate |
 | [terraform-plan-review](skills/terraform-plan-review/SKILL.md) | Risk-ranked review of `terraform show -json` plans (data loss, exposure, IAM, drift); CI gate |
-| [terraform-module-scaffold](skills/terraform-module-scaffold/SKILL.md) | Generate compliant modules and environment roots from company templates |
+| [terraform-module-scaffold](skills/terraform-module-scaffold/SKILL.md) | Generate compliant modules and environment roots from editable templates |
 | [gke-cost-discovery](skills/gke-cost-discovery/SKILL.md) | Read-only GKE waste discovery: unused vs unallocated, over-requested workloads with recommended requests, stale test envs, scale-down blockers, autoscaler reasons, TeamCity demand, proposed build tiers; works on synthetic data until credentials exist |
 | [k8s-rightsize](skills/k8s-rightsize/SKILL.md) | Rewrite build/test manifests' requests and limits from the discovery report's p95 (tier cap without usage), add lifecycle fields; diff with evidence |
 | [k8s-manifest-review](skills/k8s-manifest-review/SKILL.md) | Efficiency/hygiene rules for build and test manifests against the tiers (requests, limits, TTLs, replicas, spot placement, images, PVCs, privileged); CI gate |
@@ -193,7 +210,7 @@ would not get the rollback.
 
 ```bash
 cd ~/ai_agents && git fetch --tags && git checkout v1.2.0   # the release you want
-./install.sh --harness antigravity --scope user             # same --harness as your install
+./install.sh --update
 ```
 
 Skills switch the moment you check out (they are symlinks into the clone); the install re-run

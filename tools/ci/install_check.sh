@@ -194,6 +194,67 @@ HOME="$IH" run_install "$WORK/ij-plugin.log" "$REPO/install.sh" --harness antigr
 check "--plugin warns that IntelliJ loads no plugins" grep -q 'warn   IntelliJ.*neither plugins nor custom agents' "$WORK/ij-plugin.log"
 check "no IntelliJ: no warning"                      test -z "$(grep 'IntelliJ' "$WORK/plugin-user.log")"
 
+echo "== --update =="
+# Upstream changes are simulated in a copy of the repo (tracked files + this working tree's
+# install.sh), never in this checkout.
+copy_repo() { mkdir -p "$1"; (cd "$REPO" && git ls-files -z | tar --null -T - -cf -) | (cd "$1" && tar -xf -); cp "$REPO/install.sh" "$1/install.sh"; }
+UR="$WORK/upd-repo"; copy_repo "$UR"
+UH="$WORK/upd-home"; mkdir -p "$UH/.agents/skills/twg-mine" "$UH/elsewhere/linked" "$UH/.gemini/config"
+echo MINE > "$UH/.agents/skills/twg-mine/SKILL.md"; echo LINKED > "$UH/elsewhere/linked/SKILL.md"
+ln -s "$UH/elsewhere/linked" "$UH/.agents/skills/linked"
+ln -s "$UH/.agents/skills" "$UH/.gemini/config/skills"          # the developer layout from macOS
+HOME="$UH" run_install "$WORK/u1.log" "$UR/install.sh" --harness claude --scope user
+HOME="$UH" run_install "$WORK/u2.log" "$UR/install.sh" --harness antigravity --scope user --agents-as-skills
+HOME="$UH" run_install "$WORK/u3.log" "$UR/install.sh" --harness gemini --scope user --plugin
+HOME="$UH" run_install "$WORK/u4.log" "$UR/install.sh" --harness copilot --scope user --copy --agents terraform
+echo "UPSTREAM-EDIT-7f3" >> "$UR/agents/ast-treesitter/AGENT.md"
+rm -rf "$UR/agents/build-pipeline" "$UR/skills/teamcity-config-review"
+mkdir -p "$UR/skills/zz-new-skill"; printf -- '---\nname: zz-new-skill\ndescription: test.\n---\nbody\n' > "$UR/skills/zz-new-skill/SKILL.md"
+HOME="$UH" run_install "$WORK/upd.log" "$UR/install.sh" --update
+for f in .claude/agents/ast-treesitter.md .gemini/config/agents/ast-treesitter/agent.md \
+         .gemini/config/skills/ast-treesitter/SKILL.md .gemini/extensions/ai-agents/skills/ast-treesitter/SKILL.md; do
+  check "update re-rendered $f"                  grep -q UPSTREAM-EDIT-7f3 "$UH/$f"
+done
+check "update keeps copilot as copies"           test -d "$UH/.copilot/skills/code-graph" -a ! -L "$UH/.copilot/skills/code-graph"
+check "update keeps copilot narrowed to terraform" test "$(ls "$UH/.copilot/agents")" = "terraform.agent.md"
+check "update keeps gemini a plugin"             test -f "$UH/.gemini/extensions/ai-agents/gemini-extension.json"
+check "update adds no loose gemini install"      test ! -e "$UH/.gemini/skills"
+check "update keeps agents-as-skills"            test -f "$UH/.gemini/config/skills/terraform/SKILL.md"
+check "update prunes a deleted agent"            test ! -e "$UH/.claude/agents/build-pipeline.md" -a ! -e "$UH/.gemini/config/agents/build-pipeline"
+check "update prunes a deleted skill (link)"     test ! -e "$UH/.claude/skills/teamcity-config-review" -a ! -L "$UH/.claude/skills/teamcity-config-review"
+check "update prunes a deleted skill (copy)"     test ! -e "$UH/.copilot/skills/teamcity-config-review"
+check "update names the new skill, adds nothing" grep -q 'not in this install:.*zz-new-skill' "$WORK/upd.log"
+check "new skill not installed by update"        test ! -e "$UH/.claude/skills/zz-new-skill"
+check "update keeps their skill"                 grep -qx MINE "$UH/.agents/skills/twg-mine/SKILL.md"
+check "update keeps their symlink"               test "$(readlink "$UH/.agents/skills/linked")" = "$UH/elsewhere/linked"
+check "update keeps their config/skills link"    test -L "$UH/.gemini/config/skills"
+# An install made from another clone is reported and left alone.
+OR="$WORK/other-repo"; copy_repo "$OR"
+HOME="$UH" run_install "$WORK/u-other.log" "$OR/install.sh" --update --harness claude
+check "other clone: skipped with a reason"       grep -q 'skip   claude: installed from another clone' "$WORK/u-other.log"
+check "other clone: links not re-pointed"        test "$(resolve() { cd "$(dirname "$1")" && cd "$(readlink "$1")" && pwd; }; resolve "$UH/.claude/skills/code-graph")" = "$UR/skills/code-graph"
+# Unmarked agent files (installs older than the marker): kept and named; --force takes them over.
+UO="$WORK/upd-old"; mkdir -p "$UO"
+HOME="$UO" run_install "$WORK/uo1.log" "$UR/install.sh" --harness claude --scope user
+printf 'old copy without marker\n' > "$UO/.claude/agents/terraform.md"
+HOME="$UO" run_install "$WORK/uo2.log" "$UR/install.sh" --update
+check "unmarked agent: named, not updated"       grep -q 'keep   .*terraform.md: no installer marker' "$WORK/uo2.log"
+check "unmarked agent: content untouched"        grep -qx 'old copy without marker' "$UO/.claude/agents/terraform.md"
+HOME="$UO" run_install "$WORK/uo3.log" "$UR/install.sh" --update --force
+check "unmarked agent: --force takes it over"    grep -q 'installed by ai_agents install.sh' "$UO/.claude/agents/terraform.md"
+# Project scope through --target.
+UP="$WORK/upd-proj"; mkdir -p "$UP" && git -C "$UP" init -q
+run_install "$WORK/up1.log" "$UR/install.sh" --harness claude --target "$UP"
+echo "UPSTREAM-EDIT-8a1" >> "$UR/agents/ast-treesitter/AGENT.md"
+run_install "$WORK/up2.log" "$UR/install.sh" --update --target "$UP"
+check "project update re-rendered the agent"     grep -q UPSTREAM-EDIT-8a1 "$UP/.claude/agents/ast-treesitter.md"
+check "project update left HOME alone"           test -z "$(grep -F "$HOME" "$WORK/up2.log")"
+mkdir -p "$WORK/upd-none"
+HOME="$WORK/upd-none" run_install "$WORK/un.log" "$UR/install.sh" --update
+check "nothing installed: says so, exit 0"       grep -q 'nothing installed from this clone' "$WORK/un.log"
+# shellcheck disable=SC2016  # single quotes are intended: $0 expands inside bash -c
+check "--update rejects install options"         bash -c '! "$0" --update --plugin >/dev/null 2>&1' "$UR/install.sh"
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then
