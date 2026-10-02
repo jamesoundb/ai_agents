@@ -450,7 +450,7 @@ def test_resolution(root):
 
 
 def test_lean_queries(root):
-    """Query output that replaces calls instead of adding them (Django benchmark, round 5): `source`
+    """Query output that replaces calls instead of adding them: `source`
     answers definition + callers + callees + body in one call, several names per call, hidden
     ambiguous edges are announced, test usages can be left out, and the graph is found from a
     subdirectory."""

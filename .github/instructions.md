@@ -276,8 +276,9 @@ templates rather than adding vendor-neutral fallbacks.
   shebangs, `os.sep`/`os.path.join` throughout) but has never been run. Windows needs WSL or Git
   Bash for `run.sh`; the one known difference, `os.replace` failing while another process holds
   the database open, retries briefly -- written from documented behaviour, never exercised there.
-- Query side (2026-10-02, from the superpowers benchmark: per-call context re-reading, not tool
-  output, dominated cost, so the queries aim to *replace* calls). `query` finds the nearest
+- Query side (2026-10-02): every tool call re-sends the whole conversation, so the cost of a
+  question is driven by the number of calls more than by the size of each output; the queries aim to
+  *replace* calls (symbol + read + grep) rather than add to them. `query` finds the nearest
   `.ast-graph/graph.db` at or above the cwd (`find_graph`) and re-anchors cwd-relative paths
   (`G.cwd_prefix`); before answering it runs `refresh_if_stale`: the build records its options in
   `graph.db.stamp`, and a git stamp that no longer matches triggers an incremental rebuild with

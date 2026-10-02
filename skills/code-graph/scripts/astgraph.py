@@ -6497,8 +6497,8 @@ def q_symbol(g, args):
                 and (is_test_file(n["file"]) or not is_test_file(m["file"]))]   # test-only extensions stay off production cards
         if exts:
             kids = kids + [dict(m, signature=m["signature"] + f"   [extension, {m['file']}]") for m in sorted(exts, key=lambda m: (m["file"], m["line"]))]
-    # Per-member call lists were the bulk of a class card (a 2-4k token card for one class in the Django
-    # benchmark) and are rarely what the question needs; `--calls` (or `--all`) brings them back.
+    # Per-member call lists were the bulk of a class card (2-4k tokens for one Django class) and are
+    # rarely what the question needs; `--calls` (or `--all`) brings them back.
     with_calls = show_all or getattr(args, "calls", False)
     if kids:
         print("├── Members" + (f" ({len(kids)}, showing {cap})" if cap and len(kids) > cap else "")
@@ -6740,8 +6740,8 @@ SOURCE_IN_TYPES = {"calls", "instantiates", "extends", "implements", "references
 
 def q_source(g, args):
     """One call instead of `symbol` + a ranged read + a confirming grep: where the symbol is, who
-    calls it, what it calls, and its exact source lines. In the Django benchmark that three-call
-    pattern was the main reason the graph added calls (and re-read context) instead of saving them."""
+    calls it, what it calls, and its exact source lines. Without it a question takes three calls
+    (symbol, a ranged read, a confirming grep), and every call re-reads the conversation."""
     n = ensure_one(g, args.name)
     if n["kind"] == "file":
         raise QueryError(f"'{args.name}' is a file; `query file {n['file']}` gives its outline, `source <symbol>` a definition")
