@@ -20,8 +20,8 @@ installed side by side).
 
 ## Procedure
 
-1. Make sure the graph is current (a git-stamped unchanged tree returns instantly; otherwise
-   changed files are re-parsed and everything is re-linked):
+1. Build the graph if the repo has none yet (queries refresh an existing graph themselves when the
+   git working tree changed, so no rebuild is needed between questions or after edits):
    ```bash
    ../code-graph/scripts/run.sh build --root .
    ```
@@ -34,7 +34,8 @@ installed side by side).
    ```
    `TARGET` may be a file path, a symbol, a Terraform address (`module.vpc`, `aws_vpc.this`) or a
    Kubernetes object (`ConfigMap/web-config`). Add `--include-ambiguous` when the target's name
-   is common and you want the leads too; add `--json` when you will post-process. For a hub
+   is common and you want the leads too (the output says how many it left out), `--no-tests` to
+   leave test files out of the dependents; add `--json` when you will post-process. For a hub
    (hundreds of callers) start with `--summary` (directories, most-connected dependents,
    relationship mix) and `--files-only`; the per-edge table is only useful below a few hundred
    rows and degrades to the summary on its own above `--max-rows` (200).

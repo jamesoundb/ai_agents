@@ -190,7 +190,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), configurable policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
 | `terraform-plan-review` | risk model over `terraform show -json` (or `plan -json` stream); stdlib only; exit 1 at `--fail-on` | `skills/terraform-plan-review/scripts/planreview.py` |
 | `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; the templates define the conventions; edit them to change them | `skills/terraform-module-scaffold/scripts/scaffold.py` |
-| `code-graph` | build/refresh `.ast-graph/graph.db`; `find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
+| `code-graph` | build `.ast-graph/graph.db` once (queries refresh it when the git tree changed); `find`, `symbol`, `source`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
 | `code-skeleton` | read-before-cat skeleton of files/directories with exact line ranges | `run.sh skeleton PATH...` |
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
 | `install-agents` | bootstrap: harness-driven install/update/uninstall of this repo's agents and skills | `skills/install-agents/scripts/install.sh` -> `install.sh` |
@@ -276,9 +276,23 @@ templates rather than adding vendor-neutral fallbacks.
   shebangs, `os.sep`/`os.path.join` throughout) but has never been run. Windows needs WSL or Git
   Bash for `run.sh`; the one known difference, `os.replace` failing while another process holds
   the database open, retries briefly -- written from documented behaviour, never exercised there.
+- Query side (2026-10-02, from the superpowers benchmark: per-call context re-reading, not tool
+  output, dominated cost, so the queries aim to *replace* calls). `query` finds the nearest
+  `.ast-graph/graph.db` at or above the cwd (`find_graph`) and re-anchors cwd-relative paths
+  (`G.cwd_prefix`); before answering it runs `refresh_if_stale`: the build records its options in
+  `graph.db.stamp`, and a git stamp that no longer matches triggers an incremental rebuild with
+  those options (note on stderr; `--no-refresh`/`ASTGRAPH_NO_REFRESH`; skipped without a git stamp).
+  `symbol`, `source`, `callers` and `callees` take several names (`for_each_name`; a failing name
+  raises `QueryError`, reported inline). `source` = header with range + compact callers (ambiguous
+  marked `?`) + callees + numbered body. `callers`/`callees` default to depth 1, print compact rows,
+  and report how many ambiguous edges they hid; `--no-tests` exists on callers/callees/trace-deps/
+  source. SKILL.md is kept short (everyday workflow only); detail lives in `reference/usage.md`.
 - Output budget: every cap lives in the `CAP_*` block at the top of `astgraph.py`, and each one
   must leave a stated way back — a flag that raises it (`skeleton --max-calls/--max-imports`,
-  `symbol --limit/--all`, `trace-deps --max-rows/--files-only`) or an exact line range to read.
+  `symbol --limit/--all`, `trace-deps --max-rows/--files-only`, `source --max-lines/--refs`) or an
+  exact line range to read. Defaults that keep cards small: member call lists only with
+  `symbol --calls`, usage from test files folded into one per-file count line (both lifted by
+  `--all`).
   `skeleton` reports what it hid once per run (`-- elided: N calls (raise with --max-calls)`),
   not per line, and applies a never-worse guard: a file no larger than its own skeleton is
   printed as source instead, and a run that saves nothing says so rather than reporting a
@@ -301,7 +315,7 @@ templates rather than adding vendor-neutral fallbacks.
 ```bash
 ./install.sh --harness antigravity  # or claude|codex|gemini|copilot|all; --target DIR for another repo
 skills/code-graph/scripts/run.sh build --root .   # first run creates ~/.cache/astgraph/venv
-skills/code-graph/scripts/run.sh query overview
+skills/code-graph/scripts/run.sh query overview   # later queries refresh the graph themselves
 ```
 No Node.js is required. The machine used for development has no system tree-sitter and no Node.
 

@@ -74,9 +74,11 @@ CAP_ROWS = 200                 # rows before a listing degrades to a summary -> 
 CAP_SUMMARY_TOP = 15           # rows per section in --summary          -> --top
 CAP_PER_FILE = 6               # trace-deps rows per file               -> --per-file
 CAP_OVERRIDES = 8              # `Overrides:` entries on a method card
-CAP_OVERRIDDEN_BY = 12         # `Overridden by:` entries on a method card
+CAP_OVERRIDDEN_BY = 12         # `Overridden by:` entries on a method card -> symbol --all
 CAP_UNRESOLVED = 12            # `Unresolved (external or not indexed)` entries
 CAP_IMPORTED_BY = 20           # `imported by:` files on a file card
+CAP_SOURCE_LINES = 120         # `source` body lines (a longer class: member outline) -> --max-lines (0 = all)
+CAP_SOURCE_REFS = 8            # callers / callees named per `source` symbol         -> --refs / query callers
 # Edge types that mean "src depends on dst" (used for blast radius / reverse dependencies).
 DEP_EDGE_TYPES = {
     "calls", "imports", "extends", "implements", "instantiates", "references",
@@ -3870,10 +3872,14 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
     graph["engine"] = engine_hash
     graph["root"] = root_dir
     graph["built_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    graph["parsed_now"] = changed
     write_store(out_path, graph, files)
     if stamp:
+        # `options` lets a query refresh a stale graph with exactly the settings it was built with
+        # (refresh_if_stale); without them it could only guess and might re-index a different tree.
         with open(stamp_path, "w") as f:
-            json.dump({"version": GRAPH_VERSION, "stamp": stamp, "stats": graph["stats"], "built_at": graph["built_at"]}, f)
+            json.dump({"version": GRAPH_VERSION, "stamp": stamp, "stats": graph["stats"], "built_at": graph["built_at"],
+                       "options": {"root": root_dir, "include": includes, "exclude": excludes, "keep_dir": keep_dirs}}, f)
     elif os.path.exists(stamp_path):
         os.remove(stamp_path)
     note = legacy_graph_note(out_path)
@@ -6118,6 +6124,17 @@ class Store:
             total += self.con.execute(q, chunk).fetchone()[0]
         return total
 
+    def count_ambiguous_from(self, src_ids):
+        """How many `ambiguous` edges leave any of `src_ids` (the callees-side twin of count_ambiguous_into)."""
+        ids = list(src_ids)
+        total = 0
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            q = ("SELECT COUNT(*) FROM edges WHERE confidence='ambiguous' AND src IN ("
+                 + ",".join("?" * len(chunk)) + ")")
+            total += self.con.execute(q, chunk).fetchone()[0]
+        return total
+
     def file_langs(self):
         return {r[0]: (json.loads(r[1] or "{}") or {}).get("language")
                 for r in self.con.execute("SELECT file, extra FROM nodes WHERE kind='file'")}
@@ -6177,6 +6194,16 @@ class G:
         q = query.strip()
         if q in self.nodes:
             return [self.nodes[q]]
+        # A path typed from a subdirectory (`cd tests && query file foo.py`) is relative to the cwd,
+        # graph paths to the repo root: re-anchor it when that names an indexed file.
+        prefix = getattr(self, "cwd_prefix", None)
+        if prefix and "::" not in q:
+            fpart, sep, rest = q.partition(":")
+            cand = os.path.normpath(os.path.join(prefix, fpart)).replace(os.sep, "/")
+            if os.path.splitext(fpart)[1].lower() in EXT_LANG and cand in self.nodes:
+                q = cand + sep + rest
+                if q in self.nodes:
+                    return [self.nodes[q]]
         # C++ names are written with `::` but stored with the engine's `.` qname separator, so
         # `MatMulOp::Compute` and `tensorflow::ops::MatMulOp` resolve like any other qname.
         if "::" in q:
@@ -6213,6 +6240,69 @@ class G:
         return [e for e in self.out.get(nid, []) if e["type"] in types]
 
 
+class QueryError(Exception):
+    """A query that cannot answer one name (not found, ambiguous). Raised instead of exiting so a
+    multi-name query (`symbol A B C`) still answers the other names; `stdout` marks output that is
+    useful to the reader (the list of candidates) rather than an error message."""
+    def __init__(self, text, stdout=False):
+        super().__init__(text)
+        self.text, self.stdout = text, stdout
+
+
+def find_graph(start=None):
+    """The nearest `<dir>/.ast-graph/graph.db` at or above `start` (default: cwd), the way git finds
+    `.git`. Agents `cd` into subdirectories to run tests; their next query must still find the graph."""
+    d = os.path.abspath(start or os.getcwd())
+    while True:
+        p = os.path.join(d, DEFAULT_GRAPH)
+        if os.path.exists(p):
+            return p
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+
+def default_layout_root(graph_path):
+    """<root> when graph_path is <root>/.ast-graph/graph.db (the default layout), else None."""
+    gp = os.path.abspath(graph_path)
+    tail = os.sep + os.path.normpath(DEFAULT_GRAPH)
+    return os.path.dirname(os.path.dirname(gp)) if gp.endswith(tail) else None
+
+
+def refresh_if_stale(graph_path):
+    """Rebuild the graph in place when the git working tree changed since it was built, with the
+    options that build recorded. Returns a one-line note, or None when nothing was done.
+
+    This removes the separate `build` call an agent otherwise makes before every question: the stamp
+    check is a `git status` plus hashing the changed files (well under a second), and the rebuild is
+    incremental. Skipped when there is no stamp to compare (not a git checkout, or a graph built
+    before options were recorded) and when ASTGRAPH_NO_REFRESH is set."""
+    if os.environ.get("ASTGRAPH_NO_REFRESH"):
+        return None
+    try:
+        with open(graph_path + ".stamp") as f:
+            prev = json.load(f)
+    except (OSError, ValueError):
+        return None
+    opts = prev.get("options")
+    if not opts:
+        return None
+    root = opts.get("root")
+    if not root or not os.path.isdir(root):
+        root = default_layout_root(graph_path)   # repo moved since the build
+        if root is None:
+            return None
+    stamp = git_stamp(root, opts.get("include"), opts.get("exclude"), graph_path, opts.get("keep_dir"))
+    if stamp is None or (stamp == prev.get("stamp") and prev.get("version") == GRAPH_VERSION):
+        return None
+    t0 = time.time()
+    g = build_graph(root, graph_path, opts.get("include"), opts.get("exclude"), quiet=True, keep_dirs=opts.get("keep_dir"))
+    if g is None:
+        return None
+    return f"(graph refreshed before this query: {g.get('parsed_now', '?')} file(s) re-parsed, {time.time() - t0:.1f}s)"
+
+
 def fmt_node(n, with_file=True):
     loc = f"{n['file']}:{n['line']}" if n.get("file") and n.get("line") else n.get("file") or ""
     ann = f" @{' @'.join(a.split('(')[0] for a in n['annotations'])}" if n.get("annotations") else ""
@@ -6225,7 +6315,7 @@ def ensure_one(g, query, kinds=None):
     matches = g.resolve(query, kinds)
     if not matches:
         bare = re.split(r"[.:/]", query.strip())[-1] or query
-        sys.exit(f"no symbol or file matches '{query}'. Try: query find {bare}" + (" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
+        raise QueryError(f"no symbol or file matches '{query}'. Try: query find {bare}" + (" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
     if len(matches) > 1 and not all(m["id"] == matches[0]["id"] for m in matches):
         qn = query.split(":", 1)[1] if ":" in query and "::" not in query else query
         qn = qn.replace("::", ".")      # C++ callers write `Class::member`; qnames are dotted
@@ -6246,10 +6336,8 @@ def ensure_one(g, query, kinds=None):
         preferred = [m for m in exact if m["kind"] in TYPE_LIKE_KINDS | {"k8s_object", "resource", "module_call", "file", "terraform_module", "package"}]
         if len(preferred) == 1:
             return preferred[0]
-        print(f"'{query}' is ambiguous ({len(matches)} matches). Re-run with one of these ids or `file:name`:")
-        for m in matches[:25]:
-            print(f"  {m['id']}    {fmt_node(m)}")
-        sys.exit(1)
+        raise QueryError(f"'{query}' is ambiguous ({len(matches)} matches). Re-run with one of these ids or `file:name`:\n"
+                         + "\n".join(f"  {m['id']}    {fmt_node(m)}" for m in matches[:25]), stdout=True)
     return matches[0]
 
 
@@ -6352,22 +6440,27 @@ def dispatch_note(g, n):
 
 def q_symbol(g, args):
     n = ensure_one(g, args.name)
+    ups, downs = overrides_of(g, n)
     if args.json:
+        loc = lambda k: {"id": k["id"], "qname": k["qname"], "file": k["file"], "line": k["line"]}   # noqa: E731
         print(json.dumps({"node": n, "children": g.children(n["id"]),
-                          "out": g.out.get(n["id"], []), "in": g.inc.get(n["id"], [])}))
+                          "out": g.out.get(n["id"], []), "in": g.inc.get(n["id"], []),
+                          "overrides": [loc(k) for k in ups], "overridden_by": [loc(k) for k in downs]}))
         return
     print(fmt_node(n))
     if n["extra"]:
         ex = {k: v for k, v in n["extra"].items() if v not in (None, "", [], {}) and k not in ("language",)}
         if ex:
             print("  extra: " + json.dumps(ex)[:400])
-    cap = None if getattr(args, "all", False) else getattr(args, "limit", 40)
-    ups, downs = overrides_of(g, n)
+    show_all = getattr(args, "all", False)
+    cap = None if show_all else getattr(args, "limit", 40)
     if ups or downs:
         if ups:
-            print("├── Overrides: " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in ups[:CAP_OVERRIDES]))
+            print("├── Overrides: " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in ups[:None if show_all else CAP_OVERRIDES]))
         if downs:
-            print(f"├── Overridden by ({len(downs)}): " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in downs[:CAP_OVERRIDDEN_BY]) + (" ..." if len(downs) > CAP_OVERRIDDEN_BY else ""))
+            shown = downs if show_all else downs[:CAP_OVERRIDDEN_BY]
+            print(f"├── Overridden by ({len(downs)}): " + ", ".join(f"{k['qname']} ({k['file']}:{k['line']})" for k in shown)
+                  + (f" ... (+{len(downs) - len(shown)}; --all lists every one)" if len(downs) > len(shown) else ""))
 
     def collapse(edge_list, key_node):
         """Identical (type, target, confidence) rows from several lines become one row with a count."""
@@ -6404,10 +6497,17 @@ def q_symbol(g, args):
                 and (is_test_file(n["file"]) or not is_test_file(m["file"]))]   # test-only extensions stay off production cards
         if exts:
             kids = kids + [dict(m, signature=m["signature"] + f"   [extension, {m['file']}]") for m in sorted(exts, key=lambda m: (m["file"], m["line"]))]
+    # Per-member call lists were the bulk of a class card (a 2-4k token card for one class in the Django
+    # benchmark) and are rarely what the question needs; `--calls` (or `--all`) brings them back.
+    with_calls = show_all or getattr(args, "calls", False)
     if kids:
-        print("├── Members" + (f" ({len(kids)}, showing {cap})" if cap and len(kids) > cap else ""))
+        print("├── Members" + (f" ({len(kids)}, showing {cap})" if cap and len(kids) > cap else "")
+              + ("" if with_calls else "  (--calls adds each member's calls)"))
         for k in kids[:cap]:
-            print(f"│   ├── {fmt_node(k, with_file=False)}  [L{k['line']}]")
+            end = f"-{k['end_line']}" if k.get("end_line") and k["end_line"] != k["line"] else ""
+            print(f"│   ├── {fmt_node(k, with_file=False)}  [L{k['line']}{end}]")
+            if not with_calls:
+                continue
             calls = collapse(g.out_edges(k["id"], {"calls"}), lambda e: e["dst"])
             per_member = None if cap is None else 8
             for e, cnt in calls[:per_member]:
@@ -6450,7 +6550,23 @@ def q_symbol(g, args):
         for e in g.inc.get(k["id"], []):
             if e["type"] != "contains":
                 member_ins.append((k, e))
-    if ins or member_ins:
+    # Uses from test files are folded into one per-file count line (unless --all, or the symbol is
+    # itself test code): on a library class they were most of the card -- 41 of the 46 rows of
+    # Django's `Window` card -- while the question is almost always about production users.
+    test_uses = Counter()
+    if not show_all and not is_test_file(n["file"] or ""):
+        def from_test(e):
+            s = g.nodes.get(e["src"])
+            return bool(s and s.get("file") and is_test_file(s["file"]))
+        for e in ins:
+            if from_test(e):
+                test_uses[g.nodes[e["src"]]["file"]] += 1
+        for _k, e in member_ins:
+            if from_test(e):
+                test_uses[g.nodes[e["src"]]["file"]] += 1
+        ins = [e for e in ins if not from_test(e)]
+        member_ins = [(k, e) for k, e in member_ins if not from_test(e)]
+    if ins or member_ins or test_uses:
         total_in = len(ins) + len(member_ins)
         print("└── Used by (incoming)" + (f" ({total_in}, showing {cap}; `--all` for everything, `query callers` to traverse)" if cap and total_in > cap else ""))
         ins_sorted = sorted(collapse(ins, lambda e: e["src"]), key=lambda ec: (ec[0]["confidence"] == "ambiguous", ec[0]["type"], ec[0].get("line") or 0))
@@ -6467,10 +6583,16 @@ def q_symbol(g, args):
                 print(f"    ├── {e['type']} {k['name']} from {s['qname']}  ({s['file']}:{e.get('line') or s['line']}, {e['confidence']})")
         if room is not None and len(member_ins) > room:
             print(f"    └── ... {len(member_ins) - room} more member usages; " + by_file_summary([g.nodes[e["src"]] for _, e in member_ins if e["src"] in g.nodes]))
+        if test_uses:
+            top = sorted(test_uses.items(), key=lambda kv: (-kv[1], kv[0]))
+            print(f"    └── + {sum(test_uses.values())} more from {len(top)} test file(s): "
+                  + ", ".join(f"{f} ({c})" for f, c in top[:5]) + (f", +{len(top) - 5} files" if len(top) > 5 else "")
+                  + " (--all lists them)")
 
 
-def bfs(g, start_ids, direction, types, depth, include_ambiguous):
-    """Breadth-first over edges. direction 'in' = who depends on start, 'out' = what start depends on."""
+def bfs(g, start_ids, direction, types, depth, include_ambiguous, no_tests=False):
+    """Breadth-first over edges. direction 'in' = who depends on start, 'out' = what start depends on.
+    `no_tests` drops edges whose other end is in a test file (and does not traverse through them)."""
     seen = {sid: 0 for sid in start_ids}
     frontier = deque((sid, 0) for sid in start_ids)
     hops = []  # (from_node_id, edge, to_node_id, level)
@@ -6483,6 +6605,10 @@ def bfs(g, start_ids, direction, types, depth, include_ambiguous):
             if e["confidence"] == "ambiguous" and not include_ambiguous:
                 continue
             other = e["src"] if direction == "in" else e["dst"]
+            if no_tests:
+                on = g.nodes.get(other)
+                if on and on.get("file") and is_test_file(on["file"]):
+                    continue
             hops.append((nid, e, other, lvl + 1))
             if other not in seen:
                 seen[other] = lvl + 1
@@ -6509,17 +6635,36 @@ def q_callers(g, args, direction="in"):
     if (n["kind"] in CONTAINER_KINDS or n["kind"] == "file") and not getattr(args, "no_members", False):
         targets += [k["id"] for k in g.children(n["id"])]
     # Every dependency relation except file-level imports, so Terraform/K8s references count as "callers".
-    seen, hops = bfs(g, targets, direction, DEP_EDGE_TYPES - {"imports"}, args.depth, args.include_ambiguous)
+    no_tests = getattr(args, "no_tests", False)
+    seen, hops = bfs(g, targets, direction, DEP_EDGE_TYPES - {"imports"}, args.depth, args.include_ambiguous, no_tests)
+    # Direct edges left out because the receiver's type is unknown and only the name matched. Saying so
+    # matters: a silent omission sent agents back to grep to double-check the graph.
+    if args.include_ambiguous:
+        hidden = 0
+    elif no_tests:   # count only what --no-tests would have shown: walk the (indexed) direct edges
+        hidden = 0
+        for t in targets:
+            for e in (g.inc.get(t, []) if direction == "in" else g.out.get(t, [])):
+                o = g.nodes.get(e["src"] if direction == "in" else e["dst"])
+                if e["confidence"] == "ambiguous" and e["type"] != "contains" and o and not (o.get("file") and is_test_file(o["file"])):
+                    hidden += 1
+    else:
+        hidden = g.store.count_ambiguous_into(set(targets)) if direction == "in" else g.store.count_ambiguous_from(set(targets))
     if args.json:
-        print(json.dumps({"root": n["id"], "levels": seen, "hops": [(a, e, b, l) for a, e, b, l in hops], "note": dispatch_note(g, n) if direction == "in" else None}))
+        print(json.dumps({"root": n["id"], "levels": seen, "hops": [(a, e, b, l) for a, e, b, l in hops],
+                          "note": dispatch_note(g, n) if direction == "in" else None, "ambiguous_hidden": hidden}))
         return
     label = "callers of" if direction == "in" else "callees of"
-    print(f"{label} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}")
+    print(f"{label} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}" + ("  (no tests)" if no_tests else ""))
     note = dispatch_note(g, n) if direction == "in" else None
     if note:
         print("  " + note)
+    hidden_note = (f"  + {hidden} ambiguous edge(s) not shown (receiver type unknown, name matches): add --include-ambiguous"
+                   if hidden else None)
     if not hops:
         print("  none found (no resolved edges)")
+        if hidden_note:
+            print(hidden_note)
         return
     max_rows = getattr(args, "max_rows", 200)
     mode = "summary" if getattr(args, "summary", False) else "files" if getattr(args, "files_only", False) else "rows"
@@ -6528,14 +6673,21 @@ def q_callers(g, args, direction="in"):
         print(f"  ({len(hops)} rows exceed --max-rows {max_rows}; showing the summary. Use --files-only for the file list, --max-rows N for all rows.)")
     arrow = "<-" if direction == "in" else "->"
     if mode == "rows":
+        # Compact rows: the queried symbol is in the header, so a direct row starts at the arrow, and the
+        # edge type is only spelled out when it is not `calls`. Deeper hops (and members of a class
+        # target) keep the name they hang off.
         for a, e, b, lvl in hops:
             other = g.nodes[b]
             this = g.nodes[a]
             if direction == "in":
                 loc = f"{other['file']}:{e.get('line') or other['line']}"                  # caller file, call-site line
             else:
-                loc = f"defined at {other['file']}:{other['line']}, called at line {e.get('line') or '?'}"
-            print(f"  {'  ' * (lvl - 1)}{this['qname']} {arrow} {other['qname']}  [{e['type']}, {e['confidence']}]  ({loc})")
+                loc = f"L{e.get('line') or '?'} -> {other['file']}:{other['line']}"      # call-site line -> definition
+            kind = e["confidence"] if e["type"] == "calls" else f"{e['type']}, {e['confidence']}"
+            head = f"{arrow}" if (lvl == 1 and a == n["id"]) else f"{this['qname']} {arrow}"
+            print(f"  {'  ' * (lvl - 1)}{head} {other['qname']}  {loc}  [{kind}]")
+        if hidden_note:
+            print(hidden_note)
         return
     per_file = defaultdict(lambda: {"level": 99, "rows": 0})
     per_sym = defaultdict(lambda: [0, 99, None])
@@ -6579,6 +6731,108 @@ def q_callers(g, args, direction="in"):
             print(f"    {cnt:4d}  hop {lvl}  {other['qname']}  (defined at {other['file']}:{other['line']})")
         print("  Relationship mix: " + ", ".join(f"{t}/{c}={v}" for (t, c), v in sorted(mix.items(), key=lambda kv: -kv[1])))
     print(f"  Files: {len(per_file)} (hop 1: {len(direct)}); symbols: {len(per_sym)}; rows: {len(hops)}; test files: {len(tests)}")
+    if hidden_note:
+        print(hidden_note)
+
+
+SOURCE_IN_TYPES = {"calls", "instantiates", "extends", "implements", "references"}
+
+
+def q_source(g, args):
+    """One call instead of `symbol` + a ranged read + a confirming grep: where the symbol is, who
+    calls it, what it calls, and its exact source lines. In the Django benchmark that three-call
+    pattern was the main reason the graph added calls (and re-read context) instead of saving them."""
+    n = ensure_one(g, args.name)
+    if n["kind"] == "file":
+        raise QueryError(f"'{args.name}' is a file; `query file {n['file']}` gives its outline, `source <symbol>` a definition")
+    start = n["line"] or 1
+    end = n.get("end_line") or start
+    print(f"{fmt_node(n, with_file=False)}  {n['file']}:{start}-{end} ({end - start + 1} lines)")
+    no_tests = getattr(args, "no_tests", False)
+
+    def where(o, line):
+        # same file as the symbol: just the line; elsewhere: the path the reader needs for a next step
+        return f"L{line}" if o["file"] == n["file"] else f"{o['file']}:{line}"
+
+    def ref_line(label, edges, other_key, line_of, query_cmd):
+        groups = {}                                   # other node -> [lines, ambiguous?, edge type]
+        def order(e):   # firm before ambiguous, library code before tests, then by line
+            o = g.nodes.get(e[other_key]) or {}
+            return (e["confidence"] == "ambiguous", bool(o.get("file") and is_test_file(o["file"])), o.get("file") or "", e.get("line") or 0)
+        for e in sorted(edges, key=order):
+            o = g.nodes.get(e[other_key])
+            if o is None or (no_tests and o.get("file") and is_test_file(o["file"])):
+                continue
+            gr = groups.setdefault(o["id"], [o, [], True, e["type"]])
+            gr[1].append(line_of(e, o))
+            gr[2] = gr[2] and e["confidence"] == "ambiguous"
+        if not groups:
+            print(f"{label}: none resolved")
+            return
+        rows = list(groups.values())
+        amb = sum(1 for r in rows if r[2])
+        parts = []
+        for o, lines, is_amb, typ in rows[:args.refs]:
+            locs = sorted(set(lines))
+            loc = where(o, locs[0]) + ("," + ",".join(str(x) for x in locs[1:4]) if len(locs) > 1 else "")
+            parts.append(f"{o['qname']} {loc}" + ("" if typ == "calls" else f" [{typ}]") + ("?" if is_amb else ""))
+        more = f" (+{len(rows) - args.refs}: query {query_cmd} {n['qname']})" if len(rows) > args.refs else ""
+        print(f"{label} ({len(rows)}" + (f", {amb} ambiguous marked ?" if amb else "") + "): " + ", ".join(parts) + more)
+
+    if not args.no_refs:
+        note = dispatch_note(g, n)
+        if note:
+            print(note)
+        ref_line("called by", g.in_edges(n["id"], SOURCE_IN_TYPES), "src",
+                 lambda e, o: e.get("line") or o["line"], "callers")
+        if n["kind"] not in CONTAINER_KINDS:
+            ref_line("calls", g.out_edges(n["id"], {"calls", "instantiates"}), "dst",
+                     lambda e, o: o["line"], "callees")
+    path = os.path.join(getattr(g, "root", "") or "", n["file"])
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        print(f"(source not readable at {path}; the graph may come from another checkout)")
+        return
+    span = lines[start - 1:end]
+    limit = args.max_lines
+    if limit and len(span) > limit:
+        kids = g.children(n["id"])
+        if kids:
+            # a big class: its members with exact ranges beat the first N lines of its body
+            for k in kids:
+                rng = f"L{k['line']}" + (f"-{k['end_line']}" if k.get("end_line") and k["end_line"] != k["line"] else "")
+                print(f"  {fmt_node(k, with_file=False)}  [{rng}]")
+            print(f"-- {len(span)} lines: members listed instead of the body; `source {n['qname']}.<member>` for one, --max-lines 0 for all")
+            return
+        span = span[:limit]
+    for i, text in enumerate(span, start):
+        print(f"{i:5} {text}")
+    if limit and end - start + 1 > limit:
+        print(f"-- L{start + limit}-{end} not shown ({end - start + 1 - limit} lines): --max-lines 0 for all, or read that range")
+
+
+def for_each_name(fn):
+    """Run a single-name query for every name given (`symbol A B C`), so a question that needs several
+    symbols is one call. A name that fails (not found, ambiguous) is reported inline and the others
+    still run; the exit code is non-zero only when every name failed."""
+    def run(g, args):
+        names = args.name if isinstance(args.name, list) else [args.name]
+        if len(names) == 1:
+            return fn(g, argparse.Namespace(**{**vars(args), "name": names[0]}))
+        failed = 0
+        for i, name in enumerate(names):
+            if i and not getattr(args, "json", False):
+                print()
+            try:
+                fn(g, argparse.Namespace(**{**vars(args), "name": name}))
+            except QueryError as e:
+                failed += 1
+                print(e.text if e.stdout else f"{name}: {e.text}")
+        if failed == len(names):
+            sys.exit(1)
+    return run
 
 
 def q_trace_deps(g, args):
@@ -6592,7 +6846,7 @@ def q_trace_deps(g, args):
             for k in g.children(x):
                 start.append(k["id"])
                 stack.append(k["id"])
-    seen, hops = bfs(g, start, "in", DEP_EDGE_TYPES, args.depth, args.include_ambiguous)
+    seen, hops = bfs(g, start, "in", DEP_EDGE_TYPES, args.depth, args.include_ambiguous, getattr(args, "no_tests", False))
     start_set = set(start)
     if args.json:
         print(json.dumps({"target": n["id"], "levels": seen, "hops": hops}))
@@ -6606,7 +6860,8 @@ def q_trace_deps(g, args):
         f = dep["file"] or dep["name"]
         per_file[f]["level"] = min(per_file[f]["level"], lvl)
         per_file[f]["items"].append((lvl, dep, e, tgt))
-    print(f"### Blast Radius & Downstream Impact: {n['kind']} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}")
+    print(f"### Blast Radius & Downstream Impact: {n['kind']} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}"
+          + ("  (test files excluded)" if getattr(args, "no_tests", False) else ""))
     note = dispatch_note(g, n)
     if note:
         print(note)
@@ -6935,7 +7190,10 @@ def main(argv=None):
 
     q = sub.add_parser("query", help="query a built graph")
     q.add_argument("--graph", default=DEFAULT_GRAPH)
-    q.add_argument("--root", default=None, help=f"repo root; the graph is read from <root>/{DEFAULT_GRAPH} unless --graph is given")
+    q.add_argument("--root", default=None, help=f"repo root; the graph is read from <root>/{DEFAULT_GRAPH} unless --graph is given "
+                                               f"(default: the nearest {DEFAULT_GRAPH} at or above the current directory)")
+    q.add_argument("--no-refresh", action="store_true",
+                   help="do not rebuild a graph that is stale against the git working tree (also: ASTGRAPH_NO_REFRESH=1)")
     qs = q.add_subparsers(dest="qcmd", required=True)
 
     x = qs.add_parser("find", help="search symbols/files by name (exact-name matches first)")
@@ -6943,21 +7201,31 @@ def main(argv=None):
     x.add_argument("--lang", action="append", help="only symbols from files of this language (repeatable)")
     x.add_argument("--no-tests", action="store_true", help="hide symbols defined in test files")
     x.set_defaults(qfn=q_find)
-    x = qs.add_parser("symbol", help="architecture card for one symbol: members, dependencies, dependents")
-    x.add_argument("name"); x.add_argument("--json", action="store_true")
+    x = qs.add_parser("symbol", help="architecture card for one or more symbols: members, dependencies, dependents")
+    x.add_argument("name", nargs="+"); x.add_argument("--json", action="store_true")
     x.add_argument("--limit", type=int, default=CAP_SYMBOL_SECTION, help=f"max rows per section (default {CAP_SYMBOL_SECTION}; hubs get a per-file summary for the rest)")
-    x.add_argument("--all", action="store_true", help="no caps")
-    x.set_defaults(qfn=q_symbol)
-    for cmd, direction, helptext in (("callers", "in", "who calls/extends/instantiates this symbol (transitive)"),
-                                     ("callees", "out", "what this symbol calls/instantiates (transitive)")):
+    x.add_argument("--calls", action="store_true", help="list each member's calls (off by default: they dominate a class card)")
+    x.add_argument("--all", action="store_true", help="no caps (implies --calls)")
+    x.set_defaults(qfn=for_each_name(q_symbol))
+    x = qs.add_parser("source", help="definition + callers + callees + exact source lines of one or more symbols, in one call")
+    x.add_argument("name", nargs="+")
+    x.add_argument("--max-lines", type=int, default=CAP_SOURCE_LINES,
+                   help=f"body lines before cutting (default {CAP_SOURCE_LINES}; 0 = whole body; a longer class prints its member outline)")
+    x.add_argument("--refs", type=int, default=CAP_SOURCE_REFS, help=f"callers/callees named per symbol (default {CAP_SOURCE_REFS})")
+    x.add_argument("--no-refs", action="store_true", help="only the source lines")
+    x.add_argument("--no-tests", action="store_true", help="leave callers/callees in test files out")
+    x.set_defaults(qfn=for_each_name(q_source))
+    for cmd, direction, helptext in (("callers", "in", "who calls/extends/instantiates these symbols (transitive with --depth)"),
+                                     ("callees", "out", "what these symbols call/instantiate (transitive with --depth)")):
         x = qs.add_parser(cmd, help=helptext)
-        x.add_argument("name"); x.add_argument("--depth", type=int, default=2); x.add_argument("--include-ambiguous", action="store_true"); x.add_argument("--json", action="store_true")
+        x.add_argument("name", nargs="+"); x.add_argument("--depth", type=int, default=1); x.add_argument("--include-ambiguous", action="store_true"); x.add_argument("--json", action="store_true")
+        x.add_argument("--no-tests", action="store_true", help="drop edges from/to test files")
         x.add_argument("--summary", action="store_true", help="directories, most frequent symbols and relationship mix instead of rows")
         x.add_argument("--files-only", action="store_true", help="only the files, grouped by hop")
         x.add_argument("--max-rows", type=int, default=CAP_ROWS, help=f"above this many rows the listing degrades to --summary (default {CAP_ROWS})")
         x.add_argument("--top", type=int, default=CAP_SUMMARY_TOP, help="rows per section in --summary")
         x.add_argument("--no-members", action="store_true", help="for a class/file target: only edges to the class itself (instantiations, extends, references), not to its members")
-        x.set_defaults(qfn=(lambda d: (lambda g, a: q_callers(g, a, d)))(direction))
+        x.set_defaults(qfn=for_each_name((lambda d: (lambda g, a: q_callers(g, a, d)))(direction)))
     x = qs.add_parser("trace-deps", help="blast radius: every file/symbol that depends on a target")
     x.add_argument("target", help="file path, symbol name, qualified name, or node id")
     x.add_argument("--depth", type=int, default=3); x.add_argument("--per-file", type=int, default=CAP_PER_FILE)
@@ -6966,6 +7234,7 @@ def main(argv=None):
     x.add_argument("--files-only", action="store_true", help="only the affected files, grouped by hop")
     x.add_argument("--max-rows", type=int, default=CAP_ROWS, help=f"above this many dependency rows the table degrades to --summary (default {CAP_ROWS})")
     x.add_argument("--top", type=int, default=CAP_SUMMARY_TOP, help="rows per section in --summary")
+    x.add_argument("--no-tests", action="store_true", help="leave dependents in test files out")
     x.set_defaults(qfn=q_trace_deps)
     x = qs.add_parser("overview", help="centrality ranking: hub symbols, hub files, directories, externals")
     x.add_argument("--top", type=int, default=CAP_SUMMARY_TOP); x.add_argument("--json", action="store_true")
@@ -6990,18 +7259,35 @@ def main(argv=None):
     def run_query(a):
         if a.root and a.graph == DEFAULT_GRAPH:
             a.graph = os.path.join(a.root, DEFAULT_GRAPH)
+        elif a.graph == DEFAULT_GRAPH and not os.path.exists(a.graph):
+            a.graph = find_graph() or a.graph          # e.g. the agent `cd`-ed into tests/ to run them
         if not os.path.exists(a.graph):
             msg = f"graph not found at {a.graph}. Build it first: astgraph.py build --root <repo>"
             note = legacy_graph_note(a.graph)
             sys.exit(msg + (f"\n{note}" if note else ""))
+        if not a.no_refresh:
+            note = refresh_if_stale(a.graph)
+            if note:
+                print(note, file=sys.stderr)          # stderr: keeps --json output parseable
         try:
             g = G(Store(a.graph))
         except sqlite3.Error as e:
             sys.exit(f"{a.graph} is not a readable graph ({e}). Rebuild it: astgraph.py build --root <repo>")
         g.graph_path = a.graph
+        # Where file paths in the graph are anchored: the default layout is <root>/.ast-graph/graph.db,
+        # which survives the repo being moved; a custom --graph falls back to the root recorded at build.
+        g.root = default_layout_root(a.graph) or g.store.meta("root") or ""
+        rel = os.path.relpath(os.getcwd(), g.root) if g.root else "."
+        g.cwd_prefix = rel if rel != "." and not rel.startswith("..") else None
         try:
             a.qfn(g, a)
             sys.stdout.flush()
+        except QueryError as e:
+            if e.stdout:
+                print(e.text)
+                sys.stdout.flush()
+                sys.exit(1)
+            sys.exit(e.text)
         except BrokenPipeError:
             # `query ... | head` is how agents read long output; a closed pipe is the reader being
             # done, not an error worth a stderr message in their context.

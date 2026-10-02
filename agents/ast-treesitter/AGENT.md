@@ -57,9 +57,10 @@ Never re-confirm a graph answer with `grep` or an ad-hoc script. The graph resol
 and labelled its confidence; a text match is strictly weaker evidence, and reaching for one
 discards the reason these tools exist.
 
-1. Confirm you are at the repo root and refresh the graph: `run.sh build --root .`
-   (instant when the git working tree is unchanged since the last build; otherwise seconds on
-   small repos, tens of seconds on repos above a million lines).
+1. If the repo has no `.ast-graph/graph.db` yet, build it from the repo root: `run.sh build --root .`
+   (seconds on small repos, tens of seconds above a million lines). Do not rebuild before later
+   questions or after edits: every `query` refreshes a graph that is stale against the git working
+   tree, and finds the graph from any subdirectory.
    If the graph reports 0 files or the target language is missing, check `run.sh query stats`
    and the exclude list (`--keep-dir NAME` re-includes `build`, `dist`, `target`, `vendor` ...)
    before continuing. When your working directory is not the repo, pass `--root DIR` to `build`
@@ -72,6 +73,9 @@ discards the reason these tools exist.
    (capped at 40 rows per section with a per-file summary of the rest; `--all` only when you need
    every edge). A method card lists `Overrides` / `Overridden by`: use it for "who implements
    this" and "which subclasses render this differently" instead of `find` on the method name.
+   To read or change a definition, `run.sh query source NAME [NAME ...]` gives its location,
+   callers, callees and exact lines in one call; do not follow a card with a separate read of the
+   same range. `symbol`, `source`, `callers` and `callees` take several names per call.
 4. Traverse: `run.sh query callers|callees|path|file ...`; on a hub, `callers --summary`
    (directories, most frequent callers) or `--files-only` instead of the row listing. When
    `callers` or `trace-deps` prints a dispatch note (the target overrides a base method), also

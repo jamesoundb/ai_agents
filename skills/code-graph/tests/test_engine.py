@@ -449,6 +449,52 @@ def test_resolution(root):
     return G
 
 
+def test_lean_queries(root):
+    """Query output that replaces calls instead of adding them (Django benchmark, round 5): `source`
+    answers definition + callers + callees + body in one call, several names per call, hidden
+    ambiguous edges are announced, test usages can be left out, and the graph is found from a
+    subdirectory."""
+    print("# lean queries: source, several names, ambiguous note, --no-tests, subdirectories")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
+    src = run("query", "--graph", gp, "source", "models.py:Repo.save")
+    first = src.splitlines()[0] if src else ""
+    check(re.search(r"python/app/models\.py:\d+-\d+ \(\d+ lines\)", first), f"source: header gives file and exact line range: {first}")
+    check("called by (" in src and "Service.run" in src, f"source: names the callers in the same call: {src.splitlines()[1:2]}")
+    check("helper" in src and "?" in src, "source: an ambiguous caller is listed and marked ?")
+    body = [ln for ln in src.splitlines() if re.match(r"^\s*\d+ ", ln)]
+    check(body and "def save" in body[0], f"source: body lines carry their line numbers: {body[:1]}")
+    cut = run("query", "--graph", gp, "source", "service.py:Service", "--max-lines", "2")
+    check("members listed instead of the body" in cut and "[L" in cut, "source: a class over --max-lines prints its member outline with ranges")
+    two = run("query", "--graph", gp, "source", "models.py:Repo.save", "service.py:helper", "--no-refs")
+    check(two.count(" lines)") == 2 and "called by" not in two, "source: several names in one call; --no-refs drops the reference lines")
+    p = subprocess.run([sys.executable, "-B", ENGINE, "query", "--graph", gp, "source", "python/app/models.py"], capture_output=True, text=True)
+    check(p.returncode != 0 and "query file" in p.stderr, "source on a file points at `query file`")
+
+    multi = run("query", "--graph", gp, "symbol", "models.py:Repo", "no_such_symbol_xyz")
+    check("Members" in multi and "no_such_symbol_xyz: no symbol" in multi, "symbol: several names; a missing one is reported inline, the rest answered")
+    card = run("query", "--graph", gp, "symbol", "models.py:Repo")
+    check("calls:" not in card and "--calls" in card, "symbol: member call lists are off by default and the flag is named")
+    check("calls:" in run("query", "--graph", gp, "symbol", "service.py:Service", "--calls"), "symbol --calls lists member calls")
+    jo = json.loads(run("query", "--graph", gp, "symbol", "Shape.java:Shape.area", "--json"))
+    check({o["qname"] for o in jo.get("overridden_by", [])} >= {"Circle.area", "Square.area"}, f"symbol --json carries overridden_by {jo.get('overridden_by')}")
+
+    cr = run("query", "--graph", gp, "callers", "models.py:Repo.save")
+    check("ambiguous edge(s) not shown" in cr and "helper" not in cr, f"callers: hidden ambiguous edges are counted, not silently dropped: {cr.splitlines()[-1]}")
+    check("<- Service.run" in cr and "Repo.save <-" not in cr, "callers: compact rows start at the arrow (target is in the header)")
+    check("helper" in run("query", "--graph", gp, "callers", "models.py:Repo.save", "--include-ambiguous"), "--include-ambiguous lists them")
+    allc = run("query", "--graph", gp, "callers", "service.py:Service")
+    noc = run("query", "--graph", gp, "callers", "service.py:Service", "--no-tests")
+    check("python/tests/" in allc and "python/tests/" not in noc and "(no tests)" in noc, "callers --no-tests drops callers in test files")
+    td = run("query", "--graph", gp, "trace-deps", "service.py:Service", "--no-tests", "--files-only")
+    check("python/tests/" not in td and "test files excluded" in td, "trace-deps --no-tests drops dependents in test files")
+
+    sub = os.path.join(root, "python")
+    s1 = run("query", "symbol", "models.py:Repo", cwd=sub)
+    check("Members" in s1, "query from a subdirectory finds the graph above it")
+    s2 = run("query", "file", "app/models.py", cwd=sub)
+    check("class Repo" in s2, "a path relative to that subdirectory resolves to the repo path")
+
+
 def test_tests_detection(root, G):
     print("# test-file detection")
     for p, want in [("go/handler/attestor.go", False), ("go/handler/handler_test.go", True),
@@ -952,6 +998,20 @@ def test_fast_path(root):
             f.write(src)
     check("up to date" not in build(root) and "up to date" in build(root), "engine restored -> one re-link, then fast path again")
 
+    # Queries refresh a stale graph themselves (no separate `build` call per question), with the
+    # options the build recorded; --no-refresh / ASTGRAPH_NO_REFRESH opt out.
+    stamp = json.load(open(os.path.join(root, ".ast-graph", "graph.db.stamp")))
+    check(stamp.get("options", {}).get("root") == os.path.abspath(root), f"stamp records the build options {stamp.get('options')}")
+    with open(os.path.join(root, "python/app/latest.py"), "a") as f:
+        f.write("\ndef fresh_after_edit():\n    pass\n")
+    stale = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "--no-refresh", "find", "fresh_after_edit"],
+                           capture_output=True, text=True)
+    check("fresh_after_edit" not in stale.stdout and "refreshed" not in stale.stderr, "--no-refresh answers from the graph as built")
+    q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "find", "fresh_after_edit"], capture_output=True, text=True)
+    check("graph refreshed" in q.stderr and "fresh_after_edit" in q.stdout, f"a query on a stale graph refreshes it first: {q.stderr.strip()[:90]}")
+    q2 = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "find", "fresh_after_edit"], capture_output=True, text=True)
+    check("refreshed" not in q2.stderr, "the next query finds it current (no second rebuild)")
+
 
 def main():
     tmp = tempfile.mkdtemp(prefix="astgraph-fixture-")
@@ -959,6 +1019,7 @@ def main():
         root = os.path.join(tmp, "fixture")
         shutil.copytree(FIXTURE, root)
         G = test_resolution(root)
+        test_lean_queries(root)
         test_tests_detection(root, G)
         test_determinism(root)
         test_concurrent_and_legacy(tmp)
