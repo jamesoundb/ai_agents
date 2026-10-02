@@ -296,8 +296,10 @@ templates rather than adding vendor-neutral fallbacks.
   must leave a stated way back — a flag that raises it (`skeleton --max-calls/--max-imports`,
   `symbol --limit/--all`, `trace-deps --max-rows/--files-only`, `source --max-lines/--refs`) or an
   exact line range to read. Defaults that keep cards small: member call lists only with
-  `symbol --calls`, usage from test files folded into one per-file count line (both lifted by
-  `--all`).
+  `symbol --calls`, usage from test files folded into one per-file count line, uses from inside the
+  class itself folded into one count, `Used by` rows grouped per file with the path printed once, and the
+  constructor `calls` row hidden next to its `instantiates` row (all lifted by `--all`). A Kotlin companion
+  object's members are listed under it.
   `skeleton` reports what it hid once per run (`-- elided: N calls (raise with --max-calls)`),
   not per line, and applies a never-worse guard: a file no larger than its own skeleton is
   printed as source instead, and a run that saves nothing says so rather than reporting a

@@ -352,8 +352,9 @@ class Ctx:
             hint = re.sub(r"\s*\.\s*", ".", hint).strip()   # multi-line builder chains: `Request\n  .Builder()\n  .url(x)`
         ref = {"kind": kind, "name": name, "src": self.top()["id"],
                "line": extra.pop("line", None) or tsnode.start_point[0] + 1, "hint": hint}
-        if kind == "call" and "argc" not in extra:
-            # argument count and, where knowable, argument types for overload resolution
+        if kind in ("call", "instantiates") and "argc" not in extra:
+            # argument count and, where knowable, argument types for overload resolution (constructors
+            # included: `new TarArchiveEntry(globalPax, header, encoding, lenient)` picks one of 15)
             args = tsnode.child_by_field_name("arguments") if hasattr(tsnode, "child_by_field_name") else None
             if args is not None:
                 named = [c for c in args.named_children if c.type != "comment"]
@@ -5319,6 +5320,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         return tn
 
     # Pass 2a: extends, implements, instantiates, signature type uses (types must be linked before calls)
+    ctor_links = []   # (ref, file, class node, confidence, name) of `new X(args)`, linked to a constructor before pass 2b
     for rel, info in files.items():
         lang = lang_of(rel)
         for r in info["refs"]:
@@ -5404,6 +5406,10 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     if t["id"] == r["src"]:
                         continue   # a class cannot extend itself; the qualified base was mis-resolved
                     add_edge(r["src"], t["id"], k, r["line"], conf, name=name)
+                    if k == "instantiates" and r.get("argc") is not None and t["kind"] in ("class", "enum"):
+                        # `new X(args)` also calls one constructor; picked after the inheritance index and call
+                        # resolution exist (ctor_links below), since overloads are told apart by argument types
+                        ctor_links.append((r, rel, t, conf, name))
 
     # Inheritance index from the resolved edges: class node id -> parent type nodes
     parents_of = defaultdict(list)
@@ -5825,6 +5831,24 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         finally:
             _dep[0] = None
         return {"c": calls_out, "n": sorted(dep["n"]), "fb": sorted(dep["b"]), "p": dep["p"], "b": bfp[rel]}
+
+    # `new X(args)` -> the constructor overload it calls. Without this edge a call chain that goes through a
+    # constructor (getNextTarEntry -> new TarArchiveEntry(..) -> parseTarHeader) stops at the class, and
+    # `callers X.X@line` finds nothing. Recomputed in full on every build (not part of the per-file replay).
+    for r, rel, t, conf, name in ctor_links:
+        ctors = [c for c in candidates(t["name"], {"constructor"}) if c.get("parent") == t["id"]]
+        if not ctors:
+            continue
+        saved = dict(_cur)
+        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "rel": rel,
+                     "cont": container_of(r["src"]), "overload_undecided": False, "src": r.get("src")})
+        try:
+            pickc = by_arity(ctors)
+        finally:
+            _cur.clear()
+            _cur.update(saved)
+        for c in (pickc[:1] if len(pickc) == 1 else pickc[:3]):
+            add_edge(r["src"], c["id"], "calls", r["line"], conf if len(pickc) == 1 else "ambiguous", name=name)
 
     # Pass 2b, step 1: resolve the calls of every file that cannot be replayed -- in forked worker
     # processes when there are many (a cold build), else here, lazily, in file order.
@@ -6726,6 +6750,11 @@ def q_symbol(g, args):
         for k in kids[:cap]:
             end = f"-{k['end_line']}" if k.get("end_line") and k["end_line"] != k["line"] else ""
             print(f"│   ├── {fmt_node(k, with_file=False)}  [L{k['line']}{end}]")
+            if k["kind"] in ("object", "class") and k["signature"].startswith("companion"):
+                # Kotlin companion members are the class's static API: list them under it
+                for cm in g.children(k["id"])[:None if show_all else 12]:
+                    cend = f"-{cm['end_line']}" if cm.get("end_line") and cm["end_line"] != cm["line"] else ""
+                    print(f"│   │     {fmt_node(cm, with_file=False)}  [L{cm['line']}{cend}]")
             if not with_calls:
                 continue
             calls = collapse(g.out_edges(k["id"], {"calls"}), lambda e: e["dst"])
@@ -6786,23 +6815,53 @@ def q_symbol(g, args):
                 test_uses[g.nodes[e["src"]]["file"]] += 1
         ins = [e for e in ins if not from_test(e)]
         member_ins = [(k, e) for k, e in member_ins if not from_test(e)]
-    if ins or member_ins or test_uses:
-        total_in = len(ins) + len(member_ins)
+    # Uses from inside the class itself (its members using a nested type or each other) say nothing about
+    # who uses it from outside, and on a large class they were most of the section; --all keeps them.
+    internal = 0
+    if not show_all and n["kind"] in CONTAINER_KINDS:
+        def inside(sid, depth=0):
+            x = g.nodes.get(sid)
+            while x is not None and depth < 8:
+                if x.get("parent") == n["id"] or x["id"] == n["id"]:
+                    return True
+                x, depth = g.nodes.get(x.get("parent")), depth + 1
+            return False
+        before = len(ins) + len(member_ins)
+        ins = [e for e in ins if not inside(e["src"])]
+        member_ins = [(k, e) for k, e in member_ins if not inside(e["src"])]
+        internal = before - len(ins) - len(member_ins)
+    # `new X(args)` records an `instantiates` edge to the class and a `calls` edge to the constructor: on the
+    # class card the second says nothing new
+    inst = {(e["src"], e.get("line")) for e in ins if e["type"] == "instantiates"}
+    member_ins = [(k, e) for k, e in member_ins
+                  if not (k["kind"] == "constructor" and e["type"] == "calls" and (e["src"], e.get("line")) in inst)]
+    rows = [(None, e) for e in ins] + [(k["name"], e) for k, e in member_ins]
+    if rows or test_uses or internal:
+        total_in = len(rows)
         print("└── Used by (incoming)" + (f" ({total_in}, showing {cap}; `--all` for everything, `query callers` to traverse)" if cap and total_in > cap else ""))
-        ins_sorted = sorted(collapse(ins, lambda e: e["src"]), key=lambda ec: (ec[0]["confidence"] == "ambiguous", ec[0]["type"], ec[0].get("line") or 0))
-        for e, cnt in ins_sorted[:cap]:
-            s = g.nodes.get(e["src"])
-            if s:
-                print(f"    ├── {e['type']} from {s['qname']}  ({s['file']}:{e.get('line') or s['line']}, {e['confidence']})" + (f"  x{cnt}" if cnt > 1 else ""))
-        if cap and len(ins) > cap:
-            print(f"    ├── ... {len(ins) - cap} more; " + by_file_summary([g.nodes[e["src"]] for e in ins if e["src"] in g.nodes]))
-        room = None if cap is None else max(0, cap - min(len(ins), cap))
-        for k, e in member_ins[:room]:
-            s = g.nodes.get(e["src"])
-            if s:
-                print(f"    ├── {e['type']} {k['name']} from {s['qname']}  ({s['file']}:{e.get('line') or s['line']}, {e['confidence']})")
-        if room is not None and len(member_ins) > room:
-            print(f"    └── ... {len(member_ins) - room} more member usages; " + by_file_summary([g.nodes[e["src"]] for _, e in member_ins if e["src"] in g.nodes]))
+        rows.sort(key=lambda r: (r[1]["confidence"] == "ambiguous", (g.nodes.get(r[1]["src"]) or {}).get("file") or "", r[1].get("line") or 0))
+        # One line per file, the path printed once: rows used to repeat a 100+ character path each
+        by_file, items = {}, {}
+        for mem, e in rows[:cap]:
+            src = g.nodes.get(e["src"])
+            if src is None:
+                continue
+            key = (src["file"], e["type"], mem, src["id"], e["confidence"])
+            if key not in items:
+                items[key] = []
+                by_file.setdefault(src["file"], []).append(key)
+            items[key].append(e.get("line") or src["line"])
+        for f, keys in by_file.items():
+            parts = []
+            for key in keys:
+                _f, typ, mem, sid, conf = key
+                lines = ",".join(str(x) for x in sorted(set(items[key])))
+                parts.append(f"{typ}{' ' + mem if mem else ''} from {g.nodes[sid]['qname']} L{lines} ({conf})")
+            print(f"    ├── {f}: " + "; ".join(parts))
+        if cap and len(rows) > cap:
+            print(f"    ├── ... {len(rows) - cap} more; " + by_file_summary([g.nodes[e["src"]] for _, e in rows[cap:] if e["src"] in g.nodes]))
+        if internal:
+            print(f"    ├── + {internal} use(s) from inside {n['name']} itself (--all lists them)")
         if test_uses:
             top = sorted(test_uses.items(), key=lambda kv: (-kv[1], kv[0]))
             print(f"    └── + {sum(test_uses.values())} more from {len(top)} test file(s): "

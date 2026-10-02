@@ -545,6 +545,17 @@ def test_kotlin_rules(root, G):
           f"kotlin: overrides need the same parameter types (private overload excluded): {[l for l in card.splitlines() if 'Overrid' in l]}")
 
 
+def test_java_constructors(root, G):
+    """`new X(args)` is linked to the constructor overload it calls, so call chains run through constructors."""
+    print("# java: constructor overloads")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
+    nxt = G.node("Archive.java", "Reader.next")
+    ctor = [G.nodes[e["dst"]] for e in G.edges_from(nxt) if G.nodes[e["dst"]]["kind"] == "constructor"]
+    check(len(ctor) == 1 and "int size" in ctor[0]["signature"], f"java: new Archive(\"entry\", 512) calls the (String, int) constructor {[c['signature'] for c in ctor]}")
+    pth = run("query", "--graph", gp, "path", "Reader.next", "Archive.parseSize")
+    check("Archive.Archive" in pth and "Archive.parseSize" in pth, f"java: a call path runs through the constructor: {pth.strip().splitlines()}")
+
+
 def test_tests_detection(root, G):
     print("# test-file detection")
     for p, want in [("go/handler/attestor.go", False), ("go/handler/handler_test.go", True),
@@ -1092,6 +1103,7 @@ def main():
         test_lean_queries(root)
         test_py_value_typing(G)
         test_kotlin_rules(root, G)
+        test_java_constructors(root, G)
         test_tests_detection(root, G)
         test_determinism(root)
         test_concurrent_and_legacy(tmp)

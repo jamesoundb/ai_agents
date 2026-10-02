@@ -50,6 +50,9 @@ The linker is receiver-aware and import-aware:
   receiver of a collection lambda (`rules.flatMap { it.visitFile() }`); an annotation on a supertype
   (`: @Suppress(..) api.MultiRule()`) is blanked before parsing; fully-qualified supertypes resolve by
   package as in Java.
+- Java `new X(args)` (and other `instantiates` references with arguments): besides the edge to the class, a
+  `calls` edge to the constructor overload chosen by argument count and types (`ambiguous` to up to three
+  when they cannot be told apart), so `path` and `callers X.X@line` run through constructors.
 - Kotlin/Java overrides need the same parameter types (an overload of the same name is not an override),
   and `super.f(x)` inside `override fun f(...)` whose repo candidate has other parameter types is left to
   the external base class it really calls.
