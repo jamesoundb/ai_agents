@@ -142,8 +142,8 @@ echo "== --agents-as-skills and a developer's own ~/.agents/skills =="
 # The layout seen on a developer Mac: their own skills (a directory and a symlink) in
 # ~/.agents/skills, and ~/.gemini/config/skills a symlink to that folder.
 DH="$WORK/dev-home"
-mkdir -p "$DH/.agents/skills/twg-mine" "$DH/elsewhere/linked-skill" "$DH/.gemini/config"
-echo "MINE" > "$DH/.agents/skills/twg-mine/SKILL.md"
+mkdir -p "$DH/.agents/skills/my-own-skill" "$DH/elsewhere/linked-skill" "$DH/.gemini/config"
+echo "MINE" > "$DH/.agents/skills/my-own-skill/SKILL.md"
 echo "LINKED" > "$DH/elsewhere/linked-skill/SKILL.md"
 ln -s "$DH/elsewhere/linked-skill" "$DH/.agents/skills/linked-skill"
 ln -s "$DH/.agents/skills" "$DH/.gemini/config/skills"
@@ -152,13 +152,13 @@ agent_skills() { for a in "$REPO"/agents/*/; do [ -f "$1/$(basename "$a")/SKILL.
 check "agents installed as skills = $N_AGENTS"      test "$(agent_skills "$DH/.agents/skills")" -eq "$N_AGENTS"
 check "native agents still installed = $N_AGENTS"  test "$(count "$DH/.gemini/config/agents")" -eq "$N_AGENTS"
 check "skills + agent skills + theirs in the folder" test "$(count "$DH/.agents/skills")" -eq $((N_SKILLS_NO_BOOT + N_AGENTS + 2))
-check "their skill directory is untouched"         grep -qx MINE "$DH/.agents/skills/twg-mine/SKILL.md"
+check "their skill directory is untouched"         grep -qx MINE "$DH/.agents/skills/my-own-skill/SKILL.md"
 check "their symlink is untouched"                 test "$(readlink "$DH/.agents/skills/linked-skill")" = "$DH/elsewhere/linked-skill"
 check "HOME/.gemini/config/skills is still their link" test -L "$DH/.gemini/config/skills"
 HOME="$DH" run_install "$WORK/as-skills-unin.log" "$REPO/install.sh" --harness antigravity --scope user --uninstall
 check "uninstall removes the agent skills"         test ! -e "$DH/.agents/skills/terraform"
 check "uninstall leaves only their two skills"     test "$(count "$DH/.agents/skills")" -eq 2
-check "their skill survives uninstall"             grep -qx MINE "$DH/.agents/skills/twg-mine/SKILL.md"
+check "their skill survives uninstall"             grep -qx MINE "$DH/.agents/skills/my-own-skill/SKILL.md"
 check "their symlink survives uninstall"           test -L "$DH/.agents/skills/linked-skill"
 check "HOME/.gemini/config/skills link survives"      test -L "$DH/.gemini/config/skills"
 # A codex uninstall that empties ~/.agents/skills must not remove it: a link may point at it.
@@ -199,8 +199,8 @@ echo "== --update =="
 # install.sh), never in this checkout.
 copy_repo() { mkdir -p "$1"; (cd "$REPO" && git ls-files -z | tar --null -T - -cf -) | (cd "$1" && tar -xf -); cp "$REPO/install.sh" "$1/install.sh"; }
 UR="$WORK/upd-repo"; copy_repo "$UR"
-UH="$WORK/upd-home"; mkdir -p "$UH/.agents/skills/twg-mine" "$UH/elsewhere/linked" "$UH/.gemini/config"
-echo MINE > "$UH/.agents/skills/twg-mine/SKILL.md"; echo LINKED > "$UH/elsewhere/linked/SKILL.md"
+UH="$WORK/upd-home"; mkdir -p "$UH/.agents/skills/my-own-skill" "$UH/elsewhere/linked" "$UH/.gemini/config"
+echo MINE > "$UH/.agents/skills/my-own-skill/SKILL.md"; echo LINKED > "$UH/elsewhere/linked/SKILL.md"
 ln -s "$UH/elsewhere/linked" "$UH/.agents/skills/linked"
 ln -s "$UH/.agents/skills" "$UH/.gemini/config/skills"          # the developer layout from macOS
 HOME="$UH" run_install "$WORK/u1.log" "$UR/install.sh" --harness claude --scope user
@@ -225,7 +225,7 @@ check "update prunes a deleted skill (link)"     test ! -e "$UH/.claude/skills/t
 check "update prunes a deleted skill (copy)"     test ! -e "$UH/.copilot/skills/teamcity-config-review"
 check "update names the new skill, adds nothing" grep -q 'not in this install:.*zz-new-skill' "$WORK/upd.log"
 check "new skill not installed by update"        test ! -e "$UH/.claude/skills/zz-new-skill"
-check "update keeps their skill"                 grep -qx MINE "$UH/.agents/skills/twg-mine/SKILL.md"
+check "update keeps their skill"                 grep -qx MINE "$UH/.agents/skills/my-own-skill/SKILL.md"
 check "update keeps their symlink"               test "$(readlink "$UH/.agents/skills/linked")" = "$UH/elsewhere/linked"
 check "update keeps their config/skills link"    test -L "$UH/.gemini/config/skills"
 # An install made from another clone is reported and left alone.
