@@ -8,7 +8,9 @@ and the Python/C++ bridge.
 Build once from the repo root (`scripts/run.sh build --root .`). After that every `query` checks the
 git working tree against the graph's stamp and refreshes a stale graph itself, with the options the
 build recorded (a stderr line says so); `query --no-refresh` or `ASTGRAPH_NO_REFRESH=1` turns that
-off. Outside a git checkout there is no stamp, so run `build` again after editing files. In a git checkout an unchanged working tree returns in well under a second (the
+off. Outside a git checkout there is no stamp, so run `build` again after editing files. A graph built
+before stamps recorded their options is not refreshed; a query says so once the engine has changed, and
+one `build` turns refreshing on. In a git checkout an unchanged working tree returns in well under a second (the
 graph carries a git stamp in `<graph>.stamp`); otherwise only changed files are re-parsed
 (by content hash), and only the files whose call resolution the edit can affect are
 re-linked (the build line says how many). Parsing and, on Linux, call resolution run on one
@@ -137,8 +139,12 @@ an external library, a builtin, or generated/unindexed code.
 - `find` lists exact-name matches first and caps substring hits at 15 when exact matches exist
   (`--kind` drops path-only hits; `--no-tests` hides test-file symbols).
 - `path` ignores `ambiguous` edges unless `--include-ambiguous`.
-- `source X --max-lines N` (default 120; 0 = all): a longer function is cut with the remaining range
-  named, a longer class prints its member outline with ranges instead. `--refs N` names more callers.
+- `source X --max-lines N` (default 60; 0 = all): a longer function is cut with the remaining range
+  named, a longer class prints its member outline with ranges instead. All names in one call share a
+  150-line budget; a name past it gets its header and range only. `--refs N` names more callers.
+- `tests-for X` lists the test functions that reach X through up to `--depth 3` caller hops, grouped by
+  test file, firm paths first; `?` marks a test reached only through an ambiguous edge (tests often call
+  through untyped locals). `--no-ambiguous` keeps firm paths only, `--top N` lists more files.
 - `symbol X --calls` lists each member's calls; `--all` removes every cap (and implies `--calls`).
 - `overview` is the one query that weighs the whole graph (~3s/265 MB on TensorFlow); everything else
   reads through SQLite indexes in 0.2-0.4s.

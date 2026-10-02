@@ -38,6 +38,10 @@ The linker is receiver-aware and import-aware:
   builtin containers (their `.pop()`/`.add()` never lead to repo methods); in a test file an
   untyped parameter that names a `@pytest.fixture` function with a return annotation (same file,
   then `conftest.py` up the tree) is typed from it, so `def test_x(app): app.route(...)` links.
+  `self.x = param or Ctor()` and `x = A() if c else B()` take the first operand that names a type, and a
+  `@property`/`@cached_property` reads as a field typed by its return annotation or by the `self._x` it
+  returns -- so Django's `self.query.chain()` (`self._query = query or sql.Query(model)` behind
+  `@property def query`) resolves to `Query.chain`.
   Loop and comprehension variables are typed from the iterable (`for it in self.items` with
   `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
   (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields

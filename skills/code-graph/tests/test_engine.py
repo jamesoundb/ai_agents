@@ -12,6 +12,7 @@ import json
 import re
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -488,11 +489,32 @@ def test_lean_queries(root):
     td = run("query", "--graph", gp, "trace-deps", "service.py:Service", "--no-tests", "--files-only")
     check("python/tests/" not in td and "test files excluded" in td, "trace-deps --no-tests drops dependents in test files")
 
+    tf = run("query", "--graph", gp, "tests-for", "service.py:Service")
+    check("python/tests/test_service.py" in tf and "test functions in" in tf, f"tests-for: groups the tests that reach a symbol by file: {tf.splitlines()[1:2]}")
+    tn = run("query", "--graph", gp, "tests-for", "models.py:Repo.save", "--no-ambiguous")
+    check("?" not in tn.split("\n", 1)[1], "tests-for --no-ambiguous lists only firm paths")
+    big = run("query", "--graph", gp, "source", "service.py:Service", "service.py:helper", "models.py:Repo.save", "--max-lines", "1")
+    check(len(re.findall(r"\.py:\d+-\d+ \(\d+ lines\)", big)) == 3, "source: several names share one call")
+    loop = run("query", "--graph", gp, "source", "service.py:Factory.run", "--max-lines", "1")
+    check("members listed instead" not in loop and "not shown" in loop, "source: a long function is cut with the remaining range, never outlined")
+
     sub = os.path.join(root, "python")
     s1 = run("query", "symbol", "models.py:Repo", cwd=sub)
     check("Members" in s1, "query from a subdirectory finds the graph above it")
     s2 = run("query", "file", "app/models.py", cwd=sub)
     check("class Repo" in s2, "a path relative to that subdirectory resolves to the repo path")
+
+
+def test_py_value_typing(G):
+    """Python fields and locals typed through `x or Ctor()` / `A() if c else B()`, and properties read
+    as fields (Django's `self._query = query or sql.Query(model)` + `@property def query`)."""
+    print("# python: `or` / conditional values and properties")
+    run_ = G.node("lazy.py", "LazyHolder.run")
+    saves = sorted((e["line"], e["confidence"]) for e in G.edges_from(run_, name="put"))
+    check(saves == [(21, "typed"), (22, "typed"), (23, "typed"), (24, "typed"), (26, "typed")],
+          f"py: property returning `_vault`, `vault or Vault()`, conditional, annotated property and an `or` local all type the receiver {saves}")
+    prop = G.node("lazy.py", "LazyHolder.vault")
+    check(prop["extra"].get("returns_field") == "_vault", f"py: unannotated property records the field it returns {prop['extra']}")
 
 
 def test_tests_detection(root, G):
@@ -1011,6 +1033,15 @@ def test_fast_path(root):
     check("graph refreshed" in q.stderr and "fresh_after_edit" in q.stdout, f"a query on a stale graph refreshes it first: {q.stderr.strip()[:90]}")
     q2 = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "find", "fresh_after_edit"], capture_output=True, text=True)
     check("refreshed" not in q2.stderr, "the next query finds it current (no second rebuild)")
+    # A graph from before stamps recorded options cannot be refreshed safely; it must say so, not go stale silently.
+    sp = os.path.join(root, ".ast-graph", "graph.db.stamp")
+    legacy = {k: v for k, v in json.load(open(sp)).items() if k != "options"}
+    json.dump(legacy, open(sp, "w"))
+    con = sqlite3.connect(os.path.join(root, ".ast-graph", "graph.db"))
+    con.execute("UPDATE meta SET value=? WHERE key='engine'", (json.dumps("an-older-engine"),))
+    con.commit(); con.close()
+    q3 = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "stats"], capture_output=True, text=True)
+    check("older engine" in q3.stderr and "run `build` once" in q3.stderr, f"a graph built before options were recorded warns instead of going stale: {q3.stderr.strip()[:80]}")
 
 
 def main():
@@ -1020,6 +1051,7 @@ def main():
         shutil.copytree(FIXTURE, root)
         G = test_resolution(root)
         test_lean_queries(root)
+        test_py_value_typing(G)
         test_tests_detection(root, G)
         test_determinism(root)
         test_concurrent_and_legacy(tmp)

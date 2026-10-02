@@ -36,6 +36,7 @@ variable or chained after other commands: permission rules match the literal com
    | who calls / uses X | `query callers X` (direct callers; `--depth N` for chains) |
    | X's code, to read or change it | `query source X` — location, callers, callees and the exact lines |
    | what X calls | `query callees X` |
+   | which tests exercise X (to read or run) | `query tests-for X` |
    | members and dependents of a class | `query symbol X` (`--calls` adds each member's calls) |
    | what breaks if X changes | `query trace-deps X` (see the blast-radius skill) |
    | what is in a file and what matters | `query file PATH --no-calls --used-by` |
@@ -44,7 +45,8 @@ variable or chained after other commands: permission rules match the literal com
    | how A reaches B | `query path A B` |
 
    `symbol`, `source`, `callers` and `callees` take several names: `query source Query.build_filter
-   Query.build_lookup` answers both in one call. `--no-tests` leaves test files out of `callers`,
+   Query.build_lookup` answers both in one call (bodies share a 150-line budget per call; a longer
+   class prints its members with ranges). `--no-tests` leaves test files out of `callers`,
    `callees`, `trace-deps` and `source`.
 
 3. **Trust the line ranges.** `source` already printed the code; a card or caller row gives exact

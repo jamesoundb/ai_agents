@@ -77,8 +77,11 @@ CAP_OVERRIDES = 8              # `Overrides:` entries on a method card
 CAP_OVERRIDDEN_BY = 12         # `Overridden by:` entries on a method card -> symbol --all
 CAP_UNRESOLVED = 12            # `Unresolved (external or not indexed)` entries
 CAP_IMPORTED_BY = 20           # `imported by:` files on a file card
-CAP_SOURCE_LINES = 120         # `source` body lines (a longer class: member outline) -> --max-lines (0 = all)
+CAP_SOURCE_LINES = 60          # `source` body lines (a longer class: member outline) -> --max-lines (0 = all)
+CAP_SOURCE_TOTAL = 150         # `source` body lines across all names of one call      -> one name per call / --max-lines 0
 CAP_SOURCE_REFS = 8            # callers / callees named per `source` symbol         -> --refs / query callers
+CAP_TESTS_FILES = 8            # test files listed by `tests-for`                     -> --top
+CAP_TESTS_PER_FILE = 3         # test functions named per file by `tests-for`         -> the count shown, `callers`
 # Edge types that mean "src depends on dst" (used for blast radius / reverse dependencies).
 DEP_EDGE_TYPES = {
     "calls", "imports", "extends", "implements", "instantiates", "references",
@@ -485,6 +488,67 @@ def py_class(ctx, n):
     return True
 
 
+def py_value_operands(right):
+    """The operands that can be the value of `x = <right>`: `a or B()` -> a, B(); `A() if c else B()`
+    -> A(), B(); parentheses unwrapped. Anything else is its own single operand. `and` is left alone:
+    its value is usually the falsy left side, not a type worth binding."""
+    if right is None:
+        return []
+    if right.type == "parenthesized_expression" and right.named_children:
+        return py_value_operands(right.named_children[0])
+    if right.type == "boolean_operator":
+        op = right.child_by_field_name("operator")
+        if op is not None and op.type == "or":
+            return py_value_operands(right.child_by_field_name("left")) + py_value_operands(right.child_by_field_name("right"))
+        return [right]
+    if right.type == "conditional_expression" and len(right.named_children) == 3:
+        return py_value_operands(right.named_children[0]) + py_value_operands(right.named_children[2])
+    return [right]
+
+
+def py_field_value_type(ctx, right):
+    """Type text for `self.x = <right>` in a method: `SomeClass(...)` / `mod.SomeClass(...)`, a typed
+    parameter or local, or `<call>f|` for a call typed later from its return type. For `query or
+    sql.Query(model)` (Django's QuerySet) the first operand that names a type wins, so an untyped
+    optional parameter no longer leaves the field untyped."""
+    fallback = None
+    for op in py_value_operands(right):
+        t = None
+        if op.type == "call" and op.child_by_field_name("function") is not None:
+            fn_text = ctx.text(op.child_by_field_name("function"))
+            cand = base_type_name(fn_text)
+            full = strip_type_decor(fn_text)
+            t = (full if re.match(r"^[a-z_]\w*(\.\w+)*\.[A-Z]", full) else cand) if cand[:1].isupper() else "<call>" + fn_text + "|"
+        elif op.type == "identifier":
+            t = ctx.lookup(ctx.text(op))
+        if t and not t.startswith("<"):
+            return t
+        fallback = fallback or t
+    return fallback
+
+
+def py_returned_self_field(body):
+    """`x` when a method body returns `self.x` (first such return outside nested defs), else None:
+    how a `@property` that wraps a private field gets that field's type."""
+    stack = list(body.named_children) if body is not None else []
+    while stack:
+        c = stack.pop(0)
+        if c.type in ("function_definition", "class_definition", "decorated_definition", "lambda"):
+            continue
+        if c.type == "return_statement" and c.named_children:
+            v = c.named_children[0]
+            if v.type == "attribute":
+                obj, attr = v.child_by_field_name("object"), v.child_by_field_name("attribute")
+                if obj is not None and attr is not None and obj.type == "identifier" and obj.text == b"self":
+                    return attr.text.decode("utf-8", "replace")
+            continue
+        stack.extend(c.named_children)
+    return None
+
+
+PY_PROPERTY_DECORATORS = {"property", "cached_property"}   # also `functools.cached_property`
+
+
 def py_function(ctx, n):
     name = ctx.text(n.child_by_field_name("name"))
     params = ctx.text(n.child_by_field_name("parameters"))
@@ -492,6 +556,11 @@ def py_function(ctx, n):
     kind = "method" if ctx.top()["kind"] == "class" else "function"
     sig = f"def {name}{params}" + (f" -> {ctx.text(ret)}" if ret is not None else "")
     node = ctx.add_node(kind, name, n, signature=sig, type_text=params + (ctx.text(ret) if ret is not None else ""))
+    if kind == "method" and ret is None and any(a.split("(")[0].rsplit(".", 1)[-1] in PY_PROPERTY_DECORATORS for a in node["annotations"]):
+        # an unannotated property that returns `self._x` is typed like `_x` at link time (field_types)
+        field = py_returned_self_field(n.child_by_field_name("body"))
+        if field:
+            node["extra"]["returns_field"] = field
     ctx.push(node)
     ctx.push_scope()
     pn = n.child_by_field_name("parameters")
@@ -529,15 +598,8 @@ def py_function(ctx, n):
                     if "." not in fname and not any(x["kind"] == "field" and x["name"] == fname and x["parent"] == cls["id"] for x in ctx.nodes):
                         ctx.stack.append(cls)
                         ftype = ctx.text(typ) if typ is not None else None
-                        if ftype is None:  # self.x = SomeClass(...)  or  self.x = param (typed parameter)
-                            right = a.child_by_field_name("right")
-                            if right is not None and right.type == "call" and right.child_by_field_name("function") is not None:
-                                fn_text = ctx.text(right.child_by_field_name("function"))
-                                cand = base_type_name(fn_text)
-                                full = strip_type_decor(fn_text)
-                                ftype = (full if re.match(r"^[a-z_]\w*(\.\w+)*\.[A-Z]", full) else cand) if cand[:1].isupper() else "<call>" + fn_text + "|"
-                            elif right is not None and right.type == "identifier":
-                                ftype = ctx.lookup(ctx.text(right))
+                        if ftype is None:  # self.x = SomeClass(...), self.x = param (typed), self.x = p or SomeClass(...)
+                            ftype = py_field_value_type(ctx, a.child_by_field_name("right"))
                         ctx.add_node("field", fname, stmt, signature=f"{fname}: {ftype}" if ftype else fname, type_text=ftype,
                                      extra={"type": ftype, "inferred": True})
                         ctx.stack.pop()
@@ -623,6 +685,14 @@ def py_import(ctx, n):
 def py_bind_value(ctx, name, right):
     """Type a local from its value: `X(...)` / `mod.X(...)` constructor, else the callee for link-time typing."""
     if right is None:
+        return
+    ops = py_value_operands(right)
+    if len(ops) > 1:   # `q = query or Query(model)`: bind from the first operand that yields a type
+        before = ctx.lookup(name)
+        for op in ops:
+            py_bind_value(ctx, name, op)
+            if ctx.lookup(name) != before:
+                return
         return
     unwrap = right.type == "await"
     if unwrap and right.named_children:
@@ -4419,6 +4489,23 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             q, base = split_qualifier(unwrap_optional(n["extra"]["type"]))   # `Optional["Repo"]` / `Repo | None` -> Repo
             field_types[n["parent"]][n["name"]] = base
             field_qual[n["parent"]][n["name"]] = q
+    # A Python `@property` reads like a field: `self.query.chain()` goes through `def query(self)`. Its type
+    # is the return annotation, else the type of the `self._x` it returns (py_returned_self_field).
+    for n in nodes:
+        if n["kind"] != "method" or not n["parent"] or n["name"] in field_types.get(n["parent"], {}):
+            continue
+        if not any(a.split("(")[0].rsplit(".", 1)[-1] in PY_PROPERTY_DECORATORS for a in (n.get("annotations") or [])):
+            continue
+        sig = n["signature"].split("\n")[0]
+        t = sig.rsplit("->", 1)[1].strip() if "->" in sig else field_types_raw.get(n["parent"], {}).get(n["extra"].get("returns_field"))
+        if not t:
+            continue
+        field_types_raw[n["parent"]][n["name"]] = t
+        if t.startswith("<call"):
+            field_types[n["parent"]][n["name"]], field_qual[n["parent"]][n["name"]] = t, None
+        else:
+            q, base = split_qualifier(unwrap_optional(t))
+            field_types[n["parent"]][n["name"]], field_qual[n["parent"]][n["name"]] = base, q
 
     def is_within(node, ancestor_id):
         """True when `node` is `ancestor_id` or nested anywhere inside it."""
@@ -6287,6 +6374,19 @@ def refresh_if_stale(graph_path):
         return None
     opts = prev.get("options")
     if not opts:
+        # Built before stamps recorded their options: it cannot be refreshed safely (the options are
+        # unknown), but it must not go stale silently either -- say so once the engine has changed.
+        try:
+            with open(os.path.abspath(__file__), "rb") as f:
+                engine = hashlib.sha1(f.read()).hexdigest()
+            st = Store(graph_path)
+            built_by = st.meta("engine")
+            st.close()
+        except (OSError, sqlite3.Error):
+            return None
+        if built_by and built_by != engine:
+            return ("(note: this graph was built by an older engine and is not refreshed automatically; "
+                    "run `build` once and later queries will keep it current)")
         return None
     root = opts.get("root")
     if not root or not os.path.isdir(root):
@@ -6797,20 +6897,66 @@ def q_source(g, args):
         return
     span = lines[start - 1:end]
     limit = args.max_lines
+    # One budget for every name in this call (`source A B C`): a multi-name answer stays one call
+    # without the size of several whole files. --max-lines 0 lifts both caps.
+    if limit:
+        left = getattr(g, "source_lines_left", CAP_SOURCE_TOTAL)
+        if left < 10 and len(span) > left:
+            print(f"-- body not shown: this call's {CAP_SOURCE_TOTAL}-line budget is spent; `source {n['qname']}` "
+                  f"on its own, or read L{start}-{end}")
+            return
+        limit = min(limit, left)
     if limit and len(span) > limit:
-        kids = g.children(n["id"])
+        kids = g.children(n["id"]) if n["kind"] in CONTAINER_KINDS else []
         if kids:
             # a big class: its members with exact ranges beat the first N lines of its body
             for k in kids:
                 rng = f"L{k['line']}" + (f"-{k['end_line']}" if k.get("end_line") and k["end_line"] != k["line"] else "")
                 print(f"  {fmt_node(k, with_file=False)}  [{rng}]")
             print(f"-- {len(span)} lines: members listed instead of the body; `source {n['qname']}.<member>` for one, --max-lines 0 for all")
+            g.source_lines_left = getattr(g, "source_lines_left", CAP_SOURCE_TOTAL) - len(kids)
             return
         span = span[:limit]
     for i, text in enumerate(span, start):
         print(f"{i:5} {text}")
+    if limit:
+        g.source_lines_left = getattr(g, "source_lines_left", CAP_SOURCE_TOTAL) - len(span)
     if limit and end - start + 1 > limit:
-        print(f"-- L{start + limit}-{end} not shown ({end - start + 1 - limit} lines): --max-lines 0 for all, or read that range")
+        print(f"-- L{start + limit}-{end} not shown ({end - start + 1 - limit} lines): read that range, or --max-lines 0 for all")
+
+
+def q_tests_for(g, args):
+    """Test functions that reach a symbol (transitively, through callers), grouped by test file: which
+    tests to read and run for a change, instead of grepping tests/ for names. Tests often call through
+    untyped locals, so paths through ambiguous edges are included and marked `?`; firm paths come first."""
+    n = ensure_one(g, args.name)
+    start = with_owner_if_constructor(g, n)
+    if n["kind"] in CONTAINER_KINDS:
+        start += [k["id"] for k in g.children(n["id"])]
+    types = DEP_EDGE_TYPES - {"imports"}
+    firm, _ = bfs(g, start, "in", types, args.depth, False)
+    reach, _ = ({}, None) if args.no_ambiguous else bfs(g, start, "in", types, args.depth, True)
+    hits = defaultdict(list)                 # test file -> [(ambiguous?, hop, node)]
+    for nid, hop in list(firm.items()) + [(k, v) for k, v in reach.items() if k not in firm]:
+        t = g.nodes.get(nid)
+        if t and t["kind"] in ("function", "method") and t.get("file") and is_test_file(t["file"]) and nid not in start:
+            hits[t["file"]].append((nid not in firm, hop, t))
+    print(f"tests reaching {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}"
+          + ("" if args.no_ambiguous else "; ? = only through an ambiguous edge"))
+    if not hits:
+        print("  none found" + ("" if args.no_ambiguous else " (tests calling through fixtures or untyped helpers may still exist)"))
+        return
+    # files with firm hits first, then by number of tests
+    order = sorted(hits.items(), key=lambda kv: (all(a for a, _, _ in kv[1]), -len(kv[1]), kv[0]))
+    for f, rows in order[:args.top]:
+        rows.sort(key=lambda r: (r[0], r[1], r[2]["line"]))
+        shown = ", ".join(f"{t['qname']} L{t['line']}{'?' if amb else ''}" for amb, _, t in rows[:CAP_TESTS_PER_FILE])
+        more = f" (+{len(rows) - CAP_TESTS_PER_FILE})" if len(rows) > CAP_TESTS_PER_FILE else ""
+        print(f"  {f} ({len(rows)}): {shown}{more}")
+    total = sum(len(r) for r in hits.values())
+    firm_n = sum(1 for r in hits.values() for a, _, _ in r if not a)
+    tail = f"; +{len(order) - args.top} more files (--top N)" if len(order) > args.top else ""
+    print(f"  {total} test functions in {len(hits)} files ({firm_n} through firm edges){tail}")
 
 
 def for_each_name(fn):
@@ -7215,6 +7361,12 @@ def main(argv=None):
     x.add_argument("--no-refs", action="store_true", help="only the source lines")
     x.add_argument("--no-tests", action="store_true", help="leave callers/callees in test files out")
     x.set_defaults(qfn=for_each_name(q_source))
+    x = qs.add_parser("tests-for", help="test functions that reach these symbols, grouped by test file (which tests to run)")
+    x.add_argument("name", nargs="+")
+    x.add_argument("--depth", type=int, default=3, help="caller hops to follow (default 3)")
+    x.add_argument("--no-ambiguous", action="store_true", help="only paths made of firm edges")
+    x.add_argument("--top", type=int, default=CAP_TESTS_FILES, help=f"test files listed (default {CAP_TESTS_FILES})")
+    x.set_defaults(qfn=for_each_name(q_tests_for))
     for cmd, direction, helptext in (("callers", "in", "who calls/extends/instantiates these symbols (transitive with --depth)"),
                                      ("callees", "out", "what these symbols call/instantiate (transitive with --depth)")):
         x = qs.add_parser(cmd, help=helptext)

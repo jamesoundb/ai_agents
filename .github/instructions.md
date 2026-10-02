@@ -190,7 +190,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), configurable policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
 | `terraform-plan-review` | risk model over `terraform show -json` (or `plan -json` stream); stdlib only; exit 1 at `--fail-on` | `skills/terraform-plan-review/scripts/planreview.py` |
 | `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; the templates define the conventions; edit them to change them | `skills/terraform-module-scaffold/scripts/scaffold.py` |
-| `code-graph` | build `.ast-graph/graph.db` once (queries refresh it when the git tree changed); `find`, `symbol`, `source`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
+| `code-graph` | build `.ast-graph/graph.db` once (queries refresh it when the git tree changed); `find`, `symbol`, `source`, `callers`, `callees`, `tests-for`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
 | `code-skeleton` | read-before-cat skeleton of files/directories with exact line ranges | `run.sh skeleton PATH...` |
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
 | `install-agents` | bootstrap: harness-driven install/update/uninstall of this repo's agents and skills | `skills/install-agents/scripts/install.sh` -> `install.sh` |
@@ -285,7 +285,10 @@ templates rather than adding vendor-neutral fallbacks.
   those options (note on stderr; `--no-refresh`/`ASTGRAPH_NO_REFRESH`; skipped without a git stamp).
   `symbol`, `source`, `callers` and `callees` take several names (`for_each_name`; a failing name
   raises `QueryError`, reported inline). `source` = header with range + compact callers (ambiguous
-  marked `?`) + callees + numbered body. `callers`/`callees` default to depth 1, print compact rows,
+  marked `?`) + callees + numbered body (60 lines per body, 150 per call: `g.source_lines_left`).
+  `tests-for` = test functions reaching a symbol within 3 caller hops, firm paths first, ambiguous ones
+  marked `?`. A stamp without recorded options (pre-2026-10-02 graph) is never refreshed; the query
+  prints a note once the engine hash differs. `callers`/`callees` default to depth 1, print compact rows,
   and report how many ambiguous edges they hid; `--no-tests` exists on callers/callees/trace-deps/
   source. SKILL.md is kept short (everyday workflow only); detail lives in `reference/usage.md`.
 - Output budget: every cap lives in the `CAP_*` block at the top of `astgraph.py`, and each one

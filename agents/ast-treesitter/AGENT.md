@@ -84,6 +84,7 @@ discards the reason these tools exist.
    matrix). On a hub target use `--summary` and `--files-only` first; never paste a per-edge
    table with hundreds of rows into your answer. For a constructor or class-shape change use
    `callers CLASS --no-members` to see instantiation sites without the member-call rows.
+   `run.sh query tests-for TARGET` names the tests to read or run for the change.
 6. Verify the two or three riskiest edges by reading only their line ranges — when the answer
    has enough hops that a wrong edge would change it. Skip this for a direct lookup.
 7. Answer.

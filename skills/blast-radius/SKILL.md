@@ -45,7 +45,9 @@ installed side by side).
    |---|---|---|
    | `DataDTO` (app/dto.py) | field additions/renames | 1. api/controller.py (API contract, `references`, exact) 2. services/data_service.py (`convert_to_entity`, typed) 3. tests/test_data_service.py |
 
-   Then: files affected (direct / transitive), tests likely to exercise the change (the tool's
+   Then: files affected (direct / transitive), tests likely to exercise the change (`query
+   tests-for TARGET` lists them by file in one call, including tests reached through untyped
+   locals, marked `?`; the tool's
    "Tests reached through resolved edges" line lists dependents that are test files by language
    convention: `_test.go`, `test_*.py`/`*_test.py`/`conftest.py`, `*.test.ts`/`*.spec.js`,
    `*Test.java`/`*IT.java`, `*Test.kt`/`*Spec.kt`, `_test.rs`, or anything under a `test`, `tests`,
