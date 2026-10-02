@@ -42,6 +42,17 @@ The linker is receiver-aware and import-aware:
   `@property`/`@cached_property` reads as a field typed by its return annotation or by the `self._x` it
   returns -- so Django's `self.query.chain()` (`self._query = query or sql.Query(model)` behind
   `@property def query`) resolves to `Query.chain`.
+- C/C++: a prototype outside a class is a free function. An unqualified call that is not defined in the
+  same file resolves through the file's `#include`s (transitively, 4 levels): the prototype found there is
+  linked to its definition (`import`); with no visible prototype, the single non-`static` definition in
+  the C family (`unique`), else up to five `ambiguous` leads (vendored duplicates such as two `sds.c`).
+- Kotlin: inside `fun T.f()` a bare property (`rules`) is the receiver's (`this.rules`), including as the
+  receiver of a collection lambda (`rules.flatMap { it.visitFile() }`); an annotation on a supertype
+  (`: @Suppress(..) api.MultiRule()`) is blanked before parsing; fully-qualified supertypes resolve by
+  package as in Java.
+- Kotlin/Java overrides need the same parameter types (an overload of the same name is not an override),
+  and `super.f(x)` inside `override fun f(...)` whose repo candidate has other parameter types is left to
+  the external base class it really calls.
   Loop and comprehension variables are typed from the iterable (`for it in self.items` with
   `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
   (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields

@@ -498,6 +498,11 @@ def test_lean_queries(root):
     loop = run("query", "--graph", gp, "source", "service.py:Factory.run", "--max-lines", "1")
     check("members listed instead" not in loop and "not shown" in loop, "source: a long function is cut with the remaining range, never outlined")
 
+    ol = run("query", "--graph", gp, "source", "read@8", "--no-refs")
+    check("overloads.py:8-" in ol, f"`name@line` (no file) selects the definition starting on that line: {ol.splitlines()[:1]}")
+    inside = run("query", "--graph", gp, "source", "Factory.run@35", "--no-refs")
+    check(inside.splitlines()[0].startswith("def run(self, u)  python/app/service.py:32-"),
+          f"`name@line` with a line inside a body selects the definition containing it: {inside.splitlines()[:1]}")
     cs = subprocess.run([sys.executable, "-B", ENGINE, "query", "--graph", gp, "source", "Casing.Run", "--no-refs"], capture_output=True, text=True)
     check(cs.returncode == 0 and "func (c *Casing) Run()" in cs.stdout and "ambiguous" not in cs.stdout,
           f"a name that differs only in case from another (Go Run/run) resolves to the case-exact one: {cs.stdout.splitlines()[:1]}")
@@ -519,6 +524,25 @@ def test_py_value_typing(G):
           f"py: property returning `_vault`, `vault or Vault()`, conditional, annotated property and an `or` local all type the receiver {saves}")
     prop = G.node("lazy.py", "LazyHolder.vault")
     check(prop["extra"].get("returns_field") == "_vault", f"py: unannotated property records the field it returns {prop['extra']}")
+
+
+def test_kotlin_rules(root, G):
+    """Kotlin shapes from a real rule engine (detekt): an annotated fully-qualified supertype, a bare property
+    of an extension receiver feeding a collection lambda, overloads vs overrides, and `super` calls that
+    belong to an external base class."""
+    print("# kotlin: rule-engine shapes")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
+    ann = G.node("rules/Rules.kt", "AnnotatedRule")
+    ext = [(G.nodes[e["dst"]]["qname"], e["confidence"]) for e in G.edges_from(ann, "extends")]
+    check([q for q, _ in ext] == ["MultiRule"], f"kotlin: `: @Suppress(...) com.acme.rules.MultiRule()` parses and extends MultiRule {ext}")
+    check(G.node("rules/Rules.kt", "AnnotatedRule.visit")["parent"] == ann["id"], "kotlin: the annotated-supertype class keeps its members")
+    va = G.confs(G.edges_from(G.node("rules/Rules.kt", "RuleSet.visitAll"), name="visitFile"))
+    check(va == [("BaseRule.visitFile", "typed")], f"kotlin: `rules.sumOf {{ it.visitFile() }}` in `fun RuleSet.f()` uses the receiver's property {va}")
+    sup = [G.nodes[e["dst"]]["qname"] for e in G.edges_from(G.node("rules/Rules.kt", "PsiRule.visitFile"), name="visitFile")]
+    check(sup == [], f"kotlin: super.visitFile(PsiFile) is not BaseRule.visitFile(String, Int) {sup}")
+    card = run("query", "--graph", gp, "symbol", "Rules.kt:BaseRule.visit", "--all")
+    check("AnnotatedRule.visit" in card and "OverloadRule.visit" not in card,
+          f"kotlin: overrides need the same parameter types (private overload excluded): {[l for l in card.splitlines() if 'Overrid' in l]}")
 
 
 def test_tests_detection(root, G):
@@ -625,6 +649,17 @@ def test_cpp_extraction(root):
     cq = {n["qname"]: n["kind"] for n in c["nodes"]}
     check(cq.get("Buffer") == "struct" and cq.get("Buffer.size") == "field", "plain C: struct and field")
     check(cq.get("buffer_len") == "function" and cq.get("main") == "function", "plain C: functions")
+
+
+def test_c_header_calls(root, G):
+    """C: a call to a function defined in another .c file resolves through the header that declares it
+    (the prototype is a function, not a method), and lands on the definition, not the prototype."""
+    print("# c: calls through header prototypes")
+    proto = G.node("cpp/cstore.h", "cstore_put")
+    check(proto["kind"] == "function", f"c: a file-scope prototype in a header is a function ({proto['kind']})")
+    use = G.node("cpp/cuser.c", "cstore_use")
+    got = [(G.nodes[e["dst"]]["file"], e["confidence"]) for e in G.edges_from(use)]
+    check(got == [("cpp/cstore.c", "import")], f"c: cstore_put() resolves through the included header to its definition {got}")
 
 
 def test_cross_language_bridge(root):
@@ -1056,12 +1091,14 @@ def main():
         G = test_resolution(root)
         test_lean_queries(root)
         test_py_value_typing(G)
+        test_kotlin_rules(root, G)
         test_tests_detection(root, G)
         test_determinism(root)
         test_concurrent_and_legacy(tmp)
         test_empty_root(tmp)
         test_keep_dir_and_parse_errors(tmp)
         test_cpp_extraction(root)
+        test_c_header_calls(root, G)
         test_cross_language_bridge(root)
         test_literal_receivers(root)
         test_output_budget(tmp)

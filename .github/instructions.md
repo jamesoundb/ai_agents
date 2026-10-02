@@ -288,7 +288,8 @@ templates rather than adding vendor-neutral fallbacks.
   marked `?`) + callees + numbered body (60 lines per body, 150 per call: `g.source_lines_left`).
   `tests-for` = test functions reaching a symbol within 3 caller hops, firm paths first, ambiguous ones
   marked `?`. A stamp without recorded options (pre-2026-10-02 graph) is never refreshed; the query
-  prints a note once the engine hash differs. `callers`/`callees` default to depth 1, print compact rows,
+  prints a note once the engine hash differs. `Name@line` (no file) selects an overload by its start line or
+  a line inside it; a case-exact name wins over case-insensitive matches. `callers`/`callees` default to depth 1, print compact rows,
   and report how many ambiguous edges they hid; `--no-tests` exists on callers/callees/trace-deps/
   source. SKILL.md is kept short (everyday workflow only); detail lives in `reference/usage.md`.
 - Output budget: every cap lives in the `CAP_*` block at the top of `astgraph.py`, and each one

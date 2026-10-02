@@ -196,7 +196,7 @@ KOTLIN_STDLIB_MEMBERS = {"apply", "let", "also", "run", "with", "takeIf", "takeU
                          "windowed", "fold", "reduce", "onEach", "partition", "withIndex", "asSequence", "asIterable",
                          "coerceAtLeast", "coerceAtMost", "coerceIn", "ifEmpty", "ifBlank", "print", "println"}
 
-LANG_FAMILY = {"python": "py", "javascript": "js", "typescript": "js", "tsx": "js", "go": "go", "java": "jvm",
+LANG_FAMILY = {"c": "c", "cpp": "c", "python": "py", "javascript": "js", "typescript": "js", "tsx": "js", "go": "go", "java": "jvm",
                "kotlin": "jvm", "rust": "rust", "hcl": "hcl", "yaml": "yaml"}
 DEFAULT_GRAPH = ".ast-graph/graph.db"
 
@@ -2660,7 +2660,10 @@ def cpp_declaration(ctx, n):
         if name:
             params = ctx.text(d.child_by_field_name("parameters"))
             typ = ctx.text(n.child_by_field_name("type"))
-            kind = cpp_member_kind(name, owner.split("::")[-1] if owner else ctx.top().get("name"))
+            # A prototype at file or namespace scope (`void call(client *c, int flags);` in a C header) is
+            # a free function: calling it a method kept every C call to a header-declared function unlinked.
+            in_type = ctx.top()["kind"] in ("class", "struct", "union")
+            kind = cpp_member_kind(name, owner.split("::")[-1] if owner else ctx.top().get("name")) if (owner or in_type) else "function"
             ctx.add_node(kind, name, n,
                          signature=" ".join(x for x in (typ, f"{name}{params}") if x).strip(),
                          type_text=f"{typ} {params}")
@@ -2855,6 +2858,7 @@ def extract_file(path, root_dir, src=None):
             src = f.read()
     if lang == "kotlin":
         src = KT_TYPE_ANNOTATION_RE.sub(lambda m: b" " * len(m.group(0)), src)   # same byte offsets, no parse error
+        src = KT_SUPERTYPE_ANNOTATION_RE.sub(lambda m: m.group(1) + b" " * len(m.group(2)), src)
     ctx = Ctx(path, lang, src, root_dir)
     tree = parser_for(lang).parse(src)
     if lang == "yaml":
@@ -2936,6 +2940,10 @@ KT_ELEMENT_LAMBDAS = {"forEach", "map", "mapNotNull", "filter", "filterNot", "fi
 
 # `content: @Composable RowScope.() -> Unit` / `x: @Composable () -> Unit`: the grammar rejects an
 # annotation in a type position and loses the whole declaration. Blanked before parsing.
+# `class K : @Suppress("DEPRECATION") api.MultiRule() {`: an annotated supertype (or any annotated type
+# right after `:` / `,`) sends the grammar into error recovery, and the class body ends up at file level --
+# every member lost from the class. Blanked before parsing, line and column positions unchanged.
+KT_SUPERTYPE_ANNOTATION_RE = re.compile(rb"(?<=[:,])(\s*)(@[A-Za-z_][\w.]*(?:\([^()\n]*\))?)(?=\s+[A-Za-z_][\w.]*(?:<[^>]*>)?\s*[({,<\n])")
 KT_TYPE_ANNOTATION_RE = re.compile(rb"@[A-Za-z_][\w.]*(?=[ \t]+(?:\(\)?[ \t]*->|\([^)]*\)[ \t]*->|[A-Za-z_][\w.]*(?:<[^>]*>)?\.\())")
 
 
@@ -4451,6 +4459,27 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
 
     _fd_cache = {}
 
+    _cinc_cache = {}
+
+    def c_include_closure(rel, depth=4):
+        """Files `rel` sees through `#include`, transitively (headers include headers), as a set. C has
+        one global namespace: a free function is visible where a header it is declared in is included.
+        Each file whose includes were followed is recorded, so editing an include re-links `rel`."""
+        def compute():
+            seen, frontier = {rel}, [rel]
+            for _ in range(depth):
+                nxt = []
+                for f in frontier:
+                    _db(f)
+                    for g in sorted(imports_of.get(f, ())):
+                        if g not in seen:
+                            seen.add(g)
+                            nxt.append(g)
+                frontier = nxt
+            seen.discard(rel)
+            return seen
+        return _memo(_cinc_cache, rel, compute)
+
     def files_defining(name, fset, depth=3, seen=None):
         """Files among `fset` that define `name` at top level, following `from x import name` re-exports
         (and wildcard imports) up to `depth` levels. Memoized on (name, files) for the top-level call."""
@@ -5308,7 +5337,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 if qual and (hint not in ns_repo.get(rel, {}) and hint not in ns_ext.get(rel, ())) and "." in qual:
                     # fully-qualified reference (`org.apache.commons.lang3.builder.Builder<T>`, `pkg.sub.Class`)
                     fq = None
-                    if lang == "java" and qual in res_ctx["java_pkgs"]:
+                    if lang in ("java", "kotlin") and qual in res_ctx["java_pkgs"]:   # Kotlin: `: io.x.api.MultiRule()`
                         fq = set(res_ctx["java_pkgs"][qual])
                     elif lang == "python":
                         t = resolve_import({"name": qual, "names": [name]}, rel, lang, file_set, root_dir, go_module, res_ctx)
@@ -5457,6 +5486,11 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     return from_node(tn, chain[1:], flags[1:])
         if first in ("self", "this", "cls", "Self") and cont is not None:
             return from_node(cont, chain[1:], flags[1:])
+        if lang == "kotlin" and first and not flags[0]:
+            # inside `fun RuleSet.visitFile()`, a bare `rules` is `this.rules` on the extension receiver
+            rn = ext_receiver_node(r, rel)
+            if rn is not None and field_owner(rn, first) is not None:
+                return from_node(rn, chain, flags)
         if cont is not None and any(first in field_types.get(oid, {}) for oid in owner_ids(cont)):
             return from_node(cont, chain, flags)
         if first and not first[0].isupper() and not flags[0]:
@@ -5549,6 +5583,13 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             _cur.clear()
             _cur.update(saved)
 
+    def ext_receiver_node(r, rel):
+        """Type node of the extension receiver when the call sits in a Kotlin `fun T.f()`, else None."""
+        rtype = (node_by_id.get(r["src"]) or {}).get("extra", {}).get("receiver_type")
+        if not rtype:
+            return None
+        return type_node(rtype.split("<")[0].rstrip("?").split(".")[-1], rel)
+
     def lambda_receiver(lam, rel, cont, r, want_it, want_this):
         """Type node of the implicit receiver (`apply`/`run`/DSL `T.() -> R`) or of `it` (`also`/`let`, collection
         functions on a `List<T>`) for a call inside a Kotlin lambda; None when unknown."""
@@ -5567,10 +5608,17 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             return recv_node()
         if recv and callee in KT_ELEMENT_LAMBDAS and want_it:
             txt = lam.get("hint_type") if not lam.get("chain") else None
-            if not txt and cont is not None and "." not in recv and "(" not in recv:
-                for oid in owner_ids(cont):
-                    if recv in field_types_raw.get(oid, {}):
-                        txt = field_types_raw[oid][recv]   # `MutableList<Line>`: generics kept for the element type
+            owners = [cont] if cont is not None else []
+            rn = ext_receiver_node(r, rel)
+            if rn is not None:
+                owners.append(rn)     # `fun RuleSet.f() = rules.flatMap { it.x() }`: `rules` is the receiver's
+            if not txt and "." not in recv and "(" not in recv:
+                for o in owners:
+                    for oid in owner_ids(o):
+                        if recv in field_types_raw.get(oid, {}):
+                            txt = field_types_raw[oid][recv]   # `MutableList<Line>`: generics kept for the element type
+                            break
+                    if txt:
                         break
             elem = element_type(txt or "")
             if not elem:
@@ -5687,12 +5735,31 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     targets, conf = bound_pick(cands, name, ns_repo[rel]["*"], free_kinds)
                 if not targets and lang == "rust":
                     targets, conf = pick(same_family(cands, rel), rel)
+                if not targets and lang in ("c", "cpp"):
+                    # `call(c, flags)` in multi.c: the prototype in an included header (add_edge then points
+                    # the edge at the definition), else the one non-static definition in the C family.
+                    vis = c_include_closure(rel)
+                    seen_ = [c for c in cands if c["file"] in vis]
+                    if seen_:
+                        targets, conf = by_arity(seen_)[:1], "import"
+                    else:
+                        ext = [c for c in same_family(cands, rel) if not c["signature"].startswith("static ")]
+                        targets, conf = pick(ext, rel)
         elif mode == "namespace":
             targets, conf = bound_pick(candidates(name, {"function", "class", "struct", "constructor", "method"}), name, payload, {"function", "class", "struct", "constructor", "method"})
         elif mode == "rust_path":
             targets, conf = pick(same_family(candidates(name, {"function", "method", "struct", "constructor"}), rel), rel)
         elif mode == "typed":
             targets, conf = typed_pick(candidates(name, {"function", "method", "class", "struct", "constructor"}), payload)
+            enc = node_by_id.get(r["src"])
+            if targets and lang in ("kotlin", "java") and (r.get("hint") or "").split(".")[0] == "super" \
+                    and enc is not None and enc["name"] == name:
+                # `super.visitFile(file)` inside `override fun visitFile(file: PsiFile)` calls what that
+                # override overrides: a repo method with other parameter types is not it (the real one is
+                # an external base class's)
+                mine, theirs = param_type_names(enc), param_type_names(targets[0])
+                if mine is not None and theirs is not None and mine != theirs:
+                    return [], None, "external"
             if not targets and lang == "kotlin" and (name in KOTLIN_SYNTHETIC_MEMBERS or re.match(r"^component\d+$", name)):
                 return [], None, "builtin"   # data-class copy/componentN, enum valueOf/values/entries, Any members
             if not targets:  # our type but no such member (embedded struct, macro, dynamic attr): keep as a lead
@@ -6309,6 +6376,16 @@ class G:
                     if (n["file"] == fpart or n["file"].endswith("/" + fpart)) and (line is None or n["line"] == line)]
             exact_path = [n for n in hits if n["file"] == fpart]   # `variables.tf:var.x` means the root file when it exists
             return list({n["id"]: n for n in (exact_path or hits)}.values())
+        m = re.match(r"^(.+)@(\d+)$", q)
+        if m and ":" not in q:
+            # `ObjectMapper.readValue@3860` picks one overload: the definition starting on that line, else
+            # the one whose body contains it (models quote call-site lines from `called by` rows).
+            line, named = int(m.group(2)), self.resolve(m.group(1), kinds)
+            at = [n for n in named if n["line"] == line] or \
+                 sorted((n for n in named if n["line"] <= line <= (n.get("end_line") or n["line"])),
+                        key=lambda n: (n.get("end_line") or n["line"]) - n["line"])[:1]
+            if at:
+                return at
         exact = self.by_name.get(q.lower(), [])
         if kinds:
             exact = [n for n in exact if n["kind"] in kinds]
@@ -6503,6 +6580,32 @@ def q_find(g, args):
         print(f"... {total - len(res)} more matches (exact-name matches are listed first; narrow with --kind, --lang or a longer query)")
 
 
+def param_type_names(n):
+    """Parameter type names of a Kotlin/Java callable from its signature text (`fun f(a: A, b: B<C> = x)`,
+    `void f(final A a, B... b)`), generics and nullability dropped; None when the text cannot be parsed.
+    An override has the same list as the method it overrides; an overload of the same name does not."""
+    sig = (n.get("signature") or "").split("\n")[0]
+    i = sig.find(n.get("name", "") + "(")
+    i = sig.find("(", i if i >= 0 else 0)
+    if i < 0:
+        return None
+    depth, j = 0, i
+    for j in range(i, len(sig)):
+        depth += sig[j] in "(<[" and 1 or (-1 if sig[j] in ")>]" else 0)
+        if depth == 0:
+            break
+    inner = sig[i + 1:j].strip()
+    if not inner:
+        return []
+    out = []
+    for p in split_top(inner):
+        p = re.sub(r"@\w+(\([^)]*\))?\s*", "", p.split("=")[0]).strip()
+        p = re.sub(r"\b(final|vararg|val|var|crossinline|noinline)\s+", "", p)
+        t = p.split(":", 1)[1] if ":" in p else p.rsplit(" ", 1)[0] if " " in p else p
+        out.append(re.sub(r"<.*>", "", t).replace("...", "[]").strip().rstrip("?").split(".")[-1])
+    return out
+
+
 def overrides_of(g, n, want_down=True):
     """(methods this one overrides, methods overriding it): same-named members across extends/implements,
     three levels each way. Empty for anything that is not a member of a container.
@@ -6513,6 +6616,17 @@ def overrides_of(g, n, want_down=True):
     par = g.nodes.get(n.get("parent"))
     if n["kind"] not in ("method", "function") or par is None or par["kind"] not in CONTAINER_KINDS:
         return [], []
+
+    jvm = os.path.splitext(n["file"] or "")[1] in (".kt", ".kts", ".java")
+    mine = param_type_names(n) if jvm else None
+
+    def same_params(k):
+        # Kotlin/Java: a same-named member with other parameter types is an overload (MaxLineLength's
+        # private `visit(KtFileContent)` next to BaseRule's `visit(KtFile)`), not an override
+        if mine is None:
+            return True
+        theirs = param_type_names(k)
+        return theirs is None or theirs == mine
 
     def related(start, down):
         seen, out, frontier = {start["id"]}, [], [(start, 0)]
@@ -6526,7 +6640,8 @@ def overrides_of(g, n, want_down=True):
                 if nxt is None or nxt["id"] in seen or nxt["kind"] not in CONTAINER_KINDS:
                     continue
                 seen.add(nxt["id"])
-                out.extend(k for k in g.children(nxt["id"]) if k["name"] == n["name"] and k["kind"] in ("method", "function"))
+                out.extend(k for k in g.children(nxt["id"]) if k["name"] == n["name"] and k["kind"] in ("method", "function")
+                           and same_params(k))
                 frontier.append((nxt, depth + 1))
         return out
     return related(par, False), (related(par, True) if want_down else [])
