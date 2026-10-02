@@ -498,6 +498,10 @@ def test_lean_queries(root):
     loop = run("query", "--graph", gp, "source", "service.py:Factory.run", "--max-lines", "1")
     check("members listed instead" not in loop and "not shown" in loop, "source: a long function is cut with the remaining range, never outlined")
 
+    cs = subprocess.run([sys.executable, "-B", ENGINE, "query", "--graph", gp, "source", "Casing.Run", "--no-refs"], capture_output=True, text=True)
+    check(cs.returncode == 0 and "func (c *Casing) Run()" in cs.stdout and "ambiguous" not in cs.stdout,
+          f"a name that differs only in case from another (Go Run/run) resolves to the case-exact one: {cs.stdout.splitlines()[:1]}")
+
     sub = os.path.join(root, "python")
     s1 = run("query", "symbol", "models.py:Repo", cwd=sub)
     check("Members" in s1, "query from a subdirectory finds the graph above it")

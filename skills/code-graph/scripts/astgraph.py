@@ -6423,6 +6423,11 @@ def ensure_one(g, query, kinds=None):
                  if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower()
                  or m["qname"].lower().endswith("." + qn.lower())   # `MatMulOp.Compute` in a namespace
                  or m["file"] == query]
+        # Lookup is case-insensitive, but in Go, Java, C++ ... case is part of the name: `Context.Plan`
+        # (exported) and `Context.plan` are different methods. A case-exact match wins.
+        same_case = [m for m in exact if m["name"] == qn or m["qname"] == qn or m["qname"].endswith("." + qn)]
+        if same_case and len(same_case) < len(exact):
+            exact = same_case
         for narrow in (lambda m: not is_test_file(m["file"]),
                        # A C++ member matches twice: the header declaration and the .cc definition.
                        # The body is what a reader wants, so prefer it over the prototype.
