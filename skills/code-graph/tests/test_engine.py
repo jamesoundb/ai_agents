@@ -775,7 +775,7 @@ def test_determinism(root):
 
 
 def test_parallel_parse(root):
-    print("# parallel parse == serial parse, and the serial fallback")
+    print("# parallel parse and link == serial, and the serial fallbacks")
     import multiprocessing
 
     def snapshot(out):
@@ -786,15 +786,16 @@ def test_parallel_parse(root):
         finally:
             st.close()
 
-    saved_min, saved_ctx = astgraph.PARALLEL_MIN_FILES, multiprocessing.get_context
-    astgraph.PARALLEL_MIN_FILES = 1   # the fixture is far below the real threshold; force the pool
+    saved_min, saved_link_min, saved_ctx = astgraph.PARALLEL_MIN_FILES, astgraph.PARALLEL_LINK_MIN_FILES, multiprocessing.get_context
+    astgraph.PARALLEL_MIN_FILES = 1   # the fixture is far below the real thresholds; force both pools
+    astgraph.PARALLEL_LINK_MIN_FILES = 1
     try:
         outs = {}
         for jobs in (1, 4):
             outs[jobs] = os.path.join(root, f"jobs{jobs}.db")
             astgraph.build_graph(root, outs[jobs], [], [], full=True, quiet=True, jobs=jobs)
         serial = snapshot(outs[1])
-        check(serial == snapshot(outs[4]), f"--jobs 4 graph identical to --jobs 1 ({len(serial[0])} nodes, {len(serial[1])} edges)")
+        check(serial == snapshot(outs[4]), f"--jobs 4 (parallel parse + link) graph identical to --jobs 1 ({len(serial[0])} nodes, {len(serial[1])} edges)")
 
         def no_pool(*a, **k):   # what a sandbox without a writable /dev/shm does to Pool()
             raise OSError("[Errno 38] Function not implemented")
@@ -804,9 +805,10 @@ def test_parallel_parse(root):
         with contextlib.redirect_stderr(err):
             astgraph.build_graph(root, fb, [], [], full=True, quiet=True, jobs=4)
         check(snapshot(fb) == serial, "pool start failure falls back to a serial parse with the same graph")
-        check("parsing serially" in err.getvalue(), "fallback is reported on stderr")
+        check("parsing serially" in err.getvalue() and "resolving serially" in err.getvalue(),
+              "both fallbacks are reported on stderr")
     finally:
-        astgraph.PARALLEL_MIN_FILES, multiprocessing.get_context = saved_min, saved_ctx
+        astgraph.PARALLEL_MIN_FILES, astgraph.PARALLEL_LINK_MIN_FILES, multiprocessing.get_context = saved_min, saved_link_min, saved_ctx
 
 
 def test_file_used_by(root):

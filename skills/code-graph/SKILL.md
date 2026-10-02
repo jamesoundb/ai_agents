@@ -28,10 +28,10 @@ it writes into the repo is the graph under `.ast-graph/`).
    filesystem. In a git checkout an unchanged working tree returns in well under a second (the
    graph carries a git stamp in `<graph>.stamp`); otherwise only changed files are re-parsed
    (by content hash), and only the files whose call resolution the edit can affect are
-   re-linked (the build line says how many). Parsing runs on every CPU (`--jobs N` or
-   `ASTGRAPH_JOBS` to limit it). Measured on TensorFlow (20,780 indexed files, 445k symbols,
-   1.35M edges, C/C++ and Python, 8 CPUs): a cold build takes ~100s and ~3.7 GB RSS and writes a
-   1.9 GB `graph.db`; after a body-only or leaf-file edit a rebuild takes ~30s (1-3 files
+   re-linked (the build line says how many). Parsing and, on Linux, call resolution run on one
+   process per physical core (`--jobs N` or `ASTGRAPH_JOBS` to change it). Measured on
+   TensorFlow (20,780 indexed files, 445k symbols, 1.35M edges, C/C++ and Python, 4-core laptop):
+   a cold build takes ~75s and ~4.7 GB (all processes) and writes a 1.9 GB `graph.db`; after a body-only or leaf-file edit a rebuild takes ~30s (1-3 files
    re-linked; the rest is loading the cache and writing the database), after an edit that moves
    definitions in a hub file like `ops.py` ~55s (~3,400 re-linked), ~4.5 GB. On a repo
    that size give the first build a long command timeout (10 minutes) and wait for it rather

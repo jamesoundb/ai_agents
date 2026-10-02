@@ -3647,15 +3647,54 @@ def _parse_one(job):
     return rel, {"hash": file_hash(src), "file_node": fnode, "nodes": nodes, "refs": refs}
 
 
+def _physical_cores(cpus):
+    """Distinct physical cores among the logical CPUs `cpus` (Linux sysfs), or None if unknown."""
+    cores = set()
+    for c in cpus:
+        base = f"/sys/devices/system/cpu/cpu{c}/topology/"
+        try:
+            with open(base + "physical_package_id") as f:
+                pkg = f.read().strip()
+            with open(base + "core_id") as f:
+                cores.add((pkg, f.read().strip()))
+        except OSError:
+            return None
+    return len(cores) or None
+
+
 def default_jobs():
-    """Worker count: ASTGRAPH_JOBS if set, else the CPUs this process may run on."""
+    """Worker count: ASTGRAPH_JOBS if set, else the physical cores this process may run on.
+
+    Physical, not logical: on a 4-core/8-thread laptop 8 workers parse and link no faster than 4
+    (measured on TensorFlow: 71.5s vs 73.0s) and the 8 forked linkers need ~1 GB more memory."""
     env = os.environ.get("ASTGRAPH_JOBS", "").strip()
     if env.isdigit() and int(env) > 0:
         return int(env)
     try:
-        return max(1, len(os.sched_getaffinity(0)))
+        cpus = os.sched_getaffinity(0)
     except AttributeError:          # macOS / Windows have no sched_getaffinity
         return max(1, os.cpu_count() or 1)
+    return max(1, _physical_cores(cpus) or len(cpus))
+
+
+def _mem_available_kb():
+    """MemAvailable from /proc/meminfo (Linux), or None."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1])
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _rss_kb():
+    try:
+        with open("/proc/self/statm") as f:
+            return int(f.read().split()[1]) * (os.sysconf("SC_PAGE_SIZE") // 1024)
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 def parse_files(root_dir, rels, jobs=None):
@@ -3685,6 +3724,65 @@ def parse_files(root_dir, rels, jobs=None):
             return
     for rel in rels:
         yield _parse_one((root_dir, rel))
+
+
+PARALLEL_LINK_MIN_FILES = 1500   # below this, forking the linker's state costs more than it saves
+_LINK_JOB = None                   # the closure a forked link worker runs (inherited through fork)
+
+
+def _link_worker(chunk):
+    return [(rel, _LINK_JOB(rel)) for rel in chunk]
+
+
+def resolve_calls_parallel(rels, job, jobs=None):
+    """{rel: links record} for `rels`, resolved by `job` in forked worker processes; {} when it is
+    not worth it or not possible (the caller then resolves serially, with the same result).
+
+    Call resolution only reads the linker's indexes, so workers forked after they are built can
+    each take a contiguous block of files (neighbours share lookups, so their memo caches warm up)
+    and send back the replayable records; the parent replays them in file order, so the graph is
+    the one a serial build writes. Linux only: the workers inherit closures through fork, which
+    spawn cannot carry. gc.freeze() keeps the collector from touching (and so copying) every
+    inherited page. Any failure to start the pool falls back to serial."""
+    global _LINK_JOB
+    jobs = default_jobs() if jobs is None else max(1, jobs)
+    if jobs < 2 or len(rels) < PARALLEL_LINK_MIN_FILES or not sys.platform.startswith("linux"):
+        return {}
+    # Each forked worker ends up privately holding ~7% of the parent's memory (pages its lookups
+    # touch get copied); measured on TensorFlow: 3.7 GB parent, +1.0 GB for 4 workers. Fit the
+    # worker count to what is free, keeping 1 GB spare, rather than push the machine into swap.
+    avail, rss = _mem_available_kb(), _rss_kb()
+    if avail is not None and rss:
+        fit = int((avail - 1024 * 1024) // max(1, rss * 0.1))
+        if fit < jobs:
+            if fit < 2:
+                print("note: not enough free memory for a parallel link; resolving serially", file=sys.stderr)
+                return {}
+            jobs = fit
+    import gc
+    import multiprocessing as mp
+    size = max(16, len(rels) // (jobs * 16))
+    chunks = [rels[i:i + size] for i in range(0, len(rels), size)]
+    _LINK_JOB = job
+    gc.collect()
+    gc.freeze()
+    try:
+        pool = mp.get_context("fork").Pool(jobs)
+    except (OSError, ValueError) as exc:
+        print(f"note: parallel link unavailable ({exc}); resolving serially", file=sys.stderr)
+        gc.unfreeze()
+        _LINK_JOB = None
+        return {}
+    try:
+        out = {}
+        for part in pool.imap(_link_worker, chunks):
+            out.update(part)
+        return out
+    finally:
+        pool.terminate()
+        pool.join()
+        gc.unfreeze()
+        _LINK_JOB = None
 
 
 def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False, keep_dirs=None, jobs=None):
@@ -3767,7 +3865,7 @@ def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False,
                 iface.add(rel)
                 names |= d
         prev = {"changed": delta, "iface": iface, "names": names, "old_b": old_b}
-    graph = link_graph(root_dir, files, tf_modules, prev)
+    graph = link_graph(root_dir, files, tf_modules, prev, jobs)
     graph["version"] = GRAPH_VERSION
     graph["engine"] = engine_hash
     graph["root"] = root_dir
@@ -3880,7 +3978,7 @@ def external_name(name, lang):
     return name
 
 
-def link_graph(root_dir, files, tf_modules, prev=None):
+def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
     """Turn per-file nodes + raw refs into a global node list with resolved, confidence-labelled edges.
 
     `prev` ({"changed": paths added/edited/removed since the last build, "iface": the subset whose
@@ -5530,33 +5628,22 @@ def link_graph(root_dir, files, tf_modules, prev=None):
             if any([x["id"] for x in parents_of.get(nid, [])] != pids for nid, pids in lk["p"].items()):
                 continue
             reuse[rel] = lk
-    relinked = 0
+    def resolve_file_calls(rel):
+        """Resolve one file's calls into its replayable links record, without touching the graph.
 
-    # Pass 2b: calls, then HCL/K8s references
-    for rel, info in files.items():
+        Each call's outcome is recorded: None = unresolved, [] = no edge (builtin), else
+        [[target id before the C++ decl->def rewrite, confidence], ...]. Pure with respect to the
+        graph being built, so it can run in a forked worker (resolve_calls_parallel)."""
+        info = files[rel]
         lang = lang_of(rel)
-        d = os.path.dirname(rel) or "."
-        lk = reuse.get(rel)
-        replay = iter(lk["c"]) if lk is not None else None
         calls_out = []
-        if lk is None:
-            relinked += 1
-            _dep[0] = _new_dep()
-        for r in info["refs"]:
-            k = r["kind"]
-            if k == "call" and replay is not None:
-                ent = next(replay)
-                if ent is None:
-                    unresolved += 1
-                else:
-                    for dst, conf in ent:
-                        add_edge(r["src"], dst, "calls", r["line"], conf, name=r["name"])
-            elif k == "call":
-                # Each call's outcome is recorded for replay: None = unresolved, [] = no edge
-                # (builtin), else [[target id before the C++ decl->def rewrite, confidence], ...].
-                cont = container_of(r["src"])
+        _dep[0] = _new_dep()
+        try:
+            for r in info["refs"]:
+                if r["kind"] != "call":
+                    continue
                 name = r["name"]
-                targets, conf, mode = resolve_call(r, rel, lang, cont)
+                targets, conf, mode = resolve_call(r, rel, lang, container_of(r["src"]))
                 if (not targets or mode == "external") and lang == "python":
                     # Cross-language bridge: a Python call that resolves to nothing in Python may be
                     # a pybind11 export from a C++ extension module. Only taken when exactly one
@@ -5566,23 +5653,42 @@ def link_graph(root_dir, files, tf_modules, prev=None):
                     bind = py_binding_index.get(name)
                     if bind is not None and not [c for c in by_name.get(name, [])
                                                  if c["file"].endswith(".py")]:
-                        add_edge(r["src"], bind["id"], "calls", r["line"], "binding", name=name)
                         calls_out.append([[bind["id"], "binding"]])
                         continue
-                if mode == "external":
-                    unresolved += 1
+                if mode == "external" or (mode != "builtin" and not targets):
                     calls_out.append(None)
-                    continue
-                if mode == "builtin":
+                elif mode == "builtin":
                     calls_out.append([])
-                    continue
-                if not targets:
+                else:
+                    calls_out.append([[t["id"], conf] for t in targets])
+            dep = _dep[0]
+        finally:
+            _dep[0] = None
+        return {"c": calls_out, "n": sorted(dep["n"]), "fb": sorted(dep["b"]), "p": dep["p"], "b": bfp[rel]}
+
+    # Pass 2b, step 1: resolve the calls of every file that cannot be replayed -- in forked worker
+    # processes when there are many (a cold build), else here, lazily, in file order.
+    stale = [rel for rel in files if rel not in reuse]
+    relinked = len(stale)
+    fresh = resolve_calls_parallel(stale, resolve_file_calls, jobs)
+
+    # Pass 2b, step 2: calls (replayed from each file's record), then HCL/K8s references
+    for rel, info in files.items():
+        lang = lang_of(rel)
+        d = os.path.dirname(rel) or "."
+        lk = reuse.get(rel)
+        if lk is None:
+            lk = info["links"] = fresh.pop(rel) if rel in fresh else resolve_file_calls(rel)
+        replay = iter(lk["c"])
+        for r in info["refs"]:
+            k = r["kind"]
+            if k == "call":
+                ent = next(replay)
+                if ent is None:
                     unresolved += 1
-                    calls_out.append(None)
-                    continue
-                for t in targets:
-                    add_edge(r["src"], t["id"], "calls", r["line"], conf, name=name)
-                calls_out.append([[t["id"], conf] for t in targets])
+                else:
+                    for dst, conf in ent:
+                        add_edge(r["src"], dst, "calls", r["line"], conf, name=r["name"])
             elif k == "registers_op":
                 # REGISTER_KERNEL_BUILDER(Name("MatMul")..., MatMulOp<...>): the kernel class
                 # implements the registered op. Both sides are C++, but the op name is what the
@@ -5621,10 +5727,6 @@ def link_graph(root_dir, files, tf_modules, prev=None):
                 conf = "exact" if len(targets) == 1 else "ambiguous"
                 for t in targets[:5]:
                     add_edge(r["src"], t["id"], "references", r["line"], conf, name=r["name"], via=r.get("via"))
-        if lk is None:
-            dep, _dep[0] = _dep[0], None
-            info["links"] = {"c": calls_out, "n": sorted(dep["n"]), "fb": sorted(dep["b"]),
-                             "p": dep["p"], "b": bfp[rel]}
 
     # Pass 3: k8s selectors -> workloads
     workloads = [n for n in nodes if n["kind"] == "k8s_object" and n["extra"].get("template_labels")]

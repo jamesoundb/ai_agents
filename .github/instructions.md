@@ -226,19 +226,27 @@ different one rather than adding vendor-neutral fallbacks.
 - Cost model: parsing is hash-incremental (cached parses are discarded when `astgraph.py`
   changes) and runs in a process pool over all CPUs (`--jobs`/`ASTGRAPH_JOBS`; serial fallback
   when a pool cannot start, e.g. a sandbox without a writable /dev/shm; results are consumed in
-  walk order so the graph is identical to a serial build). Linking is single-threaded and
-  incremental for calls: passes 1/2a and every index are rebuilt in full (~6s on TensorFlow),
+  walk order so the graph is identical to a serial build). Default worker count is physical
+  cores (`default_jobs()`): hyperthreads gave no speed-up on TensorFlow and cost memory. Threads
+  are not an option on CPython 3.12: tree-sitter 0.26 holds the GIL in `parse()` (8 threads ran
+  0.8x serial) and the Python tree walk is 65% of extraction. Linking is incremental for calls,
+  and when 1,500+ files need their calls resolved (a cold build) pass 2b runs in forked worker
+  processes (`resolve_calls_parallel`, Linux only, memory-guarded: each worker is budgeted 10% of
+  the parent's RSS, measured ~7%) whose records the parent replays in file order -- identical
+  graph to a serial link. Passes 1/2a and every index are rebuilt in full (~6s on TensorFlow),
   but pass 2b replays a file's call edges from its `links` record in the parse cache unless its
   recorded dependencies (names looked up, files whose import bindings it followed, inheritance
   lists it read) meet what changed -- `interface_delta()` reduces an edit to the names whose
   definitions (or members) differ, so a body-only edit re-links one file. Verified by
-  randomized incremental-vs-full trials (scratch harness, 420 trials over 12 repos on this engine, 0
-  differences) and `test_incremental_relink`. Any new lookup inside resolution must record its
+  randomized incremental-vs-full trials (scratch harness: 420 over 12 repos, then 260 over 11
+  after the parallel-link refactor; 0 differences) and `test_incremental_relink`. Any new lookup inside resolution must record its
   dependency (`_dn`/`_db`/`_parents`, or a footprinted `_memo`), or incremental builds go stale.
   A git-unchanged tree returns in ~0.1s.
   Measured on TensorFlow (20,780 indexed files, 445k nodes, 1.35M edges, C/C++ + Python, 8 CPUs):
-  cold build ~100s at 3.7 GB RSS (link ~45s incl. dependency recording, write ~12s), producing a
-  1.9 GB `graph.db`; a body-only/leaf edit rebuilds in ~30s (load cache 9s, link 8s, write 12s),
+  cold build ~73s on a 4-core/8-thread laptop (parse ~25s, at the hardware ceiling for 84s of
+  single-core work; link ~26s of which call resolution ~15s in 4 workers; write ~12s), peak
+  ~4.7 GB across processes, producing a 1.9 GB `graph.db`; a body-only/leaf edit rebuilds in
+  ~30s (load cache 9s, link 8s, write 12s),
   an edit moving definitions in `ops.py` in ~55s (~3,400 files re-linked), at ~4.5 GB. It was
   11-13 min (775s measured) before 2026-10-01: the linker re-scanned every same-named definition per call
   (`candidates`, `lead_pick`, `owner_ids`), which is superlinear when thousands of C++ methods

@@ -112,7 +112,7 @@ The queries a developer actually runs are ~100x leaner. `stats` and `overview` g
 whole graph, so they improved but stay slow. A cold TensorFlow build took 11-13 min and 3.2 GB
 until 2026-10-01; the linker had per-call scans over every same-named definition (thousands of
 `Compute`/`Run` methods in TensorFlow's C++), so link time grew superlinearly. With those memoized
-and parsing spread over all CPUs it takes ~100s (8 CPUs, 3.7 GB RSS; ~30s after a body-only or leaf-file edit, since only affected files are re-linked), producing a byte-for-byte
+and parsing and call resolution spread over the physical cores it takes ~73s on a 4-core laptop (~4.7 GB across processes; ~30s after a body-only or leaf-file edit, since only affected files are re-linked), producing a byte-for-byte
 identical graph. `meta` stores `GRAPH_VERSION` and a hash of `astgraph.py`, so a graph
 written by an older engine is rebuilt rather than misread; the previous JSON format is treated as
 absent.
