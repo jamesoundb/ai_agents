@@ -104,16 +104,28 @@ built on Gemini CLI, which loads extensions (`--harness gemini --plugin`).
 | IntelliJ | JetBrains' ACP agent `antigravity-acp` (1.2.1, no update offered), from `~/Library/Caches/JetBrains/<IDE>/acp-agents/` | yes | no | no |
 
 IntelliJ reads skills from `~/.gemini/config/skills` only. It does not load custom agents (it
-offers only its two built-in subagents) or plugins. To use an agent there, have it as a skill and
-name it in the prompt ("use the ast-treesitter skill to ..."). Codex and Gemini CLI installs
-already write the agents as skills. They reach IntelliJ only if those skills are also in
-`~/.gemini/config/skills`, for example when that folder is a link to `~/.agents/skills`
-(`--harness codex --scope user`).
+offers only its two built-in subagents) or plugins. **If you use IntelliJ**, install the agents
+as skills as well:
 
-If Antigravity's IDEs show none of our skills while the `agy` CLI does, check that the install
-was `--harness antigravity`. `agy` also reads Gemini CLI's `~/.gemini/skills`, so a
-`--harness gemini` install looks right in the CLI. The IDEs never see it, and it installs no
-agents.
+```bash
+~/ai_agents/install.sh --harness antigravity --scope user --agents-as-skills
+```
+
+Each agent then also appears as a skill (`~/.gemini/config/skills/ast-treesitter/SKILL.md` and
+so on). Use it by naming it in the prompt: "use the ast-treesitter skill to find what calls X".
+The model then follows that agent's instructions itself instead of delegating to a subagent.
+In VS Code and the `agy` CLI each agent is then listed twice, as an agent and as a skill. The
+installer detects IntelliJ's Antigravity agent and suggests the flag when it is missing. With
+`--plugin` it warns that IntelliJ will see nothing.
+
+If the Antigravity IDEs show none of our skills, check that the install was
+`--harness antigravity`. A `--harness gemini` install goes to Gemini CLI's folder, which the
+Antigravity IDEs do not read, and it installs no agents.
+
+The installer never replaces or removes a skill, directory or symlink it did not create. That
+includes your own skills in a shared folder such as `~/.agents/skills`, even when
+`~/.gemini/config/skills` is a link to it. On a name clash it stops before writing anything.
+It never removes `~/.agents/skills` itself, even when uninstalling leaves it empty.
 
 ```bash
 ~/ai_agents/install.sh --harness claude --scope user --plugin

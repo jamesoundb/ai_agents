@@ -61,7 +61,7 @@ def load_frontmatter(path):
 
 
 # ---------------------------------------------------------------- running one turn
-def isolated_home(base):
+def isolated_home(base, fresh=False):
     """A HOME with the installed skills and credentials but WITHOUT the operator's GEMINI.md.
 
     Antigravity loads `~/.gemini/GEMINI.md` into every session, so an eval run measures the
@@ -110,6 +110,12 @@ def isolated_home(base):
                 os.makedirs(dst, exist_ok=True)
                 for sub in os.listdir(src):
                     s, d = os.path.join(src, sub), os.path.join(dst, sub)
+                    if sub in ("skills", "agents") and fresh:
+                        # case.yaml `fresh_home: true`: start with nothing installed. An install
+                        # case needs this -- copied skills carry no ownership marker, so
+                        # install.sh would refuse every path and the agent would be measured
+                        # handling a conflict instead of choosing a harness.
+                        continue
                     if sub in ("skills", "agents") and os.path.isdir(s):
                         shutil.copytree(s, d, symlinks=False,
                                         ignore=shutil.ignore_patterns("__pycache__", ".git", "tests"))
@@ -208,7 +214,7 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
         cmd += ["--model", fm["model"]]
     env = dict(os.environ)
     if isolate:
-        env["HOME"] = isolated_home(ws)
+        env["HOME"] = isolated_home(ws, fresh=bool(cfg.get("fresh_home")))
     started = time.time()
     try:
         proc = subprocess.run(cmd, cwd=ws, capture_output=True, text=True, timeout=timeout + 120,

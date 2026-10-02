@@ -98,9 +98,25 @@ which added Markdown agents in 1.1.6 and plugins in 1.1.15. That IntelliJ build 
 skills from `~/.gemini/config/skills` but not `config/agents` or `config/plugins`, so the loose
 layout is the only one all three front ends read. `--app_data_dir` only moves session state; the
 customization root stays `~/.gemini/config` (`agy --app_data_dir=<x> agents` lists the same agents
-for `antigravity-cli`, `antigravity` and `antigravity-acp`). `agy` additionally reads Gemini CLI's
-`~/.gemini/skills`, while the IDEs do not, so a mistaken `--harness gemini` install shows skills in
-the `agy` CLI only and installs no agents. That happened on the first macOS install.
+for `antigravity-cli`, `antigravity` and `antigravity-acp`). On the first macOS install the agent
+chose `--harness gemini`. The `agy` CLI there listed those skills, but the IDEs did not and no
+agents were installed. On Linux, agy 1.2.14 reads neither `~/.gemini/skills` nor
+`~/.agents/skills` (print-mode session asked for skill names and paths, 2026-10-01). Only
+`~/.gemini/config/skills` and workspace `.agents/skills` were read. Unexplained on macOS.
+
+Folders each tool reads for user-scope skills (measured 2026-10-01, Linux): `agy`
+`~/.gemini/config/skills`; Gemini CLI 0.62 `~/.gemini/skills` and `~/.agents/skills`. When both of
+Gemini CLI's folders hold a skill, `~/.agents/skills` wins and every clash prints
+`Skill conflict detected`. Codex: `~/.agents/skills`. `install.sh` treats `~/.agents/skills` as
+shared. It never removes that folder or `~/.agents`, even empty, because developers link other
+tools to it (e.g. `~/.gemini/config/skills -> ~/.agents/skills`). The pre-flight pass creates
+nothing, so a refused install leaves no trace.
+
+`--agents-as-skills` (Antigravity, regular install only) also writes each agent as
+`<skills>/<agent>/SKILL.md` (`render.py skill`), for IntelliJ's Antigravity agent. The installer
+detects that agent through `~/Library/Caches/JetBrains/*/acp-agents/antigravity-acp`,
+`~/.cache/JetBrains/*/acp-agents/antigravity-acp` or `~/.gemini/antigravity-acp`. When found, a
+regular install without the flag prints a `note`, and `--plugin` prints a `warn`.
 
 Neutral tool names in AGENT.md (`shell, read, glob, grep, edit, write, web, search`) are mapped per
 harness in `tools/render.py` (`TOOL_MAP`). Vendor locations were verified against vendor docs and

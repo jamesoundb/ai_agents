@@ -138,6 +138,62 @@ check "their plugin is untouched"               grep -q theirs "$PO/.gemini/conf
 HOME="$PO" "$REPO/install.sh" --harness antigravity --scope user --plugin --uninstall > "$WORK/plugin-keep.log" 2>&1
 check "plugin uninstall keeps a foreign folder" grep -q theirs "$PO/.gemini/config/plugins/ai-agents/plugin.json"
 
+echo "== --agents-as-skills and a developer's own ~/.agents/skills =="
+# The layout seen on a developer Mac: their own skills (a directory and a symlink) in
+# ~/.agents/skills, and ~/.gemini/config/skills a symlink to that folder.
+DH="$WORK/dev-home"
+mkdir -p "$DH/.agents/skills/twg-mine" "$DH/elsewhere/linked-skill" "$DH/.gemini/config"
+echo "MINE" > "$DH/.agents/skills/twg-mine/SKILL.md"
+echo "LINKED" > "$DH/elsewhere/linked-skill/SKILL.md"
+ln -s "$DH/elsewhere/linked-skill" "$DH/.agents/skills/linked-skill"
+ln -s "$DH/.agents/skills" "$DH/.gemini/config/skills"
+HOME="$DH" run_install "$WORK/as-skills.log" "$REPO/install.sh" --harness antigravity --scope user --agents-as-skills
+agent_skills() { for a in "$REPO"/agents/*/; do [ -f "$1/$(basename "$a")/SKILL.md" ] && echo x; done | wc -l | tr -d ' '; }
+check "agents installed as skills = $N_AGENTS"      test "$(agent_skills "$DH/.agents/skills")" -eq "$N_AGENTS"
+check "native agents still installed = $N_AGENTS"  test "$(count "$DH/.gemini/config/agents")" -eq "$N_AGENTS"
+check "skills + agent skills + theirs in the folder" test "$(count "$DH/.agents/skills")" -eq $((N_SKILLS_NO_BOOT + N_AGENTS + 2))
+check "their skill directory is untouched"         grep -qx MINE "$DH/.agents/skills/twg-mine/SKILL.md"
+check "their symlink is untouched"                 test "$(readlink "$DH/.agents/skills/linked-skill")" = "$DH/elsewhere/linked-skill"
+check "HOME/.gemini/config/skills is still their link" test -L "$DH/.gemini/config/skills"
+HOME="$DH" run_install "$WORK/as-skills-unin.log" "$REPO/install.sh" --harness antigravity --scope user --uninstall
+check "uninstall removes the agent skills"         test ! -e "$DH/.agents/skills/terraform"
+check "uninstall leaves only their two skills"     test "$(count "$DH/.agents/skills")" -eq 2
+check "their skill survives uninstall"             grep -qx MINE "$DH/.agents/skills/twg-mine/SKILL.md"
+check "their symlink survives uninstall"           test -L "$DH/.agents/skills/linked-skill"
+check "HOME/.gemini/config/skills link survives"      test -L "$DH/.gemini/config/skills"
+# A codex uninstall that empties ~/.agents/skills must not remove it: a link may point at it.
+EH="$WORK/empty-home"; mkdir -p "$EH"
+HOME="$EH" run_install "$WORK/codex-in.log" "$REPO/install.sh" --harness codex --scope user
+HOME="$EH" run_install "$WORK/codex-out.log" "$REPO/install.sh" --harness codex --scope user --uninstall
+check "emptied HOME/.agents/skills is kept"           test -d "$EH/.agents/skills"
+
+# Name clashes in ~/.agents/skills: theirs wins, and the run writes nothing at all.
+for clash in dir link; do
+  CH="$WORK/clash-$clash"; mkdir -p "$CH/.agents/skills" "$CH/.gemini/config" "$CH/theirs/terraform"
+  ln -s "$CH/.agents/skills" "$CH/.gemini/config/skills"
+  echo "THEIRS" > "$CH/theirs/terraform/SKILL.md"
+  if [ "$clash" = dir ]; then cp -R "$CH/theirs/terraform" "$CH/.agents/skills/terraform"
+  else ln -s "$CH/theirs/terraform" "$CH/.agents/skills/terraform"; fi
+  HOME="$CH" "$REPO/install.sh" --harness antigravity --scope user --agents-as-skills > "$WORK/clash-$clash.log" 2>&1 && crc=0 || crc=$?
+  check "clash with their $clash: install refuses"     test "$crc" -ne 0
+  check "clash with their $clash: theirs untouched"    grep -qx THEIRS "$CH/.agents/skills/terraform/SKILL.md"
+  check "clash with their $clash: no skill written"    test "$(count "$CH/.agents/skills")" -eq 1
+  check "clash with their $clash: no agent written"    test ! -e "$CH/.gemini/config/agents"
+done
+mkdir -p "$WORK/combo"
+# shellcheck disable=SC2016  # single quotes are intended: $0/$1 expand inside bash -c
+check "--agents-as-skills with --plugin is rejected" bash -c '! HOME="$1" "$0" --harness antigravity --scope user --plugin --agents-as-skills >/dev/null 2>&1' "$REPO/install.sh" "$WORK/combo"
+check "the rejected combination wrote nothing"       test -z "$(ls -A "$WORK/combo")"
+
+echo "== IntelliJ's Antigravity agent detected =="
+IH="$WORK/ij-home"; mkdir -p "$IH/.gemini/antigravity-acp"
+HOME="$IH" run_install "$WORK/ij-loose.log" "$REPO/install.sh" --harness antigravity --scope user
+check "regular install suggests --agents-as-skills"  grep -q 'note   IntelliJ.*not custom agents' "$WORK/ij-loose.log"
+HOME="$IH" run_install "$WORK/ij-loose-out.log" "$REPO/install.sh" --harness antigravity --scope user --uninstall
+HOME="$IH" run_install "$WORK/ij-plugin.log" "$REPO/install.sh" --harness antigravity --scope user --plugin
+check "--plugin warns that IntelliJ loads no plugins" grep -q 'warn   IntelliJ.*neither plugins nor custom agents' "$WORK/ij-plugin.log"
+check "no IntelliJ: no warning"                      test -z "$(grep 'IntelliJ' "$WORK/plugin-user.log")"
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then

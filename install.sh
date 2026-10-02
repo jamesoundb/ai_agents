@@ -14,6 +14,10 @@
 #   --target DIR     project to install into (default: current directory; must already exist)
 #   --plugin         install one plugin bundle per harness (layouts below) instead of loose
 #                    skills and agents; IDE front ends load plugins the same way as the CLIs
+#   --agents-as-skills
+#                    antigravity: also install each agent as a skill (<skills>/<agent>/SKILL.md),
+#                    for front ends that load skills but not custom agents (IntelliJ's
+#                    Antigravity agent). codex and gemini always install agents this way.
 #   --copy           copy files instead of symlinking them into this clone
 #   --agents LIST    install only these agents (comma list)
 #   --skills LIST    install only these skills (comma list)
@@ -44,7 +48,7 @@ SKILLS_SRC="$REPO/skills"
 AGENTS_SRC="$REPO/agents"
 RENDER="$REPO/tools/render.py"
 
-HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0
+HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0
 
 # Print the comment header (line 2 up to the first line that is not a comment) as the help text.
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
@@ -57,6 +61,7 @@ while [ $# -gt 0 ]; do
               TARGET="$(cd "$2" && pwd)"; shift 2 ;;
     --copy) MODE="copy"; shift ;;
     --plugin) PLUGIN=1; shift ;;
+    --agents-as-skills) AGENT_SKILLS=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --force) FORCE=1; shift ;;
     --agents) ONLY_AGENTS="$2"; shift 2 ;;
@@ -71,6 +76,10 @@ case "$SCOPE" in
   *) echo "--scope must be project or user (got: $SCOPE); for a global install use --scope user" >&2; exit 1 ;;
 esac
 [ "$HARNESSES" = "all" ] && { HARNESSES="claude,codex,gemini,antigravity,copilot"; ALL=1; }
+# IntelliJ, the reason for --agents-as-skills, loads no plugins: the combination would do nothing.
+if [ "$AGENT_SKILLS" = 1 ] && [ "$PLUGIN" = 1 ]; then
+  echo "--agents-as-skills applies to the regular install; IntelliJ's Antigravity agent does not load plugins" >&2; exit 1
+fi
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 
 # Which agents/skills to install: explicit lists or everything in the repo.
@@ -151,9 +160,9 @@ DRY=0   # 1 = check destinations only, write nothing (pre-flight pass)
 
 place_skill() {  # place_skill <skill> <dest_dir>
   local s="$1" dest="$2/$1"
-  mkdir -p "$2"
   guard_skill "$dest"
-  [ "$DRY" = 1 ] && return 0
+  [ "$DRY" = 1 ] && return 0   # pre-flight: create nothing, so a refusal leaves no trace
+  mkdir -p "$2"
   rm -rf "$dest"
   if [ "$MODE" = "copy" ]; then
     cp -R "$SKILLS_SRC/$s" "$dest"
@@ -179,9 +188,9 @@ remove_agent() {  # remove_agent <renderer> <agent> <path> [prefix]; <path> is t
 }
 
 write_rendered() {  # write_rendered <renderer> <agent> <out_file> [extra renderer arg]
-  mkdir -p "$(dirname "$3")"
   guard_agent "$1" "$2" "$3" ${4:+"$4"}
-  [ "$DRY" = 1 ] && return 0
+  [ "$DRY" = 1 ] && return 0   # pre-flight: create nothing, so a refusal leaves no trace
+  mkdir -p "$(dirname "$3")"
   { python3 "$RENDER" "$1" "$AGENTS_SRC/$2/AGENT.md" ${4:+"$4"}; printf '%s\n' "$MARKER"; } > "$3"
   log "agent  $3  <- rendered ($1)"
 }
@@ -239,7 +248,27 @@ remove_import() {  # remove_import <file> <line>  (undo ensure_import: delete th
 }
 
 remove_empty_dirs() {  # remove_empty_dirs <dir>...  (leave no empty harness folders behind)
-  for d in "$@"; do [ -d "$d" ] && [ -z "$(ls -A "$d" 2>/dev/null)" ] && rmdir "$d" 2>/dev/null && log "removed empty $d"; done; return 0
+  local d
+  for d in "$@"; do
+    # ~/.agents/skills is the cross-tool skills folder (Codex, Gemini CLI, VS Code; often the
+    # target of a developer's own symlinks, e.g. ~/.gemini/config/skills -> ~/.agents/skills).
+    # Removing it, even empty, would leave those links dangling, so it and ~/.agents stay.
+    case "$d" in "$HOME/.agents"|"$HOME/.agents/skills") continue ;; esac
+    [ -d "$d" ] && [ ! -L "$d" ] && [ -z "$(ls -A "$d" 2>/dev/null)" ] && rmdir "$d" 2>/dev/null && log "removed empty $d"
+  done; return 0
+}
+
+intellij_antigravity() {  # print where IntelliJ's Antigravity ACP agent was found; return 1 if absent
+  # JetBrains caches ACP agents per IDE (macOS: ~/Library/Caches/JetBrains/<IDE>/acp-agents/,
+  # Linux: ~/.cache/JetBrains/<IDE>/acp-agents/); the agent keeps its state in
+  # ~/.gemini/antigravity-acp. Unmatched globs stay literal and fail the -d test (bash 3.2 safe).
+  local d
+  for d in "$HOME"/Library/Caches/JetBrains/*/acp-agents/antigravity-acp \
+           "${XDG_CACHE_HOME:-$HOME/.cache}"/JetBrains/*/acp-agents/antigravity-acp \
+           "$HOME/.gemini/antigravity-acp"; do
+    [ -d "$d" ] && { printf '%s\n' "$d"; return 0; }
+  done
+  return 1
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -335,6 +364,11 @@ install_plugin() {  # install_plugin <harness>
   log "plugin $PD  <- $(echo "$SKILLS" | wc -w | tr -d ' ') skills, $(echo "$AGENTS" | wc -w | tr -d ' ') agents ($( [ "$MODE" = copy ] && echo copy || echo symlink ))"
   if [ -n "$MKT" ]; then python3 "$RENDER" codex-marketplace add "$MKT" "$MKT_REL"; log "wrote  $MKT (entry $PLUGIN_NAME)"; fi
   plugin_next_step "$h"
+  if [ "$h" = antigravity ] && ij="$(intellij_antigravity)"; then
+    log "warn   IntelliJ's Antigravity agent found ($ij): it loads neither plugins nor custom agents,"
+    log "       so nothing from this plugin shows up in IntelliJ. For IntelliJ, re-run this command with"
+    log "       --uninstall, then install without --plugin and with --agents-as-skills"
+  fi
 }
 
 remove_plugin() {  # remove_plugin <harness>: only a folder carrying our marker is removed
@@ -393,10 +427,22 @@ run_harnesses() {
         else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent antigravity "$a" "$AG/$a" "$PREFIX"; done
+          # agents installed as skills (--agents-as-skills): removed whether or not the flag is
+          # repeated, and only when the file carries our marker
+          for a in $AGENTS; do
+            [ -f "$SK/$a/SKILL.md" ] || continue
+            remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true
+          done
           remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
         else
           for s in $SKILLS; do place_skill "$s" "$SK"; done
           for a in $AGENTS; do write_rendered antigravity "$a" "$AG/$a/agent.md" "$PREFIX"; done
+          if [ "$AGENT_SKILLS" = 1 ]; then
+            for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
+          elif [ "$DRY" = 0 ] && ij="$(intellij_antigravity)"; then
+            log "note   IntelliJ's Antigravity agent found ($ij): it loads skills but not custom agents;"
+            log "       re-run with --agents-as-skills to reach the agents there as skills"
+          fi
         fi ;;
       gemini)
         if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi

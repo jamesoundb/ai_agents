@@ -29,6 +29,7 @@ was described as testing the agents while none of the five personas was ever loa
 | `blast-radius-impact` | Does an impact question traverse the graph, reach the transitive dependent, and cite `file:line`? |
 | `code-graph-callers` | Does "who calls X" go through the graph rather than grep? |
 | `file-used-by-scoped` | "What in this file does `app/` rely on most": one `query file --used-by --within` call, or a `callers` loop per symbol? The fixture's repo-wide and `app/` rankings disagree, so an unscoped count gives the wrong order. |
+| `install-agents-harness` | Asked to "install the agents" in an `agy` session, does `install-agents` install for `--harness antigravity --scope user`, never `gemini` or `all`? (The first macOS install chose `gemini`, which the Antigravity IDEs never see.) Runs in a copy of the repo with an empty HOME (`fresh_home`). |
 
 `skeleton-elision-recovery` is the load-bearing one. The output-budget contract added
 in 2026-09 only pays off if a model acts on the recovery notice. If that case fails
@@ -89,6 +90,7 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-k8s-rightsize` | **no** | every attempt cut off or contaminated |
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
+| `install-agents-harness` | **no**, 1 run (2026-10-01) | 3/3; ran `./install.sh --harness antigravity --scope user`, 25 tools, 121s, 130k tokens. Graders checked against that trace and against hand-made gemini/all commands. |
 
 The `ast-treesitter` cases were run after the isolation fixes and are the first evidence those
 fixes work: 39/39 assertions, six runs, **zero** calls outside the workspace, 7-9 tool calls and
@@ -127,6 +129,12 @@ python3 evals/run_agy.py --json results.json
 
 Each case runs in a throwaway workspace seeded from `case.yaml`'s `add_dirs`, with the
 scaffold script run first. `--keep-temp` leaves workspaces on disk to inspect.
+`scaffold/clone-repo.sh` seeds the workspace with this repository's tracked files minus
+`evals/`, for cases that need the committed `install-agents` bootstrap skill
+(`install-agents-harness`). `fresh_home: true` in `case.yaml` starts the isolated HOME with no
+installed skills or agents. An install case needs this: copied skills carry no ownership
+marker, so `install.sh` would refuse every path, and the run would measure conflict handling
+instead of the harness choice.
 
 Each run also gets an isolated HOME: `~/.gemini` with credentials and config symlinked, but
 with `GEMINI.md` left out, `config/skills` and `config/agents` **copied** with symlinks
@@ -187,7 +195,7 @@ ASTGRAPH_VENV="$HOME/.cache/astgraph/venv" claude plugin eval .
 evals/<case-name>/
   prompt.md           # frontmatter + the exact text the agent receives
   graders/*.md        # one grader per file, scored independently, alphabetical
-  case.yaml           # optional: scaffold_script, add_dirs
+  case.yaml           # optional: scaffold_script, add_dirs, fresh_home
 ```
 
 To test a persona rather than a skill, name it in `prompt.md`'s frontmatter:

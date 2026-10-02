@@ -23,9 +23,10 @@ Do not hand-copy files or write harness config yourself.
   explicitly asks for more than one harness. Google Antigravity, IDE or `agy` CLI, is
   `antigravity`; `gemini` is the separate Gemini CLI. In Antigravity the result is
   `--harness antigravity --scope user`, which writes `~/.gemini/config/{agents,skills}`.
-  Do not pick `gemini` because the model is Gemini: `agy` also reads Gemini CLI's
-  `~/.gemini/skills`, so a `gemini` install looks correct in the `agy` CLI but is invisible in
-  the Antigravity IDEs and installs no agents.
+  Do not pick `gemini` because the model is Gemini: a `gemini` install goes to Gemini CLI's
+  folder, which the Antigravity IDEs do not read, and it installs no agents. If the developer
+  uses IntelliJ, or the installer prints the IntelliJ note, add `--agents-as-skills`
+  (IntelliJ's Antigravity agent loads skills but not custom agents).
 - **Scope**: `user` (files in the developer's home directory, available in every project) or
   `project` (files in one repository, e.g. to commit them for that repo's team). **Default `user`**,
   the organization's standard install (README "Quick start"). Use `project` only when the developer
