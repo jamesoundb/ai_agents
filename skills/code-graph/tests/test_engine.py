@@ -556,6 +556,19 @@ def test_java_constructors(root, G):
     check("Archive.Archive" in pth and "Archive.parseSize" in pth, f"java: a call path runs through the constructor: {pth.strip().splitlines()}")
 
 
+def test_java_static_imports(root, G):
+    """`import static C.m;` / `import static C.*;` put C's static methods in scope for unqualified calls."""
+    print("# java: static imports")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
+    for f, q, want in (("Checks.java", "Checks.check", "(String actual, int count)"), ("WildChecks.java", "WildChecks.check", "(String actual)")):
+        dst = [G.nodes[e["dst"]] for e in G.edges_from(G.node(f, q)) if e["type"] == "calls"]
+        check(len(dst) == 1 and dst[0]["file"].endswith("msg/Messages.java") and want in dst[0]["signature"],
+              f"java: {q} calls the imported Messages.shouldContain overload {want}: {[(d['file'], d['signature']) for d in dst]}")
+    out = run("query", "--graph", gp, "callers", "Messages.shouldContain@11")
+    check("Checks.check" in out and "WildChecks" not in out and "OtherMessages" not in out,
+          f"java: callers of the 2-arg overload = the single-member import's caller only: {out.strip().splitlines()}")
+
+
 def test_tests_detection(root, G):
     print("# test-file detection")
     for p, want in [("go/handler/attestor.go", False), ("go/handler/handler_test.go", True),
@@ -1104,6 +1117,7 @@ def main():
         test_py_value_typing(G)
         test_kotlin_rules(root, G)
         test_java_constructors(root, G)
+        test_java_static_imports(root, G)
         test_tests_detection(root, G)
         test_determinism(root)
         test_concurrent_and_legacy(tmp)

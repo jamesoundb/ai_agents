@@ -53,6 +53,9 @@ The linker is receiver-aware and import-aware:
 - Java `new X(args)` (and other `instantiates` references with arguments): besides the edge to the class, a
   `calls` edge to the constructor overload chosen by argument count and types (`ambiguous` to up to three
   when they cannot be told apart), so `path` and `callers X.X@line` run through constructors.
+- Java unqualified calls that no enclosing class defines resolve through static imports: `import static
+  a.b.C.m;` before `import static a.b.C.*;`, to C's method of that name, overload chosen by the arguments
+  (`import` confidence). The resolved return type then types the rest of a chain (`helper().build()`).
 - Kotlin/Java overrides need the same parameter types (an overload of the same name is not an override),
   and `super.f(x)` inside `override fun f(...)` whose repo candidate has other parameter types is left to
   the external base class it really calls.

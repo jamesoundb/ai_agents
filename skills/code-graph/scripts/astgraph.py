@@ -1440,9 +1440,12 @@ def java_new(ctx, n):
 
 def java_import(ctx, n):
     txt = ctx.text(n).strip().rstrip(";")
+    static = re.match(r"^import\s+static\s", txt) is not None
     txt = re.sub(r"^import\s+(static\s+)?", "", txt).strip()
     wildcard = txt.endswith(".*")
-    ctx.add_ref("import", txt[:-2] if wildcard else txt, n, names=["*"] if wildcard else [txt.split(".")[-1]])
+    # `import static a.b.C.m;` / `import static a.b.C.*;` bring C's static members into scope (resolved per call)
+    extra = {"static": True} if static else {}
+    ctx.add_ref("import", txt[:-2] if wildcard else txt, n, names=["*"] if wildcard else [txt.split(".")[-1]], **extra)
     return True
 
 
@@ -3563,10 +3566,10 @@ def resolve_import(ref, file_path, lang, files, root_dir, go_module=None, ctx=No
     if lang == "java":
         pkgs = ctx.get("java_pkgs")   # {declared package: sorted files}; built by link_graph
         if pkgs is not None:
-            if ref.get("names") == ["*"]:
+            if ref.get("names") == ["*"] and not ref.get("static"):
                 fs = pkgs.get(name)
                 return ("dir:" + os.path.dirname(fs[0])) if fs else None
-            pkg, _, cls = name.rpartition(".")
+            pkg, _, cls = name.rpartition(".")   # `import static a.b.C.*` names the class C, not a package
             for f in pkgs.get(pkg, ()):
                 if os.path.basename(f) == cls + ".java":
                     return f
@@ -3577,7 +3580,7 @@ def resolve_import(ref, file_path, lang, files, root_dir, go_module=None, ctx=No
             return None
         suffix = name.replace(".", "/")
         ordered = sorted(files)
-        if ref.get("names") == ["*"]:
+        if ref.get("names") == ["*"] and not ref.get("static"):
             for fp in ordered:
                 if fp.endswith(".java") and os.path.dirname(fp).endswith(suffix):
                     return "dir:" + os.path.dirname(fp)
@@ -4196,6 +4199,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         return alias_orig.get(rel, {}).get(name, name)
     ns_ext = defaultdict(set)       # file -> local names bound to external packages/modules
     import_links = defaultdict(list)  # file -> [(names, alias_map, target files)] for re-export following
+    java_static = defaultdict(list)   # java file -> [(member or '*', class name, class file)] from `import static`
     ext_nodes = {}
     unresolved = 0
     # pybind11 exports by the name Python calls them with. Ambiguous names are dropped outright:
@@ -4330,6 +4334,10 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     else:
                         unresolved += 1
                     continue
+                if lang == "java" and r.get("static") and not target.startswith("dir:"):
+                    parts = r["name"].split(".")
+                    member = "*" if r.get("names") == ["*"] else parts[-1]
+                    java_static[rel].append((member, parts[-1] if member == "*" else parts[-2], target))
                 bound = repo_bindings(r, lang, target)
                 for nm, fset in bound.items():
                     ns_repo[rel].setdefault(nm, set()).update(fset)
@@ -4390,6 +4398,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             sorted(ns_ext.get(rel, ())),
             [[sorted(nm), sorted(am.items()), sorted(t)] for nm, am, t in import_links.get(rel, ())],
             sorted(alias_orig.get(rel, {}).items()),
+            sorted(java_static.get(rel, ())),
         ]).encode()).hexdigest()
 
     # Names defined at the top level of each file (for re-export following)
@@ -4957,6 +4966,21 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         kinds = kinds if kinds is not None else ({c["kind"] for c in cands} or {"function", "class", "struct", "constructor", "method"})
         nodes_ = [d for d in defs_in(name, fset) if d["kind"] in kinds and d["id"] not in overload_stub]
         return (by_arity(nodes_)[:1], "import") if nodes_ else ([], None)
+
+    def java_static_pick(name, rel):
+        """`shouldContain(a, b)` after `import static a.b.Messages.shouldContain;` (or `Messages.*`): a static
+        method of the imported class, overload chosen by the arguments. A single-member import shadows an
+        on-demand (`*`) one, as in Java."""
+        cands = candidates(name, {"method"})
+        for want in (name, "*"):
+            hits = []
+            for member, cls, f in java_static.get(rel, ()):
+                if member == want:
+                    _db(f)
+                    hits += [c for c in cands if c["file"] == f and (node_by_id.get(c.get("parent")) or {}).get("name") == cls]
+            if hits:
+                return by_arity(hits)[:1], "import"
+        return [], None
 
     def admits_argc(c):
         """Could this candidate accept the call's argument count?
@@ -5713,6 +5737,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 while not targets and outer is not None and outer.get("kind") in CONTAINER_KINDS:
                     targets, conf = typed_pick(candidates(name, {"method", "constructor"}), outer)   # inner class -> outer member
                     outer = node_by_id.get(outer.get("parent"))
+            if not targets and lang == "java" and java_static.get(rel):
+                targets, conf = java_static_pick(name, rel)   # members of the enclosing classes shadow static imports
             inv_type = r.get("invoke_type")
             if not targets and not inv_type and lang in ("kotlin", "java") and cont is not None:
                 fo = field_owner(cont, name)   # `runner("1")` on a property: `operator fun invoke`
