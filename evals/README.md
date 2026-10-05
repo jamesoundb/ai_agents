@@ -28,6 +28,7 @@ was described as testing the agents while none of the five personas was ever loa
 | `skeleton-small-file-guard` | Does a two-line file get *read*, rather than triggering the whole toolchain? |
 | `blast-radius-impact` | Does an impact question traverse the graph, reach the transitive dependent, and cite `file:line`? |
 | `code-graph-callers` | Does "who calls X" go through the graph rather than grep? |
+| `bug-fix-every-case` | Does a bug report reach `bug-fix`, and does the fix cover both sites the report's two cases lead to (a shared helper and a duplicated `quantize`), each proven by a test? |
 | `file-used-by-scoped` | "What in this file does `app/` rely on most": one `query file --used-by --within` call, or a `callers` loop per symbol? The fixture's repo-wide and `app/` rankings disagree, so an unscoped count gives the wrong order. |
 | `install-agents-harness` | Asked to "install the agents" in an `agy` session, does `install-agents` install for `--harness antigravity --scope user`, never `gemini` or `all`? (The first macOS install chose `gemini`, which the Antigravity IDEs never see.) Runs in a copy of the repo with an empty HOME (`fresh_home`). |
 

@@ -188,6 +188,7 @@ their published formats and have not been run.
 | [code-graph](skills/code-graph/SKILL.md) | Build and query the relationship graph (`find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats`) |
 | [code-skeleton](skills/code-skeleton/SKILL.md) | Token-light skeleton of files with exact line ranges; read-before-cat |
 | [blast-radius](skills/blast-radius/SKILL.md) | Downstream impact matrix for a file, symbol, Terraform address or Kubernetes object |
+| [bug-fix](skills/bug-fix/SKILL.md) | Bug-fix procedure: checklist of every case the report names, a failing test per case, the cause fixed at every site, each case proven |
 | [install-agents](skills/install-agents/SKILL.md) | Bootstrap: lets the harness install/update/remove this repo's agents and skills via `install.sh` (not installed into target projects) |
 | [terraform-review](skills/terraform-review/SKILL.md) | Deterministic Terraform/GCP review: Google style rules, security rules, configurable policy from `tfreview.json`; optional terraform/tflint/trivy; CI gate |
 | [terraform-plan-review](skills/terraform-plan-review/SKILL.md) | Risk-ranked review of `terraform show -json` plans (data loss, exposure, IAM, drift); CI gate |
@@ -203,6 +204,14 @@ their published formats and have not been run.
 The three skills install together; `code-skeleton` and `blast-radius` call the engine in
 `../code-graph/scripts/run.sh`. The engine needs Python 3.10+; `run.sh` creates a private venv
 with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
+
+In an application repository, install only the code tools: every installed skill's and agent's
+description is sent with every model request, so the infrastructure skills cost context on every
+call where they cannot apply (about 2.7k tokens per call for the full set):
+
+```bash
+./install.sh --harness claude --skills code-graph,code-skeleton,blast-radius,bug-fix --agents ast-treesitter
+```
 
 ## Versions and rollback
 

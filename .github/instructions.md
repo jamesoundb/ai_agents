@@ -193,6 +193,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `code-graph` | build `.ast-graph/graph.db` once (queries refresh it when the git tree changed); `find`, `symbol`, `source`, `callers`, `callees`, `tests-for`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
 | `code-skeleton` | read-before-cat skeleton of files/directories with exact line ranges | `run.sh skeleton PATH...` |
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
+| `bug-fix` | procedure only (no script): report -> checklist of cases -> failing test per case -> cause fixed at every site -> each case proven; navigation through the code-graph engine | `../code-graph/scripts/run.sh` |
 | `install-agents` | bootstrap: harness-driven install/update/uninstall of this repo's agents and skills | `skills/install-agents/scripts/install.sh` -> `install.sh` |
 
 `code-skeleton` and `blast-radius` call the `code-graph` engine through the relative path
