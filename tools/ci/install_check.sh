@@ -238,7 +238,7 @@ check "update keeps their config/skills link"    test -L "$UH/.gemini/config/ski
 # An install made from another clone is reported and left alone.
 OR="$WORK/other-repo"; copy_repo "$OR"
 HOME="$UH" run_install "$WORK/u-other.log" "$OR/install.sh" --update --harness claude
-check "other clone: skipped with a reason"       grep -q 'skip   claude: installed from another clone' "$WORK/u-other.log"
+check "other clone: skipped with a reason"       grep -q 'skip   claude (loose): installed from another clone' "$WORK/u-other.log"
 check "other clone: links not re-pointed"        test "$(resolve() { cd "$(dirname "$1")" && cd "$(readlink "$1")" && pwd; }; resolve "$UH/.claude/skills/code-graph")" = "$UR/skills/code-graph"
 # Unmarked agent files (installs older than the marker): kept and named; --force takes them over.
 UO="$WORK/upd-old"; mkdir -p "$UO"
@@ -256,6 +256,15 @@ echo "UPSTREAM-EDIT-8a1" >> "$UR/agents/ast-treesitter/AGENT.md"
 run_install "$WORK/up2.log" "$UR/install.sh" --update --target "$UP"
 check "project update re-rendered the agent"     grep -q UPSTREAM-EDIT-8a1 "$UP/.claude/agents/ast-treesitter.md"
 check "project update left HOME alone"           test -z "$(grep -F "$HOME" "$WORK/up2.log")"
+# A harness installed both as a plugin and loose: --update refreshes both, not just the plugin.
+UB="$WORK/upd-both"; mkdir -p "$UB"
+HOME="$UB" run_install "$WORK/ub1.log" "$UR/install.sh" --harness antigravity --scope user --agents-as-skills
+HOME="$UB" run_install "$WORK/ub2.log" "$UR/install.sh" --harness antigravity --scope user --plugin
+echo "UPSTREAM-EDIT-9c2" >> "$UR/agents/ast-treesitter/AGENT.md"
+HOME="$UB" run_install "$WORK/ub3.log" "$UR/install.sh" --update
+check "plugin + loose: plugin agent updated"     grep -q UPSTREAM-EDIT-9c2 "$UB/.gemini/config/plugins/ai-agents/agents/ast-treesitter.md"
+check "plugin + loose: loose agent updated"      grep -q UPSTREAM-EDIT-9c2 "$UB/.gemini/config/agents/ast-treesitter/agent.md"
+check "plugin + loose: agent skill updated"      grep -q UPSTREAM-EDIT-9c2 "$UB/.gemini/config/skills/ast-treesitter/SKILL.md"
 mkdir -p "$WORK/upd-none"
 HOME="$WORK/upd-none" run_install "$WORK/un.log" "$UR/install.sh" --update
 check "nothing installed: says so, exit 0"       grep -q 'nothing installed from this clone' "$WORK/un.log"

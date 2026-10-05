@@ -600,10 +600,13 @@ ours_here() {  # a skill entry this clone installed: a symlink into it, or a cop
 }
 
 # shellcheck disable=SC2034  # D_PLUGIN/D_MODE/D_AS are read through eval in the --update driver
-detect_install() {  # detect_install <harness>: sets D_PLUGIN D_MODE D_AGENTS D_SKILLS D_AS D_OTHER
-  local h="$1" s a f
+detect_install() {  # detect_install <harness> <plugin|loose>: sets D_PLUGIN D_MODE D_AGENTS D_SKILLS D_AS D_OTHER
+  # The two kinds are detected separately: a harness can have both (a plugin added next to a
+  # regular install), and each must be refreshed.
+  local h="$1" kind="$2" s a f
   D_PLUGIN=0; D_MODE="link"; D_AGENTS=""; D_SKILLS=""; D_AS=0; D_OTHER=""; D_UNMARKED=""
-  if ! { [ "$h" = gemini ] && [ "$SCOPE" = project ]; }; then
+  if [ "$kind" = plugin ]; then
+    { [ "$h" = gemini ] && [ "$SCOPE" = project ]; } && return 0
     plugin_layout "$h"
     if marked_dir "$PD"; then
       if [ "$(cat "$PD/$MARKER_FILE")" != "$REPO" ]; then D_OTHER="$(cat "$PD/$MARKER_FILE")"; return 0; fi
@@ -620,8 +623,8 @@ detect_install() {  # detect_install <harness>: sets D_PLUGIN D_MODE D_AGENTS D_
         esac
         [ -f "$f" ] && D_AGENTS="$D_AGENTS $a"
       done
-      return 0
     fi
+    return 0
   fi
   loose_layout "$h"
   # a Gemini user install made before the move to ~/.agents/skills is still found (and then moved)
@@ -691,10 +694,10 @@ missing_from() {  # missing_from <installed> <available>: names in available but
 if [ "$UPDATE" = 1 ]; then
   echo "update: scope=$SCOPE$( [ "$SCOPE" = project ] && echo " target=$TARGET") from $REPO"
   FOUND=""
-  for h in ${HARNESSES//,/ }; do
-    detect_install "$h"
+  for h in ${HARNESSES//,/ }; do for kind in plugin loose; do
+    detect_install "$h" "$kind"
     if [ -n "$D_OTHER" ] && [ -z "$D_SKILLS" ]; then
-      log "skip   $h: installed from another clone ($D_OTHER); run --update there, or uninstall it there and install from here"
+      log "skip   $h ($kind): installed from another clone ($D_OTHER); run --update there, or uninstall it there and install from here"
       continue
     fi
     [ -n "$D_SKILLS$D_AGENTS" ] || continue
@@ -702,27 +705,28 @@ if [ "$UPDATE" = 1 ]; then
       log "keep   $f: no installer marker (an install older than the marker, or your own file);"
       log "       not updated. If it is ours, add --force to take it over"
     done
-    FOUND="$FOUND $h"
-    # bash 3.2 has no associative arrays: one variable set per harness
-    eval "U_${h}_PLUGIN=\$D_PLUGIN U_${h}_MODE=\$D_MODE U_${h}_AGENTS=\$D_AGENTS U_${h}_SKILLS=\$D_SKILLS U_${h}_AS=\$D_AS"
-  done
+    FOUND="$FOUND $h:$kind"
+    # bash 3.2 has no associative arrays: one variable set per install (harness + kind)
+    eval "U_${h}_${kind}_PLUGIN=\$D_PLUGIN U_${h}_${kind}_MODE=\$D_MODE U_${h}_${kind}_AGENTS=\$D_AGENTS U_${h}_${kind}_SKILLS=\$D_SKILLS U_${h}_${kind}_AS=\$D_AS"
+  done; done
   # During --update, --force only takes over the unmarked agent files detection named
   # (TAKEOVER_FILES); every other path keeps the normal guard, so a developer's own same-named
   # skill is never replaced.
   FORCE=0
   [ -n "$FOUND" ] || { echo "update: nothing installed from this clone at scope=$SCOPE; install first (see --help)"; exit 0; }
-  use_detected() {  # load the stored detection for harness $1 into the variables run_harnesses reads
-    eval "PLUGIN=\$U_${1}_PLUGIN MODE=\$U_${1}_MODE AGENTS=\$U_${1}_AGENTS AGENT_SKILLS=\$U_${1}_AS"
-    eval "SKILLS=\$U_${1}_SKILLS"
+  use_detected() {  # load the stored detection for install <harness>:<kind> into run_harnesses' variables
+    local u="${1%%:*}_${1#*:}"
+    eval "PLUGIN=\$U_${u}_PLUGIN MODE=\$U_${u}_MODE AGENTS=\$U_${u}_AGENTS AGENT_SKILLS=\$U_${u}_AS"
+    eval "SKILLS=\$U_${u}_SKILLS"
     SKILLS="$(with_declared_skills "$AGENTS" "$SKILLS")"
-    HARNESSES="$1"
+    HARNESSES="${1%%:*}"
   }
   # Pre-flight every install first, so a clash in one cannot leave the others half-updated.
   DRY=1; for h in $FOUND; do use_detected "$h"; run_harnesses > /dev/null; done; DRY=0
   for h in $FOUND; do
     use_detected "$h"
     run_harnesses
-    [ "$PLUGIN" = 1 ] || prune_stale "$h"   # plugins are rebuilt whole; loose installs need pruning
+    [ "$PLUGIN" = 1 ] || prune_stale "${h%%:*}"   # plugins are rebuilt whole; loose installs need pruning
     extra_a="$(missing_from "$AGENTS" "$ALL_AGENTS")"
     extra_s="$(missing_from "$SKILLS" "$(missing_from install-agents "$ALL_SKILLS")")"
     if [ -n "$extra_a$extra_s" ]; then

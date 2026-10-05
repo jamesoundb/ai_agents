@@ -55,7 +55,8 @@ a pre-flight pass (`DRY=1`) over every destination first, so a conflict cannot l
 install. `--uninstall` keeps anything it does not own and logs `kept <path>`.
 
 `--update` re-runs every install this clone made, without stored state. `detect_install()`
-reads, per harness and scope:
+reads, per harness and scope, the plugin and the regular install separately (a harness can have
+both, and each is refreshed):
 - whether the plugin folder carries our marker with this clone's path;
 - which skills are symlinks into this clone or copies marked with its path, and whether they
   are links or copies;
