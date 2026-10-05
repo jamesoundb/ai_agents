@@ -1,12 +1,8 @@
 ---
 name: teamcity-config-review
 description: >
-  Review TeamCity project settings (Kotlin DSL settings.kts/*.kt or XML project-config and
-  buildTypes) for cost and hygiene: execution timeouts, cleanup rules, VCS trigger branch
-  filters and quiet periods, concurrency caps, artifact rules, plain-text secrets, unpinned step
-  images, build caches, builds that create Kubernetes test environments without a teardown, and
-  Kubernetes cloud-image pod templates reviewed against the build size tiers. Use for changes
-  under .teamcity/, when builds are slow or expensive, and before adding a build configuration.
+  Use for changes under .teamcity/ or slow and expensive builds: TeamCity settings reviewed for
+  timeouts, cleanup, triggers, concurrency, secrets, caches and pod templates.
 allowed-tools: Bash(python3 */teamcity-config-review/scripts/tcreview.py *), Bash(*/teamcity-config-review/scripts/tcreview.py *), Read, Glob, Grep
 ---
 

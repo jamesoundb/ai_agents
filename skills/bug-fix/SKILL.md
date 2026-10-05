@@ -1,8 +1,8 @@
 ---
 name: bug-fix
 description: >
-  Use when fixing a reported bug, failing test or wrong behaviour, before changing code: turns the
-  report into a checklist of cases, proves each with a test that fails first, then fixes the cause.
+  Use when fixing a reported bug, failing test or wrong behaviour, before changing code: a checklist
+  of the report's cases, a failing test per case, then the cause fixed and each case proven.
 ---
 
 # bug-fix: every reported case, proven

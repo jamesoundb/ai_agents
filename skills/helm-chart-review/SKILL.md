@@ -1,13 +1,8 @@
 ---
 name: helm-chart-review
 description: >
-  Review Helm charts and their GitOps delivery objects together: Chart.yaml and dependency
-  pinning, values.yaml defaults (resources, image tag, pull policy, secrets), per-environment
-  values layering and effective replica/resource settings, dead values, ArgoCD Application and
-  Flux HelmRelease hygiene (pinned revisions, projects, prune/selfHeal, TTL for test
-  environments, remediation), plus helm lint and a rendered-manifest pass through
-  k8s-manifest-review. Use for chart PRs, GitOps changes, "why is this environment so big",
-  and before promoting a chart version.
+  Use for Helm chart PRs and ArgoCD/Flux delivery changes: dependency pinning, values defaults and
+  per-environment layering, GitOps hygiene, and a rendered-manifest review.
 allowed-tools: Bash(python3 */helm-chart-review/scripts/helmreview.py *), Bash(*/helm-chart-review/scripts/helmreview.py *), Bash(helm lint *), Bash(helm template *), Bash(helm show *), Bash(helm dependency build *), Read, Glob, Grep
 ---
 

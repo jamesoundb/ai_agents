@@ -1,12 +1,8 @@
 ---
 name: teamcity-build-triage
 description: >
-  Explain why a TeamCity build failed and what to do: classifies the failure (agent/pod
-  scheduling, OOM or disk or timeout, dependency/registry, compile, tests, configuration,
-  flaky suspect) from the build log, build problems and failed tests, with quoted evidence
-  lines; also produces a failure-class histogram over recent failed builds to find systemic
-  waste (builds that fail for infrastructure reasons and get rerun). Use when a build is red,
-  when developers rerun builds "to see if it passes", and for weekly CI health reviews.
+  Use when a TeamCity build is red or being rerun: classifies the failure with quoted evidence; a
+  failure-class histogram over recent builds finds systemic waste.
 allowed-tools: Bash(python3 */teamcity-build-triage/scripts/tctriage.py *), Bash(*/teamcity-build-triage/scripts/tctriage.py *), Read
 ---
 

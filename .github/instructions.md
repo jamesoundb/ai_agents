@@ -234,8 +234,26 @@ templates rather than adding vendor-neutral fallbacks.
   and rebuilt rather than misread.
 - Graph artifact `.ast-graph/graph.db` is per-repo and incremental by file hash; the
   `graph.db.stamp` sidecar (git HEAD + status + dirty-file content) lets `build` return without
-  linking when the working tree is unchanged. Add `.ast-graph/` to each consuming repo's
-  `.gitignore`.
+  linking when the working tree is unchanged. `build` writes `.ast-graph/.gitignore` (`*`), so the
+  directory ignores itself in any checkout.
+- Builds hold `graph.db.lock` (pid). A second `build`, or a query that finds the graph missing or being
+  rebuilt, waits for it (up to 900 s) and then takes the unchanged-tree fast path. The builder touches
+  the lock every 5 s, and a lock touched in the last 30 s is live even when its process is invisible (a
+  sandboxed query runs in its own pid namespace, where the hook's build does not exist); an older lock
+  whose process is gone (or a zombie, or older than 2 h) is removed. This is what lets the Claude session-start hook
+  (`skills/code-graph/scripts/autobuild.sh`) build in the background while the agent's first query
+  simply waits. The hook builds the git checkout the session starts in (at its top level); a session
+  started in a directory that is not a checkout but holds clones (a problem directory with several
+  repositories) gets one graph per clone directly below it, built in parallel with the cores shared out
+  (hidden directories skipped, at most `ASTGRAPH_AUTOBUILD_MAX`, default 8). Never `$HOME` or `/`. The
+  launcher writes its pid into the lock before exec-ing the engine (same pid), so even an immediate query
+  waits; the engine takes a lock that carries its own pid. A query from the problem directory names the
+  clones that have graphs. One line of context; off with `ASTGRAPH_AUTOBUILD=0`. `install.sh` installs it for
+  Claude when code-graph is installed: plugin `hooks/hooks.json`, or one SessionStart entry in
+  `~/.claude/settings.json` (user) / `.claude/settings.local.json` (project), managed by
+  `tools/render.py claude-hook` and removed by `--uninstall`.
+- Skill and agent descriptions are short "Use when ..." triggers: every installed description is
+  sent with every model request; the detail lives in the bodies, which load only on use.
 - `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes
   the harness folders, the managed AGENTS.md block (and an AGENTS.md that only held our header),
   and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo

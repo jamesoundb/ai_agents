@@ -213,6 +213,13 @@ call where they cannot apply (about 2.7k tokens per call for the full set):
 ./install.sh --harness claude --skills code-graph,code-skeleton,blast-radius,bug-fix --agents ast-treesitter
 ```
 
+For Claude, installing code-graph also adds a session-start hook that builds the repository's graph
+in the background, so the first question does not wait for a `build` call (queries wait for a build
+that is still running). Started inside a git checkout, it builds that checkout; started in a directory
+that holds several cloned repositories (a problem directory), it builds one graph per clone (up to 8,
+`ASTGRAPH_AUTOBUILD_MAX`). `.ast-graph/` ignores itself. Turn it off with `ASTGRAPH_AUTOBUILD=0`;
+`--uninstall` removes it.
+
 ## Versions and rollback
 
 Everything merged to `main` has passed the merge request pipeline (see Contributing). Known-good

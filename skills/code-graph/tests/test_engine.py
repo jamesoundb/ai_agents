@@ -14,6 +14,8 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import threading
+import time
 import sys
 import tempfile
 
@@ -569,6 +571,84 @@ def test_java_static_imports(root, G):
           f"java: callers of the 2-arg overload = the single-member import's caller only: {out.strip().splitlines()}")
 
 
+def test_build_lock(root):
+    """A query waits for a build another process is running (the session-start hook's), ignores a lock
+    whose process is gone, and the default graph directory ignores itself."""
+    print("# build lock and self-ignoring graph dir")
+    gdir = os.path.join(root, ".ast-graph")
+    check(open(os.path.join(gdir, ".gitignore")).read() == "*\n", ".ast-graph/.gitignore ignores the whole directory")
+    lock = os.path.join(gdir, "graph.db.lock")
+    holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2.5)"])
+    threading.Thread(target=lambda: (holder.wait(), os.path.exists(lock) and os.remove(lock)), daemon=True).start()   # a build removes its lock when it ends
+    with open(lock, "w") as f:
+        f.write(str(holder.pid))
+    t0 = time.time()
+    q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "stats"], capture_output=True, text=True)
+    waited = time.time() - t0
+    os.path.exists(lock) and os.remove(lock)
+    check(q.returncode == 0 and waited >= 2.0 and "waiting for a graph build" in q.stderr,
+          f"a query waits for a live build lock ({waited:.1f}s): {q.stderr.strip()[:80]}")
+    # a fresh lock whose process is invisible (another pid namespace, e.g. a sandboxed query) is waited on
+    with open(lock, "w") as f:
+        f.write("999999999")
+    t0 = time.time()
+    threading.Timer(2.0, lambda: os.path.exists(lock) and os.remove(lock)).start()   # the "build" ends
+    q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "stats"], capture_output=True, text=True)
+    check(q.returncode == 0 and time.time() - t0 >= 1.5,
+          f"a fresh lock from a process this query cannot see is still waited on ({time.time() - t0:.1f}s)")
+    dead = subprocess.Popen([sys.executable, "-c", "pass"]); dead.wait()
+    with open(lock, "w") as f:
+        f.write(str(dead.pid))
+    old = time.time() - 120
+    os.utime(lock, (old, old))   # not touched for two minutes: its builder stopped beating
+    t0 = time.time()
+    q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", root, "stats"], capture_output=True, text=True)
+    check(q.returncode == 0 and time.time() - t0 < 2.0 and not os.path.exists(lock),
+          f"a lock left by a finished process is removed, not waited on ({time.time() - t0:.1f}s)")
+
+
+def test_autobuild_hook():
+    """Session-start hook: a checkout gets one background build; a problem directory that holds several
+    clones (and is not a checkout itself) gets one graph per clone; a plain directory gets nothing."""
+    print("# session-start autobuild hook")
+    hook = os.path.join(HERE, "..", "scripts", "autobuild.sh")
+    top = tempfile.mkdtemp(prefix="astgraph-problem-")
+    try:
+        os.makedirs(os.path.join(top, ".github")); os.makedirs(os.path.join(top, "notes"))
+        for r in ("api", "web"):
+            d = os.path.join(top, r); os.makedirs(d)
+            with open(os.path.join(d, "m.py"), "w") as f:
+                f.write(f"def {r}_entry():\n    return {r}_helper()\n\n\ndef {r}_helper():\n    return 1\n")
+            for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"]):
+                subprocess.run(["git", *cmd], cwd=d, check=True, capture_output=True)
+
+        def hook_ctx(d):
+            p = subprocess.run(["bash", hook], cwd=d, env=dict(os.environ, CLAUDE_PROJECT_DIR=d), capture_output=True, text=True)
+            return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"] if p.stdout.strip() else None
+
+        ctx = hook_ctx(top)
+        check(ctx is not None and "api/ web/" in ctx and "--root" in ctx, f"problem directory: one background build per clone: {ctx}")
+        q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", os.path.join(top, "web"), "callers", "web_helper"],
+                           capture_output=True, text=True)
+        check("web_entry" in q.stdout, f"a query on a clone waits for its background build: {q.stdout.strip()[:80]}")
+        for _ in range(100):   # the other clone's build finishes on its own
+            if os.path.exists(os.path.join(top, "api", ".ast-graph", "graph.db")) and not os.path.exists(os.path.join(top, "api", ".ast-graph", "graph.db.lock")):
+                break
+            time.sleep(0.2)
+        check(not os.path.exists(os.path.join(top, "notes", ".ast-graph")) and not os.path.exists(os.path.join(top, ".ast-graph")),
+              "plain folders and the problem directory itself get no graph")
+        q = subprocess.run([sys.executable, "-B", ENGINE, "query", "callers", "web_helper"], cwd=top, capture_output=True, text=True)
+        check("api, web" in q.stderr + q.stdout and "query --root <repository> callers web_helper" in q.stderr + q.stdout,
+              f"a query from the problem directory names the clones that have graphs: {(q.stderr + q.stdout).strip()[:100]}")
+        st = subprocess.run(["git", "status", "--porcelain"], cwd=os.path.join(top, "api"), capture_output=True, text=True).stdout
+        check(st == "", f"the clone's git status stays clean: {st!r}")
+        ctx = hook_ctx(os.path.join(top, "api"))
+        check(ctx is not None and "repository root" in ctx, "a session inside a clone builds that clone")
+        check(hook_ctx(os.path.join(top, "notes")) is None, "a plain directory with no clones: no build, no output")
+    finally:
+        shutil.rmtree(top, ignore_errors=True)
+
+
 def test_tests_detection(root, G):
     print("# test-file detection")
     for p, want in [("go/handler/attestor.go", False), ("go/handler/handler_test.go", True),
@@ -1118,6 +1198,8 @@ def main():
         test_kotlin_rules(root, G)
         test_java_constructors(root, G)
         test_java_static_imports(root, G)
+        test_build_lock(root)
+        test_autobuild_hook()
         test_tests_detection(root, G)
         test_determinism(root)
         test_concurrent_and_legacy(tmp)

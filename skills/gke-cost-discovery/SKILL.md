@@ -1,12 +1,8 @@
 ---
 name: gke-cost-discovery
 description: >
-  Measure where a GKE Standard cluster wastes money on test builds and test environments:
-  unused capacity (requested but not consumed) versus unallocated capacity (nodes idle because
-  nothing requested them), top over-requested workloads with recommended requests, stale test
-  environments, lingering Jobs, scale-down blockers, node pool settings, autoscaler no-scale-down
-  reasons, and TeamCity build demand. Use when asked why the cluster costs too much, to right-size
-  build manifests, to derive build size tiers, or before tuning node pools.
+  Use when asked why a GKE cluster costs too much, to derive build size tiers, or before tuning node
+  pools: unused vs unallocated capacity, over-requested workloads, stale test environments.
 allowed-tools: Bash(*/gke-cost-discovery/scripts/collect.sh *), Bash(*/gke-cost-discovery/scripts/analyze.py *), Bash(*/gke-cost-discovery/scripts/synth.py *), Bash(python3 */gke-cost-discovery/scripts/*), Bash(gcloud * describe *), Bash(gcloud * list *), Bash(gcloud * get-credentials *), Bash(kubectl get *), Bash(kubectl top *), Read, Write
 ---
 

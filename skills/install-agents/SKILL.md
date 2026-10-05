@@ -1,11 +1,9 @@
 ---
 name: install-agents
 description: >
-  Install or update this repository's AI agents and skills into the developer's coding harness
-  (Claude Code, OpenAI Codex, Gemini CLI, Google Antigravity, GitHub Copilot), for this checkout
-  or for another project on disk. Use when a developer asks to install, set up, enable, update or
-  remove the agents/skills, asks how to use them in their tool, or on a first session in this
-  repository. Wraps install.sh so the result is deterministic.
+  Use when a developer asks to install, update or remove this repository's agents and skills in
+  their coding tool (Claude Code, Codex, Gemini CLI, Antigravity, Copilot), or on a first session
+  here.
 allowed-tools: Bash(*/install-agents/scripts/install.sh *), Bash(*/install.sh *), Bash(ls *), Bash(cat *), Read, Glob
 ---
 

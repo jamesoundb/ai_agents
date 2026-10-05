@@ -53,6 +53,7 @@ check "antigravity agents = $N_AGENTS"       test "$(count "$PROJ/.agents/agents
 check "AGENTS.md has the managed block"      grep -q 'BEGIN managed by install.sh' "$PROJ/AGENTS.md"
 check "CLAUDE.md imports AGENTS.md"          grep -qx '@AGENTS.md' "$PROJ/CLAUDE.md"
 check "skill symlinks resolve"               test -f "$PROJ/.claude/skills/code-graph/SKILL.md"
+check "project: graph hook in settings.local.json" grep -q "code-graph/scripts/autobuild.sh" "$PROJ/.claude/settings.local.json"
 
 run_install "$WORK/uninstall.log" "$REPO/install.sh" --harness all --target "$PROJ" --uninstall
 check "uninstall leaves the project clean"   test -z "$(git -C "$PROJ" status --porcelain)"
@@ -67,6 +68,7 @@ check "HOME/.copilot/agents = $N_AGENTS"         test "$(count "$FAKE_HOME/.copi
 check "HOME/.gemini/config/agents = $N_AGENTS"   test "$(count "$FAKE_HOME/.gemini/config/agents")" -eq "$N_AGENTS"
 check "no AGENTS.md written into HOME"        test ! -e "$FAKE_HOME/AGENTS.md"
 check "rendered agents are non-empty"         test -s "$FAKE_HOME/.claude/agents/terraform.md"
+check "user: graph hook in ~/.claude/settings.json" grep -q "code-graph/scripts/autobuild.sh" "$FAKE_HOME/.claude/settings.json"
 
 echo "== a developer's own files are never destroyed =="
 OWN="$WORK/own"
@@ -100,6 +102,7 @@ printf '{"name": "mine", "plugins": [{"name": "theirs", "source": {"source": "lo
 HOME="$PH" run_install "$WORK/plugin-user.log" "$REPO/install.sh" --harness all --scope user --plugin
 check "claude plugin manifest"                  test -f "$PH/.claude/skills/ai-agents/.claude-plugin/plugin.json"
 check "claude plugin agents = $N_AGENTS"        test "$(count "$PH/.claude/skills/ai-agents/agents")" -eq "$N_AGENTS"
+check "claude plugin graph hook"                python3 -c 'import json,sys; h=json.load(open(sys.argv[1])); assert "autobuild.sh" in json.dumps(h["hooks"]["SessionStart"])' "$PH/.claude/skills/ai-agents/hooks/hooks.json"
 check "antigravity plugin manifest"             test -f "$PH/.gemini/config/plugins/ai-agents/plugin.json"
 check "antigravity plugin skills = $N_SKILLS_NO_BOOT" test "$(count "$PH/.gemini/config/plugins/ai-agents/skills")" -eq "$N_SKILLS_NO_BOOT"
 check "gemini extension skills = $N_SKILLS_PLUGIN"    test "$(count "$PH/.gemini/extensions/ai-agents/skills")" -eq "$N_SKILLS_PLUGIN"

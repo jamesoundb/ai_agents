@@ -1,10 +1,8 @@
 ---
 name: terraform-module-scaffold
 description: >
-  Generate a new Terraform module or environment root module for Google Cloud that already follows
-  Google's standard structure and the company conventions (versions pinned, GCS backend with
-  prefix, labels, described and typed variables, outputs, README with terraform-docs markers,
-  runnable example). Use when asked to create, start, bootstrap or scaffold Terraform code.
+  Use when asked to create or scaffold Terraform: a Google Cloud module or environment root that
+  already follows Google's structure and the company conventions.
 allowed-tools: Bash(python3 */terraform-module-scaffold/scripts/scaffold.py *), Bash(*/terraform-module-scaffold/scripts/scaffold.py *), Bash(terraform fmt *), Bash(terraform init -backend=false *), Bash(terraform validate *), Read, Write, Edit, Glob
 ---
 

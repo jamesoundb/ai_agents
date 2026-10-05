@@ -1,12 +1,9 @@
 ---
 name: ast-treesitter
 description: >
-  Code-architecture navigator. Uses tree-sitter skeletons and a semantic relationship graph
-  (classes, functions, fields, calls, imports, inheritance, Terraform modules/resources,
-  Kubernetes objects) to answer "how is this built", "what calls/uses X", "what breaks if I change
-  X", and "where should this change go" without dumping raw files into context. Use proactively
-  before refactors, impact analysis, code reviews of large diffs, onboarding to an unfamiliar
-  repo, and for Terraform/Kubernetes dependency questions. Read-only: it reports, it does not edit.
+  Code-architecture navigator over a tree-sitter code graph: how is this built, what calls or uses
+  X, what breaks if X changes, where a change belongs. Read-only; use before refactors, impact
+  analysis and large reviews.
 tools: [shell, read, glob, grep]
 skills: [code-graph, code-skeleton, blast-radius]
 readonly: true
@@ -57,7 +54,9 @@ Never re-confirm a graph answer with `grep` or an ad-hoc script. The graph resol
 and labelled its confidence; a text match is strictly weaker evidence, and reaching for one
 discards the reason these tools exist.
 
-1. If the repo has no `.ast-graph/graph.db` yet, build it from the repo root: `run.sh build --root .`
+1. If the session started with a "Code graph(s): being built in the background" note, go straight to
+   the query (it waits for that build; with several repositories, `query --root <repository> ...`). Otherwise, if the repo has no `.ast-graph/graph.db` yet, build it
+   from the repo root: `run.sh build --root .`
    (seconds on small repos, tens of seconds above a million lines). Do not rebuild before later
    questions or after edits: every `query` refreshes a graph that is stale against the git working
    tree, and finds the graph from any subdirectory.

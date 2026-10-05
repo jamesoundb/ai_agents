@@ -1,13 +1,8 @@
 ---
 name: k8s-rightsize
 description: >
-  Right-size the requests and limits of build and test workloads in a namespace's manifests from
-  measured usage: matches each container to the gke-cost-discovery report (p95 CPU and memory),
-  rewrites requests to p95 x headroom with memory limit = request and a bounded CPU limit,
-  caps or defaults to the build size tier when there is no usage data, optionally adds the
-  lifecycle fields (Job TTL, deadline, backoffLimit, kube-janitor TTL annotation), and prints a
-  diff with the evidence per container. Use after a discovery run, when a namespace shows low
-  utilization, or when asked to "right-size this job/manifest/namespace".
+  Use to right-size requests and limits of build and test workloads in Kubernetes manifests from
+  measured usage (a gke-cost-discovery report), with a diff and evidence per container.
 allowed-tools: Bash(*/k8s-rightsize/scripts/run.sh *), Bash(python3 */k8s-rightsize/scripts/rightsize.py *), Bash(*/k8s-rightsize/scripts/rightsize.py *), Bash(python3 */gke-cost-discovery/scripts/analyze.py *), Bash(kubectl get *), Read, Write, Edit, Glob
 ---
 

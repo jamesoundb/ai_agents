@@ -1,11 +1,8 @@
 ---
 name: terraform-plan-review
 description: >
-  Turn a Terraform plan into a risk-ranked change review for Google Cloud: destroys and
-  replacements of stateful resources (data loss), resources removed from config, IAM grants
-  (public members, primitive roles, authoritative policies), internet-open firewalls, public IPs,
-  sensitive outputs, drift, and metadata-only noise. Use whenever a plan must be approved, in PR
-  or CI pipelines, and before any apply.
+  Use when a Terraform plan must be approved: ranks its changes by risk for Google Cloud (data loss,
+  IAM grants, public exposure, drift).
 allowed-tools: Bash(python3 */terraform-plan-review/scripts/planreview.py *), Bash(*/terraform-plan-review/scripts/planreview.py *), Bash(terraform show -json *), Bash(terraform plan *), Read
 ---
 

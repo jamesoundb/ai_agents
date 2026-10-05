@@ -18,6 +18,7 @@ Subcommands:
 Dependencies: pip install tree-sitter tree-sitter-language-pack
 """
 import argparse
+import contextlib
 import fnmatch
 import hashlib
 import json
@@ -3869,7 +3870,117 @@ def resolve_calls_parallel(rels, job, jobs=None):
         _LINK_JOB = None
 
 
+BUILD_WAIT_S = 900      # how long a build or query waits for another process's build of the same graph
+STALE_LOCK_S = 7200     # a lock this old is abandoned whatever its process id says (pid reuse, Windows)
+LOCK_BEAT_S = 5         # a building process touches its lock this often
+LOCK_FRESH_S = 30       # a lock touched this recently is live even when its process is not visible
+
+
+def lock_holder(out_path):
+    """Process id of a live build holding `out_path`'s lock, else None. The builder touches the lock every
+    LOCK_BEAT_S, so a recently touched lock is live even when its process cannot be seen: a sandboxed
+    query runs in its own pid namespace, where the session-start hook's build does not exist. A lock
+    that is not fresh and whose process is gone (or older than STALE_LOCK_S) is removed."""
+    lock = out_path + ".lock"
+    try:
+        age = time.time() - os.stat(lock).st_mtime
+        with open(lock) as f:
+            pid = int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return None   # no lock (or one being written this instant: the O_EXCL loop retries)
+    if pid == os.getpid():
+        return None   # registered for this very process by its launcher (autobuild.sh): ours to take
+    if age < LOCK_FRESH_S:
+        return pid or -1
+    alive = age < STALE_LOCK_S
+    if alive and pid and os.name != "nt":   # on Windows os.kill(pid, 0) would terminate the process
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            alive = False
+        except OSError:
+            pass   # exists, owned by someone else
+        try:
+            with open(f"/proc/{pid}/stat") as f:   # Linux: a finished child not yet reaped is a zombie
+                alive = alive and f.read().rsplit(")", 1)[-1].split()[0] != "Z"
+        except (OSError, IndexError):
+            pass
+    if not alive:
+        with contextlib.suppress(OSError):
+            os.unlink(lock)
+        return None
+    return pid
+
+
+def wait_for_build(out_path, wait_s=BUILD_WAIT_S, quiet=False):
+    """Block while another process builds this graph (e.g. the session-start hook's background
+    build). True once no live build holds the lock, False after `wait_s`."""
+    t0, said = time.time(), False
+    while lock_holder(out_path) is not None:
+        if time.time() - t0 > wait_s:
+            return False
+        if not said and not quiet:
+            print("(waiting for a graph build that is already running...)", file=sys.stderr)
+            said = True
+        time.sleep(0.5)
+    if said and not quiet:
+        print(f"(build finished after {time.time() - t0:.0f}s)", file=sys.stderr)
+    return True
+
+
+@contextlib.contextmanager
+def build_lock(out_path, quiet=False):
+    """One build per graph at a time. A second build waits for the first and then takes the
+    unchanged-tree fast path instead of parsing the same files again."""
+    lock = out_path + ".lock"
+    os.makedirs(os.path.dirname(os.path.abspath(lock)), exist_ok=True)
+    while True:
+        if not wait_for_build(out_path, quiet=quiet):
+            with contextlib.suppress(OSError):
+                os.unlink(lock)   # a build that has not finished in BUILD_WAIT_S: take over
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            with contextlib.suppress(OSError, ValueError), open(lock) as f:
+                if int(f.read().strip() or 0) == os.getpid():   # pre-registered by the launcher
+                    fd = os.open(lock, os.O_WRONLY | os.O_TRUNC)
+                    break
+            time.sleep(0.05)
+    os.write(fd, str(os.getpid()).encode())
+    os.close(fd)
+    import threading
+    done = threading.Event()
+
+    def beat():   # keep the lock fresh for waiters that cannot see this process
+        while not done.wait(LOCK_BEAT_S):
+            with contextlib.suppress(OSError):
+                os.utime(lock)
+    threading.Thread(target=beat, daemon=True).start()
+    try:
+        yield
+    finally:
+        done.set()
+        with contextlib.suppress(OSError):
+            os.unlink(lock)
+
+
 def build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False, keep_dirs=None, jobs=None):
+    """Build or incrementally refresh the graph at `out_path`, holding its build lock."""
+    gdir = os.path.dirname(os.path.abspath(out_path))
+    if os.path.basename(gdir) == ".ast-graph":
+        # The default graph directory ignores itself, so building in any checkout (a session-start
+        # hook builds unasked) never shows up in `git status`.
+        os.makedirs(gdir, exist_ok=True)
+        gi = os.path.join(gdir, ".gitignore")
+        if not os.path.exists(gi):
+            with contextlib.suppress(OSError), open(gi, "w") as f:
+                f.write("*\n")
+    with build_lock(out_path, quiet=quiet):
+        return _build_graph(root_dir, out_path, includes, excludes, full, quiet, keep_dirs, jobs)
+
+
+def _build_graph(root_dir, out_path, includes, excludes, full=False, quiet=False, keep_dirs=None, jobs=None):
     t0 = time.time()
     root_dir = os.path.abspath(root_dir)
     # Fast path: if the git working tree is byte-identical to the one the graph was built from, the
@@ -6469,7 +6580,7 @@ def find_graph(start=None):
     d = os.path.abspath(start or os.getcwd())
     while True:
         p = os.path.join(d, DEFAULT_GRAPH)
-        if os.path.exists(p):
+        if os.path.exists(p) or os.path.exists(p + ".lock"):   # a first build may still be running
             return p
         parent = os.path.dirname(d)
         if parent == d:
@@ -7618,8 +7729,17 @@ def main(argv=None):
             a.graph = os.path.join(a.root, DEFAULT_GRAPH)
         elif a.graph == DEFAULT_GRAPH and not os.path.exists(a.graph):
             a.graph = find_graph() or a.graph          # e.g. the agent `cd`-ed into tests/ to run them
+        wait_for_build(a.graph)   # a background build (session-start hook) finishes first; then the fast path
         if not os.path.exists(a.graph):
             msg = f"graph not found at {a.graph}. Build it first: astgraph.py build --root <repo>"
+            here = os.path.dirname(os.path.dirname(os.path.abspath(a.graph)))
+            with contextlib.suppress(OSError):
+                kids = [d for d in sorted(os.listdir(here)) if not d.startswith(".")
+                        and (os.path.exists(os.path.join(here, d, DEFAULT_GRAPH))
+                             or os.path.exists(os.path.join(here, d, DEFAULT_GRAPH + ".lock")))]
+                if kids:   # a problem directory holding several repositories, one graph each
+                    msg = (f"no graph here, but these repositories below have one: {', '.join(kids)}. "
+                           f"Query one as: query --root <repository> {' '.join(sys.argv[sys.argv.index('query') + 1:]) if 'query' in sys.argv else '<question>'}")
             note = legacy_graph_note(a.graph)
             sys.exit(msg + (f"\n{note}" if note else ""))
         if not a.no_refresh:

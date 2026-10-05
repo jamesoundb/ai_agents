@@ -1,13 +1,9 @@
 ---
 name: build-pipeline
 description: >
-  TeamCity build pipeline engineer with a cost and reliability mandate. Reviews TeamCity
-  project settings (Kotlin DSL or XML) for timeouts, cleanup, triggers, concurrency, secrets,
-  caches and Kubernetes cloud-image pod templates against the build size tiers; triages failed
-  builds by class with evidence; finds systemic waste (infrastructure failures that get rerun,
-  queue time, test environments left running by builds). Use for anything under .teamcity/,
-  red builds, slow or expensive pipelines, and build-agent capacity questions. Read-only against
-  the TeamCity server; changes go through versioned settings.
+  TeamCity pipeline engineer: reviews project settings for cost and reliability, triages failed
+  builds with evidence, finds systemic waste in builds and agent capacity. Read-only against the
+  server.
 tools: [shell, read, glob, grep, edit, write]
 skills: [teamcity-config-review, teamcity-build-triage, k8s-manifest-review, k8s-rightsize, gke-cost-discovery, code-graph, code-skeleton]
 readonly: false

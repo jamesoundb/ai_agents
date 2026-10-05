@@ -1,11 +1,8 @@
 ---
 name: code-skeleton
 description: >
-  Show a token-light tree-sitter skeleton of one or more source files (classes, functions,
-  fields, signatures, decorators, calls, exact line ranges) before reading any raw code. Use
-  proactively instead of cat/Read on any file longer than ~80 lines, and whenever asked "what is in
-  this file/directory". Works for C/C++, Python, JS/TS, Go, Java, Kotlin, Rust, Terraform and
-  Kubernetes YAML.
+  Use before reading a source file longer than ~80 lines, or when asked what is in a file or
+  directory: classes, functions, signatures and exact line ranges instead of the whole file.
 allowed-tools: Bash(*/code-graph/scripts/run.sh *), Bash(*/code-skeleton/../code-graph/scripts/run.sh *), Read
 ---
 

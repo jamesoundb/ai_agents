@@ -1,12 +1,8 @@
 ---
 name: k8s-manifest-review
 description: >
-  Efficiency and hygiene review of Kubernetes manifests for build and test workloads on GKE:
-  missing or oversized requests versus the company's build size tiers, memory limits, lifecycle
-  (Job TTL and deadlines, test-environment teardown TTL, replica caps), spot pool placement,
-  ephemeral storage, image pinning, sidecars, PVCs, privileged containers and labels. Works on
-  plain YAML, `helm template` output and `kustomize build` output. Use before merging a build
-  manifest or TeamCity build template, in PR review, and as a CI gate.
+  Use to review Kubernetes manifests for build and test workloads (YAML, helm template or kustomize
+  output): requests vs size tiers, limits, TTLs, spot placement, images, hygiene.
 allowed-tools: Bash(*/k8s-manifest-review/scripts/run.sh *), Bash(python3 */k8s-manifest-review/scripts/k8sreview.py *), Bash(helm template *), Bash(kustomize build *), Bash(kubeconform *), Read, Glob, Grep
 ---
 

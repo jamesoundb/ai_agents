@@ -1,13 +1,8 @@
 ---
 name: k8s-guardrails
 description: >
-  Generate namespace guardrails for build and test namespaces from the company's build size
-  tiers: a LimitRange (defaults and per-container maximums, memory limit = request), a
-  ResourceQuota sized for expected concurrency, and a kube-janitor rules entry that gives
-  unannotated test environments a default TTL (a standalone janitor CronJob is available only
-  for clusters without kube-janitor). Use after gke-cost-discovery has produced
-  build-tiers.json, when a namespace has no LimitRange, or when test environments are left
-  running.
+  Use to generate LimitRange, ResourceQuota and test-environment TTL rules for build and test
+  namespaces from the build size tiers.
 allowed-tools: Bash(python3 */k8s-guardrails/scripts/guardrails.py *), Bash(*/k8s-guardrails/scripts/guardrails.py *), Bash(kubeconform *), Read, Write, Glob
 ---
 

@@ -1,10 +1,8 @@
 ---
 name: blast-radius
 description: >
-  Compute the downstream impact of changing a file, class, function, DTO, Terraform resource or
-  module, or Kubernetes object: which files and symbols depend on it, through which relationship,
-  and which tests to run. Use before refactors, signature changes, schema/DTO changes, infra
-  changes, and when reviewing a diff for unintended consequences.
+  Use before a refactor, a signature, DTO, schema or infra change, or when reviewing a diff: every
+  dependent file and symbol, the relationship, and the tests to run.
 allowed-tools: Bash(*/code-graph/scripts/run.sh *), Bash(*/blast-radius/../code-graph/scripts/run.sh *), Bash(git diff *), Bash(git status *), Read
 ---
 

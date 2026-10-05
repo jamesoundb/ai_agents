@@ -1,11 +1,8 @@
 ---
 name: terraform-review
 description: >
-  Deterministic review of Terraform for Google Cloud: Google's style/structure rules (variables,
-  outputs, versions, backend, module pinning, naming), GCP security rules (public IAM, primitive
-  roles, service account keys, open firewalls, public Cloud SQL, GKE hardening, bucket settings,
-  secrets in code) and company conventions (required labels, allowed regions). Use for PR review,
-  before opening a PR, when asked "is this Terraform safe/compliant", and as a CI gate.
+  Use to review Terraform for Google Cloud (PR review, before a PR, CI gate): Google style and
+  structure, GCP security rules and company conventions, with rule ids and file:line.
 allowed-tools: Bash(*/terraform-review/scripts/run.sh *), Bash(terraform fmt *), Bash(terraform validate *), Bash(terraform init -backend=false *), Read, Glob, Grep
 ---
 

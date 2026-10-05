@@ -1,12 +1,9 @@
 ---
 name: code-graph
 description: >
-  Build and query a deterministic tree-sitter relationship graph of a repository (classes, functions,
-  fields, calls, imports, inheritance, Terraform resources/modules, Kubernetes objects) instead of
-  grepping and reading raw files. Use when you need to understand architecture, find callers or
-  callees, trace dependencies, rank hub symbols, or map Terraform/Kubernetes relationships.
-  Supports C, C++, Python, JavaScript/TypeScript, Go, Java, Kotlin, Rust, HCL and YAML, and
-  links Python to C++ across pybind11 bindings and TensorFlow-style op registration.
+  Use instead of grep and reading files whenever you need who calls or uses a symbol, what it calls,
+  how A reaches B, what a class contains or what a change breaks: one query on the repo's tree-
+  sitter code graph.
 allowed-tools: Bash(*/code-graph/scripts/run.sh *), Bash(python3 */code-graph/scripts/astgraph.py *), Read, Glob, Grep
 ---
 
@@ -27,7 +24,10 @@ variable or chained after other commands: permission rules match the literal com
 1. **Build once** per repo, from its root: `scripts/run.sh build --root .` (seconds on most repos;
    a TensorFlow-size repo takes ~75s, so give it a 10-minute timeout and wait rather than grep).
    Do **not** rebuild before each question or after your edits: every `query` notices a changed git
-   working tree and refreshes the graph itself. Queries work from any subdirectory.
+   working tree and refreshes the graph itself. Queries work from any subdirectory. If the session
+   started with a "Code graph(s): being built in the background" note, skip `build`: the first query
+   waits for that build. In a directory holding several repositories, each has its own graph: put
+   `--root <repository>` right after `query` (`query --root api callers X`).
 
 2. **Ask the question in one call**, several names at once where you need several symbols:
 

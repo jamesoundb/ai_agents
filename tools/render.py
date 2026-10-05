@@ -16,6 +16,10 @@ render.py — render a harness-neutral agents/<name>/AGENT.md into vendor format
   render.py codex-marketplace add|remove FILE [PATH]
                                    -> add or remove our entry in a Codex marketplace.json; PATH is
                                       the plugin folder relative to the marketplace root
+  render.py claude-hook plugin     -> hooks/hooks.json for the Claude plugin (session-start graph build)
+  render.py claude-hook add|remove FILE [COMMAND]
+                                   -> add or remove our SessionStart entry in a Claude settings file,
+                                      keeping every other setting and hook
 
 Only the standard library is used. AGENT.md frontmatter supports scalars, `[a, b]` lists and
 `>` folded multi-line strings; that is deliberately all the canonical file needs.
@@ -241,6 +245,54 @@ def codex_marketplace(action, path, plugin_path=None):
         f.write("\n")
 
 
+AUTOBUILD = "/code-graph/scripts/autobuild.sh"   # identifies our hook entry in a settings file
+
+
+def claude_hook(action, path=None, command=None):
+    """The session-start hook that builds the code graph in the background (code-graph's autobuild.sh).
+    `plugin` prints the plugin's hooks/hooks.json; `add`/`remove` edit a settings.json in place, touching
+    only our entry. A settings file left empty by `remove` is deleted."""
+    import json
+    if action == "plugin":
+        cmd = '"${CLAUDE_PLUGIN_ROOT}/skills/code-graph/scripts/autobuild.sh"'
+        json.dump({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": cmd}]}]}}, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+    if action not in ("add", "remove"):
+        sys.exit(f"claude-hook: unknown action {action}")
+    data = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+            except ValueError as e:
+                sys.exit(f"claude-hook: {path} is not valid JSON ({e}); not touching it")
+    hooks = data.get("hooks", {})
+    groups = []
+    for g in hooks.get("SessionStart", []):
+        keep = [h for h in g.get("hooks", []) if AUTOBUILD not in h.get("command", "")]
+        if keep:
+            groups.append(dict(g, hooks=keep))
+    if action == "add":
+        groups.append({"hooks": [{"type": "command", "command": command}]})
+    if groups:
+        hooks["SessionStart"] = groups
+    else:
+        hooks.pop("SessionStart", None)
+    if hooks:
+        data["hooks"] = hooks
+    else:
+        data.pop("hooks", None)
+    if not data:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
 def main(argv):
     if len(argv) < 2:
         sys.exit(__doc__)
@@ -253,6 +305,9 @@ def main(argv):
         return
     if cmd == "codex-marketplace":
         codex_marketplace(argv[1], argv[2], argv[3] if len(argv) > 3 else None)
+        return
+    if cmd == "claude-hook":
+        claude_hook(argv[1], argv[2] if len(argv) > 2 else None, argv[3] if len(argv) > 3 else None)
         return
     fm, body = parse(argv[1])
     if cmd == "antigravity":
