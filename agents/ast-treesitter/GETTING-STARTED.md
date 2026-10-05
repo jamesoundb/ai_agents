@@ -27,28 +27,38 @@ Install at user scope so every repository and scratch directory sees the agent:
 ```bash
 git clone <this repo> ~/ai_agents
 ~/ai_agents/install.sh --harness antigravity --scope user   # add ,gemini only if you also use Gemini CLI
-git config --global core.excludesFile ~/.config/git/ignore
-echo '.ast-graph/' >> ~/.config/git/ignore      # the graph is a build artifact in every repo
+```
+
+For application work you can install only the code tools; every installed skill's description is
+sent with every request, so the infrastructure skills cost context where they cannot apply:
+
+```bash
+~/ai_agents/install.sh --harness antigravity --scope user \
+  --skills code-graph,code-skeleton,blast-radius,bug-fix --agents ast-treesitter
 ```
 
 What that writes:
 
-| harness | agent | skills |
-|---|---|---|
-| Antigravity (IDE and `agy`) | `~/.gemini/config/agents/ast-treesitter/agent.md` | `~/.gemini/config/skills/<skill>/` |
-| Gemini CLI | persona skill `~/.gemini/skills/ast-treesitter/` | `~/.gemini/skills/<skill>/` |
+| harness | agent | skills | session-start graph build |
+|---|---|---|---|
+| Antigravity (IDE and `agy`) | `~/.gemini/config/agents/ast-treesitter/agent.md` | `~/.gemini/config/skills/<skill>/` | entry `ai-agents-code-graph` in `~/.gemini/config/hooks.json` |
+| Gemini CLI | persona skill `~/.agents/skills/ast-treesitter/` | `~/.agents/skills/<skill>/` | `SessionStart` entry in `~/.gemini/settings.json` |
 
-**Updating is two steps, not one.** The skills are symlinks into `~/ai_agents`, so `git pull`
-updates them immediately. The agent is a *rendered copy*, so it does not change until you re-run
-the installer:
+The hook builds the code graph in the background when a session starts, so the first question
+does not wait for a build. `.ast-graph/` ignores itself in every repository; there is nothing to add
+to `.gitignore`. Turn the build off with `ASTGRAPH_AUTOBUILD=0`.
+
+**Updating.** The skills are symlinks into `~/ai_agents`, so `git pull` updates them immediately.
+The agent is a *rendered copy*, so it changes only when the installer runs again; `--update`
+re-runs every install this clone made, with the same options:
 
 ```bash
-git -C ~/ai_agents pull
-~/ai_agents/install.sh --harness antigravity --scope user --force   # --force replaces the copy
+cd ~/ai_agents && git pull && ./install.sh --update
 ```
 
-Skip the second line and you keep running the previous agent prompt with no indication that
-anything is out of date.
+Skip the second step and you keep running the previous agent prompt with no indication that
+anything is out of date. `--update` names skills that are new in the repository but not in your
+install; re-run your install command to add them.
 
 Check it: `agy agents` lists `ast-treesitter` (verified with agy 1.2.13; the CLI keeps its own
 state in `~/.gemini/antigravity-cli/`, the IDE in `~/.gemini/antigravity/`, but both read the
@@ -96,6 +106,11 @@ permission allow-list in `.claude/settings.json`, otherwise every engine call pr
   activates it, or start it explicitly from `/skills`. Gemini reads `~/.gemini/GEMINI.md` for
   global instructions if your team wants a standing "use ast-treesitter for architecture and
   impact questions" line.
+
+**Several repositories at once.** Start the session in the folder that holds them (for example a
+problem folder with `.gitlab/instructions.md` and three clones). Each clone gets its own graph in the
+background; the agent asks about one with `query --root <repository> ...`. Calls from one repository
+into another are not linked.
 
 Give it the question a senior engineer would ask, with the symbol names you know. Good first
 questions:
@@ -162,11 +177,13 @@ The agent's skills are plain scripts you can run:
 
 ```bash
 S=~/.gemini/config/skills/code-graph/scripts/run.sh  # user-scope install; a workspace install is .agents/skills/...
-$S build --root .                                    # refresh the graph
+$S build --root .                                    # only if the session-start build is off
 $S query overview --no-tests --lang kotlin           # hubs, directories, entry points
 $S query find OrderService                           # locate; exact matches first
+$S query source OrderService.place                   # its code, callers and callees in one call
 $S query symbol OrderService                         # the card: members, calls, dependents, overrides
 $S query callers Repo.save --depth 2                 # who calls it (add --summary on a hub)
+$S query tests-for OrderService.place                # tests that exercise it
 $S query trace-deps Order --depth 3 --files-only     # blast radius
 $S skeleton src/main/kotlin/com/acme/Order.kt        # a file's outline with line ranges
 ```

@@ -24,22 +24,22 @@ intellectronica, section 3.1 "Context gathering mechanisms".
 ## How it answers a question
 
 Worth reading once, because the value is in the mechanism rather than the phrasing. A developer
-asks *"who calls `Ledger.post`?"* in a Python package. The agent runs four commands:
+asks *"who calls `Ledger.post`?"* in a Python package. The graph was already built in the
+background when the session started (see [Session-start build](#session-start-build)), so the
+agent goes straight to the question:
 
 ```
-run.sh build --root .                    # parse changed files, re-link what they affect
 run.sh query callers Ledger.post         # the answer
-run.sh query symbol Ledger.post          # confirm the symbol it resolved
-                                         # then open only the lines it is about to cite
+run.sh query source Ledger.post          # its code, callers and callees in one call, to cite
 ```
 
-and the second one returns:
+and the first one returns:
 
 ```
-callers of Ledger.post  (billing/core.py:12)  depth=2
-  Ledger.post <- charge_account              [calls, typed]  (billing/api.py:10)
-  Ledger.post <- settle                      [calls, typed]  (billing/jobs.py:9)
-  Ledger.post <- test_post_records_an_entry  [calls, typed]  (tests/test_core.py:8)
+callers of Ledger.post  (billing/core.py:12)  depth=1
+  <- charge_account  billing/api.py:10  [typed]
+  <- settle  billing/jobs.py:9  [typed]
+  <- test_post_records_an_entry  tests/test_core.py:8  [typed]
 ```
 
 No model reasoning produced that list. Tree-sitter parsed the files and the linker resolved the
@@ -55,8 +55,9 @@ run it yourself):
 
 `grep -rn "Ledger"` is blind to the first two and `grep -rn "\.post("` reports the third as a
 caller. The graph finds all three real callers, labels each `typed`, and excludes the decoy.
-Measured over three runs: 8-9 tool calls, 33-51s, ~50k tokens, and the same trace shape every
-time.
+Measured over three runs on 2026-09-29, before `query source` and the session-start build removed
+the `build`, `symbol` and read steps: 8-9 tool calls, 33-51s, ~50k tokens, and the same trace shape
+every time.
 
 Not for: editing code (read-only by design), runtime/behavioral questions, or anything that needs
 a real type checker: overloads are attributed only by argument count and the argument types the
@@ -77,7 +78,7 @@ limits explicitly.
 
 | skill | role | entry point |
 |---|---|---|
-| `code-graph` | build/refresh the graph; `find`, `symbol`, `callers`, `callees`, `path`, `file`, `overview`, `stats` | `skills/code-graph/scripts/run.sh` |
+| `code-graph` | build/refresh the graph; `source`, `callers`, `callees`, `symbol`, `tests-for`, `path`, `file`, `find`, `overview`, `stats` | `skills/code-graph/scripts/run.sh` |
 | `code-skeleton` | read-before-cat: signatures, members, calls, exact line ranges for a file or directory | `run.sh skeleton PATH...` |
 | `blast-radius` | impact matrix for a file, symbol, Terraform address or Kubernetes object | `run.sh query trace-deps TARGET` |
 
@@ -85,9 +86,29 @@ Engine: `astgraph.py` (Python 3.10+, `tree-sitter`, `tree-sitter-language-pack`;
 tested on 3.12, and the pinned releases of both libraries require 3.10). `run.sh` installs
 those into `~/.cache/astgraph/venv` on first use and stops with a clear message on an older
 interpreter; override with `ASTGRAPH_PYTHON` (also used as the base for the venv) or
-`ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.db` plus a `graph.db.stamp` sidecar
-(gitignore both). A build is skipped outright when the git working tree is unchanged; otherwise
-files are re-parsed by content hash and only the files an edit can affect are re-linked.
+`ASTGRAPH_VENV`. Graph artifact: `.ast-graph/graph.db` plus a `graph.db.stamp` sidecar; the
+directory writes its own `.gitignore`, so it never shows up in `git status`. A build is skipped
+outright when the git working tree is unchanged; otherwise files are re-parsed by content hash and
+only the files an edit can affect are re-linked. Queries refresh a stale graph themselves, so after
+the first build nobody runs `build` again.
+
+### Session-start build
+
+With code-graph installed, Claude Code, Gemini CLI and Antigravity run
+`skills/code-graph/scripts/autobuild.sh` when a session starts. It builds in the background, so the
+first question finds a graph (or waits for the build that is still running) instead of spending a
+turn on `build`:
+
+- session in a git repository (root or any subfolder): that repository's graph;
+- session in a folder that is not a repository but holds clones directly below it (a problem folder
+  with several repositories): one graph per clone, in parallel; the agent queries each with
+  `query --root <repository> ...`, and a query from the folder itself names the clones that have
+  graphs;
+- anything else: nothing.
+
+Builds take `graph.db.lock`, so a second build or a query waits for the running one instead of
+parsing the same files again. Where the hook is installed per harness and scope, and how to turn it
+off: root [README](../../README.md#code-graph-built-at-session-start).
 
 ### Storage: why the graph is a database
 
@@ -136,7 +157,9 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
   `REGISTER_OP`, so the chain is real but crosses a language boundary.
 - Receiver- and import-aware: a call is linked to a repo symbol only when the receiver is a
   resolved repo type (matched by node identity, ancestors included), an import binding (module
-  names bind to module files, re-exports are followed), or `self`/`this`. Calls on external or
+  names bind to module files, re-exports are followed; Java static imports, single-member and
+  `.*`, bring a class's static methods into scope), or `self`/`this`. Java `new X(args)` also
+  links to the constructor overload it calls, so call chains run through constructors. Calls on external or
   builtin receivers, unqualified builtins, and bare names that are neither imported nor in scope
   are left unresolved; values of unknown type get at most three same-language `ambiguous` leads.
 - Syntactic only: overloads are chosen by arity and by the argument types the linker can see
@@ -147,8 +170,10 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
 
 ## Adoption checklist for a repository
 
-1. From a clone of this repo: `./install.sh --harness antigravity --target /path/to/your/repo` (or your harness)
-   (add `--copy` if symlinks are not an option, e.g. Windows without developer mode).
+1. From a clone of this repo: `./install.sh --harness antigravity --scope user` for everyone's
+   machine (or `--target /path/to/your/repo` for one repository; add `--copy` if symlinks are not an
+   option, e.g. Windows without developer mode). The session-start build comes with a user-scope
+   install on Antigravity and Gemini CLI, and with either scope on Claude Code.
    To roll this agent out on its own, narrow **both** lists — `--agents` selects the agent but
    still installs every skill:
 
@@ -160,16 +185,15 @@ limits: [`languages.md`](../../skills/code-graph/reference/languages.md).
    Naming any one of the three is enough: the installer pulls in the skills the agent declares,
    so the relative path `code-skeleton` uses to reach the engine
    (`../code-graph/scripts/run.sh`) cannot end up dangling.
-2. Add `.ast-graph/` to the repo's `.gitignore`.
+2. Nothing to add to `.gitignore`: `.ast-graph/` ignores itself.
    Claude Code: the subagent runs with `permissionMode: default` and skills preloaded through a
    subagent's `skills:` list do not carry their `allowed-tools` pre-approval, so each engine call
    prompts unless `.claude/settings.json` allows it, for example
    `"permissions": {"allow": ["Bash(*/code-graph/scripts/run.sh *)"]}`.
-3. Run `<skills dir>/code-graph/scripts/run.sh build --root .` once and check `query stats`
-   shows the expected languages and file counts. Add `--exclude` globs or extend `EXT_LANG` if not.
-4. Optional CI: rebuild the graph on the default branch and publish `overview --json` as an
-   architecture snapshot; run `trace-deps` for each changed file on pull requests.
-5. Repositories with more than one language: a name that exists in both halves is **not** guessed.
+3. Start a session in the repository (the session-start build makes the graph) or run
+   `<skills dir>/code-graph/scripts/run.sh build --root .` once, and check that `query stats` shows
+   the expected languages and file counts. Add `--exclude` globs or extend `EXT_LANG` if not.
+4. Repositories with more than one language: a name that exists in both halves is **not** guessed.
    `query callers OrderService.place` across a Kotlin service and a Python one answers
 
    ```
@@ -240,9 +264,10 @@ After the same round, the Python repos: pandas 16,611 typed / 28,307 ambiguous /
 17s), TensorFlow 78,698 typed / 65,120 ambiguous / 0 unique (build 34s). Return-type inference
 adds roughly a third to build time on Python-heavy repos.
 
-Fixture (`skills/code-graph/tests/fixture`, 76 indexed source files across eleven languages plus
-build metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json`; the suite has
-234 check sites, 285 executed assertions; counts re-verified 2026-09-29):
+Fixture (`skills/code-graph/tests/fixture`, 88 indexed files across eleven languages plus build
+metadata such as `go.mod`, `Cargo.toml`, `package.json` and `tsconfig.json`; the suite has 305 check
+sites, 358 executed assertions, including the session-start hook and the build lock; counts
+re-verified 2026-10-05):
 
 - Full build well under a second; incremental rebuild re-parses only changed files (1 of 69 after
   a one-line edit) and yields the same node and edge sets as a full build.
