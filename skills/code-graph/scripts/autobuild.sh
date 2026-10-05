@@ -3,23 +3,65 @@
 # not spend a turn on `build`. Prints one line of context for the model. Queries wait for a build
 # that is still running (engine build lock).
 #
-#   autobuild.sh                  hook command (stdin: the hook's JSON, unused)
+#   autobuild.sh                  Claude Code / Gemini CLI SessionStart hook: the session directory
+#                                 comes from CLAUDE_PROJECT_DIR / GEMINI_PROJECT_DIR; the context is
+#                                 printed as hookSpecificOutput.additionalContext
+#   autobuild.sh --antigravity    Antigravity SessionStart hook: the workspace folders come from
+#                                 `workspacePaths` in the JSON on stdin; the context is printed as an
+#                                 injectSteps ephemeralMessage
 #   ASTGRAPH_AUTOBUILD=0          disable without uninstalling
-#   ASTGRAPH_AUTOBUILD_MAX=8      most repositories built for a multi-repo session directory
+#   ASTGRAPH_AUTOBUILD_MAX=8      most repositories built per session
 #
-# Where it builds:
-#   - session inside a git checkout: that checkout, at its top level;
-#   - session in a directory that is not a checkout (a problem directory holding several cloned
-#     repositories): every git checkout directly below it (hidden directories skipped, at most
-#     ASTGRAPH_AUTOBUILD_MAX), in parallel with the CPU cores shared out, one graph per repository.
-# Never $HOME or /. Each graph directory ignores itself, so nothing shows up in `git status`.
-# Never fails the session: every problem exits 0 without output.
+# What it builds, for each session/workspace directory:
+#   - inside a git checkout: that checkout, at its top level;
+#   - not a checkout (a problem directory holding several cloned repositories): every git checkout
+#     directly below it (hidden directories skipped);
+# one graph per repository, in parallel with the CPU cores shared out. Never $HOME or /. Each graph
+# directory ignores itself, so nothing shows up in `git status`. Never fails the session: every
+# problem exits 0 without output.
 set -u
 [ "${ASTGRAPH_AUTOBUILD:-1}" = 0 ] && exit 0
-dir="${CLAUDE_PROJECT_DIR:-$PWD}"
+format=claude
+[ "${1:-}" = --antigravity ] && format=antigravity
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[ -d "$dir" ] || exit 0
-dir="$(cd "$dir" && pwd -P)"
+max="${ASTGRAPH_AUTOBUILD_MAX:-8}"
+
+dirs=()
+if [ "$format" = antigravity ]; then
+  # {"workspacePaths": ["/path", ...], ...}; the hook's working directory is the config folder
+  while IFS= read -r d; do [ -n "$d" ] && dirs+=("$d"); done < <(python3 -c \
+    'import json, sys; print("\n".join(json.load(sys.stdin).get("workspacePaths") or []))' 2>/dev/null)
+else
+  dirs+=("${GEMINI_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$PWD}}")
+fi
+[ "${#dirs[@]}" -gt 0 ] || exit 0
+
+repos=()
+skipped=0
+single=""     # the session sits inside exactly this checkout (one-repository wording)
+add_repo() {  # add_repo <checkout top>: once each, never / or $HOME, at most $max
+  local r="$1" x
+  if [ "$r" = "/" ] || [ "$r" = "${HOME:-}" ]; then return 0; fi
+  for x in ${repos[@]+"${repos[@]}"}; do [ "$x" = "$r" ] && return 0; done
+  if [ "${#repos[@]}" -lt "$max" ]; then repos+=("$r"); else skipped=$((skipped + 1)); fi
+}
+for d in "${dirs[@]}"; do
+  [ -d "$d" ] || continue
+  d="$(cd "$d" && pwd -P)"
+  top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ]; then
+    add_repo "$top"; single="$top"
+    continue
+  fi
+  if [ "$d" = "/" ] || [ "$d" = "${HOME:-}" ]; then continue; fi
+  for c in "$d"/*/; do
+    c="${c%/}"
+    [ -d "$c" ] || continue
+    # a checkout whose top level is this directory itself (not a plain folder inside another checkout)
+    [ "$(git -C "$c" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$c" && pwd -P)" ] && add_repo "$(cd "$c" && pwd -P)"
+  done
+done
+[ "${#repos[@]}" -gt 0 ] || exit 0
 
 json_escape() {  # the context line goes into a JSON string
   local s="$1"
@@ -38,32 +80,23 @@ start_build() {  # start_build <repo top> [jobs]: background build, logged insid
     "$here/run.sh" build --root "$1" ${jobs[@]+"${jobs[@]}"} > "$1/.ast-graph/autobuild.log" 2>&1 < /dev/null &
 }
 
-top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
-if [ -n "$top" ]; then
-  if [ "$top" = "/" ] || [ "$top" = "${HOME:-}" ]; then exit 0; fi
-  start_build "$top" || exit 0
+if [ "${#repos[@]}" = 1 ] && [ "$single" = "${repos[0]}" ]; then
+  start_build "${repos[0]}" || exit 0
   msg="Code graph: being built in the background at .ast-graph/ in the repository root (code-graph skill). Do not run build: queries wait for it and keep it current."
 else
-  if [ "$dir" = "/" ] || [ "$dir" = "${HOME:-}" ]; then exit 0; fi
-  max="${ASTGRAPH_AUTOBUILD_MAX:-8}"
-  repos=()
-  skipped=0
-  for d in "$dir"/*/; do
-    d="${d%/}"
-    [ -d "$d" ] || continue
-    # a checkout whose top level is this directory itself (not a plain folder inside another checkout)
-    [ "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$d" && pwd -P)" ] || continue
-    if [ "${#repos[@]}" -lt "$max" ]; then repos+=("$d"); else skipped=$((skipped + 1)); fi
-  done
-  [ "${#repos[@]}" -gt 0 ] || exit 0
   cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
   per_repo=$(( cpus / ${#repos[@]} )); [ "$per_repo" -ge 1 ] || per_repo=1
   names=()
   for r in "${repos[@]}"; do
-    start_build "$r" "$per_repo" && names+=("$(basename "$r")/")
+    start_build "$r" "$per_repo" && names+=("$r")
   done
   [ "${#names[@]}" -gt 0 ] || exit 0
   msg="Code graphs: being built in the background, one per repository: ${names[*]} (code-graph skill). Query one with run.sh query --root <repository> <question> (or run queries from inside it). Do not run build: queries wait for it and keep it current."
   [ "$skipped" -gt 0 ] && msg="$msg $skipped more repositories were not built (limit ASTGRAPH_AUTOBUILD_MAX=$max); build those when needed."
 fi
-printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$(json_escape "$msg")"
+
+if [ "$format" = antigravity ]; then
+  printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}\n' "$(json_escape "$msg")"
+else
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$(json_escape "$msg")"
+fi

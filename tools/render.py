@@ -16,10 +16,11 @@ render.py — render a harness-neutral agents/<name>/AGENT.md into vendor format
   render.py codex-marketplace add|remove FILE [PATH]
                                    -> add or remove our entry in a Codex marketplace.json; PATH is
                                       the plugin folder relative to the marketplace root
-  render.py claude-hook plugin     -> hooks/hooks.json for the Claude plugin (session-start graph build)
-  render.py claude-hook add|remove FILE [COMMAND]
-                                   -> add or remove our SessionStart entry in a Claude settings file,
-                                      keeping every other setting and hook
+  render.py hook HARNESS plugin    -> the plugin's hooks file (claude, gemini, antigravity): session-start
+                                      code-graph build
+  render.py hook HARNESS add|remove FILE [COMMAND]
+                                   -> add or remove our SessionStart entry in a settings file (Claude or
+                                      Gemini settings.json, Antigravity hooks.json), keeping everything else
 
 Only the standard library is used. AGENT.md frontmatter supports scalars, `[a, b]` lists and
 `>` folded multi-line strings; that is deliberately all the canonical file needs.
@@ -246,43 +247,77 @@ def codex_marketplace(action, path, plugin_path=None):
 
 
 AUTOBUILD = "/code-graph/scripts/autobuild.sh"   # identifies our hook entry in a settings file
+HOOK_NAME = "ai-agents-code-graph"                # the entry's name where the format has names
 
 
-def claude_hook(action, path=None, command=None):
-    """The session-start hook that builds the code graph in the background (code-graph's autobuild.sh).
-    `plugin` prints the plugin's hooks/hooks.json; `add`/`remove` edit a settings.json in place, touching
-    only our entry. A settings file left empty by `remove` is deleted."""
-    import json
-    if action == "plugin":
+def hook_entry(harness, command):
+    """Our SessionStart handler in the harness's format."""
+    if harness == "gemini":   # Gemini CLI: named handler, timeout in milliseconds
+        return {"name": HOOK_NAME, "type": "command", "command": command, "timeout": 10000}
+    if harness == "antigravity":   # timeout in seconds
+        return {"type": "command", "command": command, "timeout": 10}
+    return {"type": "command", "command": command}
+
+
+def plugin_hooks(harness):
+    """hooks.json for the harness's plugin layout (paths relative to the plugin folder)."""
+    if harness == "claude":
         cmd = '"${CLAUDE_PLUGIN_ROOT}/skills/code-graph/scripts/autobuild.sh"'
-        json.dump({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": cmd}]}]}}, sys.stdout, indent=2)
+    elif harness == "gemini":
+        cmd = '"${extensionPath}/skills/code-graph/scripts/autobuild.sh"'
+    elif harness == "antigravity":   # runs in the folder that holds hooks.json: the plugin folder
+        return {HOOK_NAME: {"SessionStart": [hook_entry(harness, "./skills/code-graph/scripts/autobuild.sh --antigravity")]}}
+    else:
+        sys.exit(f"hook: no plugin hooks for {harness}")
+    group = {"hooks": [hook_entry(harness, cmd)]}
+    if harness == "gemini":
+        group = {"matcher": "*", **group}
+    return {"hooks": {"SessionStart": [group]}}
+
+
+def hook(harness, action, path=None, command=None):
+    """The session-start hook that builds code graphs in the background (code-graph's autobuild.sh).
+    `plugin` prints the plugin's hooks file; `add`/`remove` edit a settings file in place (Claude and
+    Gemini settings.json, Antigravity hooks.json), touching only our entry. A file left empty by
+    `remove` is deleted."""
+    import json
+    if harness not in ("claude", "gemini", "antigravity"):
+        sys.exit(f"hook: unsupported harness {harness}")
+    if action == "plugin":
+        json.dump(plugin_hooks(harness), sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
     if action not in ("add", "remove"):
-        sys.exit(f"claude-hook: unknown action {action}")
+        sys.exit(f"hook: unknown action {action}")
     data = {}
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
             except ValueError as e:
-                sys.exit(f"claude-hook: {path} is not valid JSON ({e}); not touching it")
-    hooks = data.get("hooks", {})
-    groups = []
-    for g in hooks.get("SessionStart", []):
-        keep = [h for h in g.get("hooks", []) if AUTOBUILD not in h.get("command", "")]
-        if keep:
-            groups.append(dict(g, hooks=keep))
-    if action == "add":
-        groups.append({"hooks": [{"type": "command", "command": command}]})
-    if groups:
-        hooks["SessionStart"] = groups
+                sys.exit(f"hook: {path} is not valid JSON ({e}); not touching it")
+    if harness == "antigravity":   # {"<hook name>": {"<Event>": [handlers]}, ...}
+        data.pop(HOOK_NAME, None)
+        if action == "add":
+            data[HOOK_NAME] = {"SessionStart": [hook_entry(harness, command)]}
     else:
-        hooks.pop("SessionStart", None)
-    if hooks:
-        data["hooks"] = hooks
-    else:
-        data.pop("hooks", None)
+        hooks = data.get("hooks", {})
+        groups = []
+        for g in hooks.get("SessionStart", []):
+            keep = [h for h in g.get("hooks", []) if AUTOBUILD not in h.get("command", "")]
+            if keep:
+                groups.append(dict(g, hooks=keep))
+        if action == "add":
+            group = {"hooks": [hook_entry(harness, command)]}
+            groups.append({"matcher": "*", **group} if harness == "gemini" else group)
+        if groups:
+            hooks["SessionStart"] = groups
+        else:
+            hooks.pop("SessionStart", None)
+        if hooks:
+            data["hooks"] = hooks
+        else:
+            data.pop("hooks", None)
     if not data:
         if os.path.exists(path):
             os.remove(path)
@@ -306,8 +341,11 @@ def main(argv):
     if cmd == "codex-marketplace":
         codex_marketplace(argv[1], argv[2], argv[3] if len(argv) > 3 else None)
         return
-    if cmd == "claude-hook":
-        claude_hook(argv[1], argv[2] if len(argv) > 2 else None, argv[3] if len(argv) > 3 else None)
+    if cmd == "hook":   # hook HARNESS plugin | hook HARNESS add|remove FILE [COMMAND]
+        hook(argv[1], argv[2], argv[3] if len(argv) > 3 else None, argv[4] if len(argv) > 4 else None)
+        return
+    if cmd == "claude-hook":   # older spelling of `hook claude`
+        hook("claude", argv[1], argv[2] if len(argv) > 2 else None, argv[3] if len(argv) > 3 else None)
         return
     fm, body = parse(argv[1])
     if cmd == "antigravity":

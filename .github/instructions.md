@@ -248,10 +248,22 @@ templates rather than adding vendor-neutral fallbacks.
   (hidden directories skipped, at most `ASTGRAPH_AUTOBUILD_MAX`, default 8). Never `$HOME` or `/`. The
   launcher writes its pid into the lock before exec-ing the engine (same pid), so even an immediate query
   waits; the engine takes a lock that carries its own pid. A query from the problem directory names the
-  clones that have graphs. One line of context; off with `ASTGRAPH_AUTOBUILD=0`. `install.sh` installs it for
-  Claude when code-graph is installed: plugin `hooks/hooks.json`, or one SessionStart entry in
-  `~/.claude/settings.json` (user) / `.claude/settings.local.json` (project), managed by
-  `tools/render.py claude-hook` and removed by `--uninstall`.
+  clones that have graphs. One line of context; off with `ASTGRAPH_AUTOBUILD=0`. `install.sh` installs it
+  whenever code-graph is installed (`graph_hook`, `tools/render.py hook HARNESS`, our entry only, removed
+  by `--uninstall`):
+  - Claude Code: `SessionStart` in `~/.claude/settings.json` (user) / `.claude/settings.local.json`
+    (project) or the plugin's `hooks/hooks.json` (`${CLAUDE_PLUGIN_ROOT}`); output
+    `hookSpecificOutput.additionalContext`; session directory from `CLAUDE_PROJECT_DIR`.
+  - Gemini CLI (0.62): `SessionStart` (`matcher` `*`, named `ai-agents-code-graph`, timeout in ms) in
+    `~/.gemini/settings.json` or the extension's `hooks/hooks.json` (`${extensionPath}`); same output as
+    Claude; `GEMINI_PROJECT_DIR`. Headless runs need a trusted folder (`GEMINI_CLI_TRUST_WORKSPACE`).
+  - Antigravity (agy 1.2, shared with the IDE): named entry `ai-agents-code-graph` with a `SessionStart`
+    handler in `~/.gemini/config/hooks.json` or the plugin's `hooks.json` (runs in the folder holding
+    hooks.json). `SessionStart` is not in the hooks guide (which lists PreToolUse, PostToolUse,
+    PreInvocation, PostInvocation, Stop) but fires once per conversation; `autobuild.sh --antigravity` reads
+    `workspacePaths` from stdin and answers `{"injectSteps":[{"ephemeralMessage": ...}]}`.
+  - Gemini and Antigravity get no hook at project scope (their project hook files are shared and need
+    trust). Codex and Copilot: none.
 - Skill and agent descriptions are short "Use when ..." triggers: every installed description is
   sent with every model request; the detail lives in the bodies, which load only on use.
 - `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes

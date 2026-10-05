@@ -626,8 +626,13 @@ def test_autobuild_hook():
             p = subprocess.run(["bash", hook], cwd=d, env=dict(os.environ, CLAUDE_PROJECT_DIR=d), capture_output=True, text=True)
             return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"] if p.stdout.strip() else None
 
+        def agy_ctx(*workspaces):   # Antigravity: workspace folders on stdin, cwd = the config folder
+            p = subprocess.run(["bash", hook, "--antigravity"], cwd=tempfile.gettempdir(), capture_output=True, text=True,
+                               input=json.dumps({"conversationId": "c1", "workspacePaths": list(workspaces)}))
+            return json.loads(p.stdout)["injectSteps"][0]["ephemeralMessage"] if p.stdout.strip() else None
+
         ctx = hook_ctx(top)
-        check(ctx is not None and "api/ web/" in ctx and "--root" in ctx, f"problem directory: one background build per clone: {ctx}")
+        check(ctx is not None and "/api " in ctx and "/web " in ctx and "--root" in ctx, f"problem directory: one background build per clone: {ctx}")
         q = subprocess.run([sys.executable, "-B", ENGINE, "query", "--root", os.path.join(top, "web"), "callers", "web_helper"],
                            capture_output=True, text=True)
         check("web_entry" in q.stdout, f"a query on a clone waits for its background build: {q.stdout.strip()[:80]}")
@@ -645,6 +650,13 @@ def test_autobuild_hook():
         ctx = hook_ctx(os.path.join(top, "api"))
         check(ctx is not None and "repository root" in ctx, "a session inside a clone builds that clone")
         check(hook_ctx(os.path.join(top, "notes")) is None, "a plain directory with no clones: no build, no output")
+        ctx = agy_ctx(top)
+        check(ctx is not None and "/api " in ctx and "/web " in ctx, f"antigravity: problem-directory workspace -> one build per clone: {ctx}")
+        ctx = agy_ctx(os.path.join(top, "api"), os.path.join(top, "web"))
+        check(ctx is not None and "/api " in ctx and "/web " in ctx, "antigravity: a workspace of two folders -> both built")
+        ctx = agy_ctx(os.path.join(top, "api", "sub-does-not-exist"), os.path.join(top, "api"))
+        check(ctx is not None and "repository root" in ctx, f"antigravity: one checkout -> the one-repository note: {ctx}")
+        check(agy_ctx(os.path.join(top, "notes")) is None, "antigravity: no checkout in the workspace -> no output")
     finally:
         shutil.rmtree(top, ignore_errors=True)
 

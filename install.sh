@@ -38,9 +38,11 @@
 #   gemini      .gemini/skills/<s>, .gemini/skills/<a>/SKILL.md, GEMINI.md (@AGENTS.md) | ~/.agents/skills
 #               (shared with Codex; Gemini CLI reads it besides ~/.gemini/skills, and ~/.agents wins)
 #   copilot     .github/skills/<s>, .github/agents/<a>.agent.md      | ~/.copilot/skills, ~/.copilot/agents
-# claude with code-graph also gets a SessionStart hook that builds the code graph in the background
-# (plugin: hooks/hooks.json; loose: .claude/settings.local.json | ~/.claude/settings.json, our entry
-# only). Turn it off per environment with ASTGRAPH_AUTOBUILD=0; --uninstall removes it.
+# With code-graph, claude, gemini and antigravity also get a SessionStart hook that builds code graphs
+# in the background (our entry only): claude .claude/settings.local.json | ~/.claude/settings.json;
+# gemini ~/.gemini/settings.json; antigravity ~/.gemini/config/hooks.json (gemini and antigravity: user
+# scope only); plugins: hooks/hooks.json (claude, gemini extension), hooks.json (antigravity). Turn it
+# off per environment with ASTGRAPH_AUTOBUILD=0; --uninstall removes it.
 # Plugin layouts with --plugin (project scope | user scope), each holding skills/ and agents:
 #   claude      .claude/skills/ai-agents/.claude-plugin/plugin.json  | ~/.claude/skills/ai-agents (loads as ai-agents@skills-dir)
 #   antigravity .agents/plugins/ai-agents/plugin.json                | ~/.gemini/config/plugins/ai-agents
@@ -357,7 +359,7 @@ plugin_next_step() {  # what the developer has to do before the plugin shows up
 }
 
 install_plugin() {  # install_plugin <harness>
-  local h="$1" s a prefix out r
+  local h="$1" s a prefix out r hf
   plugin_layout "$h"
   guard_plugin "$PD"
   [ "$DRY" = 1 ] && return 0
@@ -383,10 +385,17 @@ install_plugin() {  # install_plugin <harness>
       { python3 "$RENDER" "$r" "$AGENTS_SRC/$a/AGENT.md"; printf '%s\n' "$MARKER"; } > "$out"
     fi
   done
-  if [ "$h" = claude ] && has_code_graph; then
-    # session start: build the code graph in the background (ASTGRAPH_AUTOBUILD=0 turns it off)
-    mkdir -p "$PD/hooks"; python3 "$RENDER" claude-hook plugin > "$PD/hooks/hooks.json"
-    log "hook   $PD/hooks/hooks.json (SessionStart: background code-graph build)"
+  if has_code_graph; then
+    # session start: build code graphs in the background (ASTGRAPH_AUTOBUILD=0 turns it off)
+    hf=""
+    case "$h" in
+      claude|gemini) hf="$PD/hooks/hooks.json" ;;   # Gemini: the extension's hooks/hooks.json
+      antigravity)   hf="$PD/hooks.json" ;;         # Antigravity: plugins/<name>/hooks.json
+    esac
+    if [ -n "$hf" ]; then
+      mkdir -p "$(dirname "$hf")"; python3 "$RENDER" hook "$h" plugin > "$hf"
+      log "hook   $hf (SessionStart: background code-graph build)"
+    fi
   fi
   log "plugin $PD  <- $(echo "$SKILLS" | wc -w | tr -d ' ') skills, $(echo "$AGENTS" | wc -w | tr -d ' ') agents ($( [ "$MODE" = copy ] && echo copy || echo symlink ))"
   if [ -n "$MKT" ]; then python3 "$RENDER" codex-marketplace add "$MKT" "$MKT_REL"; log "wrote  $MKT (entry $PLUGIN_NAME)"; fi
@@ -464,6 +473,30 @@ claude_settings() {  # where a loose Claude install keeps its hook: user setting
   if [ "$SCOPE" = user ]; then printf '%s\n' "$HOME/.claude/settings.json"; else printf '%s\n' "$TARGET/.claude/settings.local.json"; fi
 }
 
+graph_hook() {  # graph_hook <harness> add|remove: the session-start code-graph build of a loose install
+  # (after loose_layout; ASTGRAPH_AUTOBUILD=0 turns it off at run time). Only our entry is touched.
+  local h="$1" act="$2" file cmd
+  has_code_graph || return 0
+  case "$h" in
+    claude) file="$(claude_settings)"; cmd="\"$SK/code-graph/scripts/autobuild.sh\"" ;;
+    gemini|antigravity)
+      if [ "$SCOPE" = project ]; then
+        # project hook files (.gemini/settings.json, .agents/hooks.json) are shared and need trust
+        [ "$act" = add ] && [ "$DRY" = 0 ] && log "note   $h: no session-start graph build at project scope; --scope user installs it"
+        return 0
+      fi
+      if [ "$h" = gemini ]; then file="$HOME/.gemini/settings.json"; cmd="\"$SK/code-graph/scripts/autobuild.sh\""
+      else file="$HOME/.gemini/config/hooks.json"; cmd="\"$SK/code-graph/scripts/autobuild.sh\" --antigravity"; fi ;;
+    *) return 0 ;;
+  esac
+  if [ "$act" = add ]; then
+    [ "$DRY" = 0 ] || return 0
+    python3 "$RENDER" hook "$h" add "$file" "$cmd"; log "hook   $file (SessionStart: background code-graph build)"
+  elif [ -f "$file" ]; then
+    python3 "$RENDER" hook "$h" remove "$file"; log "removed SessionStart hook from $file"
+  fi
+}
+
 run_harnesses() {
   for h in ${HARNESSES//,/ }; do
     echo "[$h] scope=$SCOPE target=$TARGET$( [ "$PLUGIN" = 1 ] && echo ' (plugin)')"
@@ -484,19 +517,13 @@ run_harnesses() {
         loose_layout claude
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent claude "$a" "$AG/$a.md"; done
-          if has_code_graph && [ -f "$(claude_settings)" ]; then
-            python3 "$RENDER" claude-hook remove "$(claude_settings)"; log "removed SessionStart hook from $(claude_settings)"
-          fi
+          graph_hook claude remove
           [ "$SCOPE" = project ] && remove_import "$TARGET/CLAUDE.md" "@AGENTS.md"
           remove_empty_dirs "$SK" "$AG" "$(dirname "$SK")"
         else
           for s in $SKILLS; do place_skill "$s" "$SK"; done
           for a in $AGENTS; do write_rendered claude "$a" "$AG/$a.md"; done
-          if has_code_graph && [ "$DRY" = 0 ]; then
-            # session start: build the code graph in the background (ASTGRAPH_AUTOBUILD=0 turns it off)
-            python3 "$RENDER" claude-hook add "$(claude_settings)" "\"$SK/code-graph/scripts/autobuild.sh\""
-            log "hook   $(claude_settings) (SessionStart: background code-graph build)"
-          fi
+          graph_hook claude add
           [ "$SCOPE" = project ] && ensure_import "$TARGET/CLAUDE.md" "@AGENTS.md"
         fi ;;
       codex)
@@ -518,10 +545,12 @@ run_harnesses() {
             [ -f "$SK/$a/SKILL.md" ] || continue
             remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true
           done
+          graph_hook antigravity remove
           remove_empty_dirs "$AG" "$SK" "$(dirname "$SK")"
         else
           for s in $SKILLS; do place_skill "$s" "$SK"; done
           for a in $AGENTS; do write_rendered antigravity "$a" "$AG/$a/agent.md" "$PREFIX"; done
+          graph_hook antigravity add
           if [ "$AGENT_SKILLS" = 1 ]; then
             for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
           elif [ "$DRY" = 0 ] && ij="$(intellij_antigravity)"; then
@@ -535,12 +564,14 @@ run_harnesses() {
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true; done
           [ "$SCOPE" = project ] && remove_import "$TARGET/GEMINI.md" "@AGENTS.md"
           [ "$SCOPE" = user ] && remove_gemini_legacy
+          graph_hook gemini remove
           remove_empty_dirs "$SK" "$(dirname "$SK")"
         else
           for s in $SKILLS; do place_skill "$s" "$SK"; done
           for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
           [ "$SCOPE" = project ] && ensure_import "$TARGET/GEMINI.md" "@AGENTS.md"
           [ "$SCOPE" = user ] && [ "$DRY" = 0 ] && remove_gemini_legacy
+          graph_hook gemini add
         fi ;;
       copilot)
         loose_layout copilot
