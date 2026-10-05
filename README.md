@@ -185,7 +185,7 @@ their published formats and have not been run.
 
 | skill | purpose |
 |---|---|
-| [code-graph](skills/code-graph/SKILL.md) | Build and query the relationship graph (`find`, `symbol`, `callers`, `callees`, `trace-deps`, `overview`, `file`, `path`, `stats`) |
+| [code-graph](skills/code-graph/SKILL.md) | Build and query the relationship graph (`source`, `callers`, `callees`, `symbol`, `tests-for`, `trace-deps`, `file`, `path`, `find`, `overview`, `stats`) |
 | [code-skeleton](skills/code-skeleton/SKILL.md) | Token-light skeleton of files with exact line ranges; read-before-cat |
 | [blast-radius](skills/blast-radius/SKILL.md) | Downstream impact matrix for a file, symbol, Terraform address or Kubernetes object |
 | [bug-fix](skills/bug-fix/SKILL.md) | Bug-fix procedure: checklist of every case the report names, a failing test per case, the cause fixed at every site, each case proven |
@@ -201,25 +201,52 @@ their published formats and have not been run.
 | [teamcity-config-review](skills/teamcity-config-review/SKILL.md) | TeamCity Kotlin DSL/XML settings rules; embedded pod templates reviewed against tiers |
 | [teamcity-build-triage](skills/teamcity-build-triage/SKILL.md) | Failure classification with evidence from the REST API or saved logs; recent-failures histogram |
 
-The three skills install together; `code-skeleton` and `blast-radius` call the engine in
-`../code-graph/scripts/run.sh`. The engine needs Python 3.10+; `run.sh` creates a private venv
+The four code skills install together; `code-skeleton`, `blast-radius` and `bug-fix` use the engine
+in `../code-graph/scripts/run.sh`. The engine needs Python 3.10+; `run.sh` creates a private venv
 with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
 
-In an application repository, install only the code tools: every installed skill's and agent's
-description is sent with every model request, so the infrastructure skills cost context on every
-call where they cannot apply (about 2.7k tokens per call for the full set):
+### Install only what you use
+
+Every installed skill's and agent's description is sent with every model request, so skills that
+cannot apply still cost context on every call (the full set measured about 2.7k tokens per call in
+Claude Code). For application development, install only the code tools:
 
 ```bash
-./install.sh --harness claude --skills code-graph,code-skeleton,blast-radius,bug-fix --agents ast-treesitter
+~/ai_agents/install.sh --harness antigravity --scope user \
+  --skills code-graph,code-skeleton,blast-radius,bug-fix --agents ast-treesitter
 ```
 
-For Claude Code, Gemini CLI and Antigravity (CLI and IDE), installing code-graph also adds a
-session-start hook that builds code graphs in the background, so the first question does not wait for
-a `build` call (queries wait for a build that is still running). Gemini and Antigravity get it with
-`--scope user` (their project hook files are shared and need workspace trust). Started inside a git checkout, it builds that checkout; started in a directory
-that holds several cloned repositories (a problem directory), it builds one graph per clone (up to 8,
-`ASTGRAPH_AUTOBUILD_MAX`). `.ast-graph/` ignores itself. Turn it off with `ASTGRAPH_AUTOBUILD=0`;
-`--uninstall` removes it.
+Use your harness's name for `--harness` (`gemini`, `claude`, ...). For the same reason every
+description is a short "Use when ..." trigger; the detail lives in the skill body, which is loaded
+only when the skill is used.
+
+### Code graph built at session start
+
+With code-graph installed, Claude Code, Gemini CLI and Antigravity (CLI and IDE) run a session-start
+hook (`skills/code-graph/scripts/autobuild.sh`) that builds code graphs in the background, so the
+first question does not wait for a `build` call. A query that arrives while a build is still running
+waits for it. What gets built depends on where the session starts:
+
+| Session started in | Built |
+|---|---|
+| a git repository (its root or any subfolder) | that repository's graph, at its root |
+| a folder that is not a repository but holds cloned repositories directly below it (for example a problem folder with `.github/instructions.md` and 3-4 clones) | one graph per clone, in parallel (at most 8, `ASTGRAPH_AUTOBUILD_MAX`); the agent queries each with `query --root <repository>` |
+| anything else (no repository, `$HOME`, `/`) | nothing |
+
+`.ast-graph/` ignores itself, so it never shows up in `git status`. Repositories cloned after the
+session started are built on first use.
+
+Where the hook is installed (our entry only; `--uninstall` removes it):
+
+| harness | user scope (`--scope user`) | project scope | plugin |
+|---|---|---|---|
+| Claude Code | `~/.claude/settings.json` | `.claude/settings.local.json` | `hooks/hooks.json` |
+| Gemini CLI | `~/.gemini/settings.json` | not installed (note printed) | extension `hooks/hooks.json` |
+| Antigravity | `~/.gemini/config/hooks.json` | not installed (note printed) | plugin `hooks.json` |
+
+Gemini and Antigravity project hook files are shared with the team and need workspace trust, so
+use `--scope user` there. Codex and Copilot have no hook. `install.sh --update` adds the hook to
+existing installs. Turn it off without uninstalling with `ASTGRAPH_AUTOBUILD=0`.
 
 ## Versions and rollback
 
@@ -253,7 +280,9 @@ for fixes.
 ## Adding an agent or skill
 
 1. Skill: create `skills/<name>/SKILL.md` with `name` and `description` frontmatter; keep scripts
-   in `scripts/` and docs in `reference/`; use paths relative to the skill folder.
+   in `scripts/` and docs in `reference/`; use paths relative to the skill folder. Write the
+   description as a short "Use when ..." trigger (it is sent with every model request); put the
+   detail in the body.
 2. Agent: create `agents/<name>/AGENT.md` with frontmatter `name`, `description`,
    `tools: [shell, read, glob, grep, edit, write, web, search]` (neutral names), `skills: [...]`,
    `readonly: true|false` (Antigravity: sandboxed vs auto command execution), `model`. Body is
