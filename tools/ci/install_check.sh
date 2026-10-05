@@ -255,6 +255,41 @@ check "nothing installed: says so, exit 0"       grep -q 'nothing installed from
 # shellcheck disable=SC2016  # single quotes are intended: $0 expands inside bash -c
 check "--update rejects install options"         bash -c '! "$0" --update --plugin >/dev/null 2>&1' "$UR/install.sh"
 
+echo "== gemini user scope shares ~/.agents/skills =="
+# Gemini CLI reads ~/.gemini/skills and ~/.agents/skills (the latter wins, with a conflict warning
+# per duplicate), so its user install goes to ~/.agents/skills: one copy shared with Codex.
+# Other tools install there too (e.g. a vendor CLI's skills): those must never be touched.
+GH="$WORK/gem-home"; mkdir -p "$GH/.agents/skills/vendor-skill" "$GH/vendor/linked"
+echo VENDOR > "$GH/.agents/skills/vendor-skill/SKILL.md"; echo VLINK > "$GH/vendor/linked/SKILL.md"
+ln -s "$GH/vendor/linked" "$GH/.agents/skills/vendor-linked"
+HOME="$GH" run_install "$WORK/g1.log" "$REPO/install.sh" --harness gemini --scope user
+check "gemini skills in ~/.agents/skills"        test -L "$GH/.agents/skills/code-graph" -a -f "$GH/.agents/skills/terraform/SKILL.md"
+check "gemini writes nothing to ~/.gemini/skills" test ! -e "$GH/.gemini/skills"
+check "gemini install keeps a vendor skill"       grep -qx VENDOR "$GH/.agents/skills/vendor-skill/SKILL.md"
+check "gemini install keeps a vendor symlink"     test "$(readlink "$GH/.agents/skills/vendor-linked")" = "$GH/vendor/linked"
+HOME="$GH" run_install "$WORK/g2.log" "$REPO/install.sh" --harness gemini --scope user --uninstall
+check "gemini uninstall leaves only vendor items" test "$(count "$GH/.agents/skills")" -eq 2
+check "gemini uninstall keeps the vendor skill"   grep -qx VENDOR "$GH/.agents/skills/vendor-skill/SKILL.md"
+# An install made before the move (ours in ~/.gemini/skills) is moved; anything else there stays.
+legacy_gemini() {  # legacy_gemini <home>: our old-layout Gemini install plus a foreign skill
+  mkdir -p "$1/.gemini/skills/their-skill" "$1/.gemini/skills/terraform"
+  echo THEIRS > "$1/.gemini/skills/their-skill/SKILL.md"
+  for s in "$REPO"/skills/*/; do n="$(basename "$s")"; [ "$n" = install-agents ] || ln -s "$REPO/skills/$n" "$1/.gemini/skills/$n"; done
+  { python3 "$REPO/tools/render.py" skill "$REPO/agents/terraform/AGENT.md"
+    echo '<!-- installed by ai_agents install.sh; edit the repo and re-run the installer instead -->'; } > "$1/.gemini/skills/terraform/SKILL.md"
+}
+GL="$WORK/gem-legacy"; legacy_gemini "$GL"
+HOME="$GL" run_install "$WORK/g3.log" "$REPO/install.sh" --harness gemini --scope user
+check "move: our old links removed"               test ! -e "$GL/.gemini/skills/code-graph" -a ! -L "$GL/.gemini/skills/code-graph"
+check "move: our old agent skill removed"         test ! -e "$GL/.gemini/skills/terraform"
+check "move: their skill in ~/.gemini/skills kept" grep -qx THEIRS "$GL/.gemini/skills/their-skill/SKILL.md"
+check "move: now installed in ~/.agents/skills"   test -L "$GL/.agents/skills/code-graph"
+GU="$WORK/gem-legacy-upd"; legacy_gemini "$GU"
+HOME="$GU" run_install "$WORK/g4.log" "$REPO/install.sh" --update
+check "update finds an old-location gemini install" grep -q '^\[gemini\]' "$WORK/g4.log"
+check "update moves it to ~/.agents/skills"       test -L "$GU/.agents/skills/code-graph" -a ! -e "$GU/.gemini/skills/code-graph"
+check "update keeps their skill in ~/.gemini/skills" grep -qx THEIRS "$GU/.gemini/skills/their-skill/SKILL.md"
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then

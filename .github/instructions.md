@@ -76,7 +76,7 @@ plain `--force` is cleared during an update, so skill paths keep the normal guar
 | Claude Code | `.claude/skills/<s>`, `.claude/agents/<a>.md`, `CLAUDE.md` | `~/.claude/{skills,agents}` | subagent file (frontmatter: name, description, tools, skills, permissionMode) |
 | Codex | `.agents/skills/<s>`, `AGENTS.md` | `~/.agents/skills` | persona skill `.agents/skills/<a>/SKILL.md` (`$<a>`) |
 | Antigravity CLI/IDE | `.agents/skills/<s>`, `.agents/agents/<a>/agent.md` | `~/.gemini/config/{skills,agents}` | native custom agent (frontmatter: name, description, tools, mainAgent, subagent, model, commandExecutionPolicy, skills as paths) |
-| Gemini CLI | `.gemini/skills/<s>`, `GEMINI.md` (`@AGENTS.md`) | `~/.gemini/skills` | persona skill |
+| Gemini CLI | `.gemini/skills/<s>`, `GEMINI.md` (`@AGENTS.md`) | `~/.agents/skills` (shared with Codex; installs before 2026-10-05 used `~/.gemini/skills` and are moved by the next install or `--update`) | persona skill |
 | GitHub Copilot | `.github/skills/<s>`, `.github/agents/<a>.agent.md` | `~/.copilot/{skills,agents}` | custom agent (frontmatter: name, description, tools) |
 
 Plugin layout (`install.sh --plugin`, one bundle named `ai-agents` per harness: `skills/` plus the

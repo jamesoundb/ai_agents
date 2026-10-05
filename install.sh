@@ -35,7 +35,8 @@
 #   claude      .claude/skills/<s>, .claude/agents/<a>.md            | ~/.claude/skills, ~/.claude/agents
 #   codex       .agents/skills/<s>, .agents/skills/<a>/SKILL.md      | ~/.agents/skills
 #   antigravity .agents/skills/<s>, .agents/agents/<a>/agent.md      | ~/.gemini/config/skills, ~/.gemini/config/agents
-#   gemini      .gemini/skills/<s>, .gemini/skills/<a>/SKILL.md, GEMINI.md (@AGENTS.md) | ~/.gemini/skills
+#   gemini      .gemini/skills/<s>, .gemini/skills/<a>/SKILL.md, GEMINI.md (@AGENTS.md) | ~/.agents/skills
+#               (shared with Codex; Gemini CLI reads it besides ~/.gemini/skills, and ~/.agents wins)
 #   copilot     .github/skills/<s>, .github/agents/<a>.agent.md      | ~/.copilot/skills, ~/.copilot/agents
 # Plugin layouts with --plugin (project scope | user scope), each holding skills/ and agents:
 #   claude      .claude/skills/ai-agents/.claude-plugin/plugin.json  | ~/.claude/skills/ai-agents (loads as ai-agents@skills-dir)
@@ -311,7 +312,7 @@ plugin_layout() {  # plugin_layout <harness>: sets PD (plugin folder), MANIFEST 
       else PD="$TARGET/.agents/plugins/$PLUGIN_NAME"; LOOSE_SK="$TARGET/.agents/skills"; fi
       MANIFEST="plugin.json" ;;
     gemini)
-      PD="$HOME/.gemini/extensions/$PLUGIN_NAME"; LOOSE_SK="$HOME/.gemini/skills"; MANIFEST="gemini-extension.json" ;;
+      PD="$HOME/.gemini/extensions/$PLUGIN_NAME"; LOOSE_SK="$HOME/.agents/skills"; MANIFEST="gemini-extension.json" ;;
     copilot)
       if [ "$SCOPE" = user ]; then PD="$HOME/.copilot/plugins/$PLUGIN_NAME"; LOOSE_SK="$HOME/.copilot/skills"
       else PD="$TARGET/.github/plugins/$PLUGIN_NAME"; LOOSE_SK="$TARGET/.github/skills"; fi
@@ -416,7 +417,9 @@ loose_layout() {  # loose_layout <harness>: sets SK (skills dir), AG (agents dir
       if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/config/skills"; AG="$HOME/.gemini/config/agents"; PREFIX="$SK"
       else SK="$TARGET/.agents/skills"; AG="$TARGET/.agents/agents"; PREFIX=".agents/skills"; fi ;;
     gemini)
-      if [ "$SCOPE" = user ]; then SK="$HOME/.gemini/skills"; else SK="$TARGET/.gemini/skills"; fi ;;
+      # User scope: ~/.agents/skills, which Gemini CLI also reads and prefers over ~/.gemini/skills
+      # (each duplicate there prints "Skill conflict detected"). One copy, shared with Codex.
+      if [ "$SCOPE" = user ]; then SK="$HOME/.agents/skills"; else SK="$TARGET/.gemini/skills"; fi ;;
     copilot)
       if [ "$SCOPE" = user ]; then SK="$HOME/.copilot/skills"; AG="$HOME/.copilot/agents"; else SK="$TARGET/.github/skills"; AG="$TARGET/.github/agents"; fi ;;
     *) echo "unknown harness: $1" >&2; exit 1 ;;
@@ -430,6 +433,20 @@ agent_file() {  # agent_file <harness> <agent>: where a loose install keeps that
     antigravity) printf '%s\n' "$AG/$2/agent.md" ;;
     codex|gemini) printf '%s\n' "$SK/$2/SKILL.md" ;;   # persona skill
   esac
+}
+
+GEMINI_LEGACY_SK="$HOME/.gemini/skills"   # Gemini CLI user installs before they moved to ~/.agents/skills
+
+remove_gemini_legacy() {  # remove our own entries from the old Gemini location; anything else stays
+  local s a
+  [ -d "$GEMINI_LEGACY_SK" ] || return 0
+  for s in $SKILLS; do ours_skill "$GEMINI_LEGACY_SK/$s" && { rm -rf "${GEMINI_LEGACY_SK:?}/$s"; log "removed $GEMINI_LEGACY_SK/$s (moved to $HOME/.agents/skills)"; }; done
+  for a in $AGENTS; do
+    marked_file "$GEMINI_LEGACY_SK/$a/SKILL.md" || continue
+    rm -f "$GEMINI_LEGACY_SK/$a/SKILL.md"; rmdir "$GEMINI_LEGACY_SK/$a" 2>/dev/null || true
+    log "removed $GEMINI_LEGACY_SK/$a (moved to $HOME/.agents/skills)"
+  done
+  remove_empty_dirs "$GEMINI_LEGACY_SK"
 }
 
 run_harnesses() {
@@ -494,11 +511,13 @@ run_harnesses() {
         if [ $UNINSTALL = 1 ]; then
           for s in $SKILLS; do remove_path "$SK/$s"; done; for a in $AGENTS; do remove_agent skill "$a" "$SK/$a/SKILL.md"; rmdir "$SK/$a" 2>/dev/null || true; done
           [ "$SCOPE" = project ] && remove_import "$TARGET/GEMINI.md" "@AGENTS.md"
+          [ "$SCOPE" = user ] && remove_gemini_legacy
           remove_empty_dirs "$SK" "$(dirname "$SK")"
         else
           for s in $SKILLS; do place_skill "$s" "$SK"; done
           for a in $AGENTS; do write_rendered skill "$a" "$SK/$a/SKILL.md"; done
           [ "$SCOPE" = project ] && ensure_import "$TARGET/GEMINI.md" "@AGENTS.md"
+          [ "$SCOPE" = user ] && [ "$DRY" = 0 ] && remove_gemini_legacy
         fi ;;
       copilot)
         loose_layout copilot
@@ -551,6 +570,10 @@ detect_install() {  # detect_install <harness>: sets D_PLUGIN D_MODE D_AGENTS D_
     fi
   fi
   loose_layout "$h"
+  # a Gemini user install made before the move to ~/.agents/skills is still found (and then moved)
+  if [ "$h" = gemini ] && [ "$SCOPE" = user ] && [ -d "$GEMINI_LEGACY_SK" ] && ! ours_here "$SK/code-graph"; then
+    for s in $ALL_SKILLS; do ours_here "$GEMINI_LEGACY_SK/$s" && { SK="$GEMINI_LEGACY_SK"; break; }; done
+  fi
   for s in $ALL_SKILLS; do
     if ours_here "$SK/$s"; then
       D_SKILLS="$D_SKILLS $s"; [ -L "$SK/$s" ] || D_MODE=copy

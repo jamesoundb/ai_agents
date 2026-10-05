@@ -102,7 +102,16 @@ so. Your own unrelated skills in the same folder are never touched either way.
 | GitHub Copilot | `.github/agents/<a>.agent.md`, `.github/skills/<s>/`, `AGENTS.md` | custom agent picker |
 
 User-scope locations: `~/.claude/{agents,skills}`, `~/.agents/skills` (Codex),
-`~/.gemini/config/{agents,skills}` (Antigravity), `~/.gemini/skills` (Gemini CLI), `~/.copilot/{agents,skills}`.
+`~/.gemini/config/{agents,skills}` (Antigravity), `~/.agents/skills` (Gemini CLI), `~/.copilot/{agents,skills}`.
+
+`~/.agents/skills` is shared: Codex and Gemini CLI both read it, and other tools install their
+own skills there too. The installer only ever adds, replaces or removes its own entries
+(symlinks into this clone, or copies it marked). A skill or link of yours with the same name
+stops the install before anything is written. It never removes the folder itself. Gemini CLI
+also reads `~/.gemini/skills`, and older installs put our skills there. The next install or
+`--update` moves them, removing only our entries from that folder. Uninstalling Gemini CLI or
+Codex removes the shared copies for both tools; re-run the other tool's install if you still
+use it.
 
 ### Install as a plugin (IDE extensions)
 
