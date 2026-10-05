@@ -66,7 +66,10 @@ both, and each is refreshed):
 Per-harness folder paths live in one place, `loose_layout()` and `agent_file()`, shared with
 install/uninstall. Every detected install is pre-flighted before any is written. Loose installs
 are then pruned (`prune_stale`) of our files whose agent or skill no longer exists in the repo;
-plugins are rebuilt whole anyway. Agents or skills new in the repo are reported, not added.
+plugins are rebuilt whole anyway. An install that holds every agent in the repo counts as full:
+its skill list becomes every skill, so new skills arrive with `--update`. Narrowed installs keep
+their lists. New agents are only reported, because a full install missing a new agent cannot be
+told apart from one narrowed with `--agents`.
 Installs linked into another clone are skipped with the path. An agent file without the marker
 is kept and named. `--update --force` takes over exactly those files (`TAKEOVER_FILES`); the
 plain `--force` is cleared during an update, so skill paths keep the normal guard.

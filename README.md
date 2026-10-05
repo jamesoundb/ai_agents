@@ -47,9 +47,10 @@ and need the installer re-run. `--update` does that for every install this clone
 home directory. It finds each one from the files themselves, so you do not have to remember how
 you installed. Each install keeps its own settings: tool, plugin or regular layout, symlink or
 `--copy`, a narrowed `--agents`/`--skills` list, and `--agents-as-skills`. It also removes our
-files for agents and skills deleted upstream. It does not add agents or skills that are new in
-the repo but missing from your install. It names them; add them by re-running your install
-command.
+files for agents and skills deleted upstream. A full install (it has every agent in the repo)
+also gets skills that are new in the repo. An install narrowed with `--agents`/`--skills` keeps
+its lists, and new skills are only named. A new agent is always only named, because it looks the
+same as one you left out. Add it by re-running your install command.
 
 - A project install: `./install.sh --update --target /path/to/project`.
 - Only some tools: `--harness antigravity,claude`.

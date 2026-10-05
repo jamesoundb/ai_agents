@@ -230,8 +230,12 @@ check "update keeps agents-as-skills"            test -f "$UH/.gemini/config/ski
 check "update prunes a deleted agent"            test ! -e "$UH/.claude/agents/build-pipeline.md" -a ! -e "$UH/.gemini/config/agents/build-pipeline"
 check "update prunes a deleted skill (link)"     test ! -e "$UH/.claude/skills/teamcity-config-review" -a ! -L "$UH/.claude/skills/teamcity-config-review"
 check "update prunes a deleted skill (copy)"     test ! -e "$UH/.copilot/skills/teamcity-config-review"
-check "update names the new skill, adds nothing" grep -q 'not in this install:.*zz-new-skill' "$WORK/upd.log"
-check "new skill not installed by update"        test ! -e "$UH/.claude/skills/zz-new-skill"
+# claude was a full install (every agent): it gets the new skill. copilot was narrowed with
+# --agents terraform: the new skill is only named.
+check "full install gets the new skill"          test -L "$UH/.claude/skills/zz-new-skill"
+check "full install gets it as a plugin too"     test -e "$UH/.gemini/extensions/ai-agents/skills/zz-new-skill"
+check "narrowed install: new skill not added"    test ! -e "$UH/.copilot/skills/zz-new-skill"
+check "narrowed install: new skill named"        grep -q 'not in this install: agents: .*skills: zz-new-skill' "$WORK/upd.log"
 check "update keeps their skill"                 grep -qx MINE "$UH/.agents/skills/my-own-skill/SKILL.md"
 check "update keeps their symlink"               test "$(readlink "$UH/.agents/skills/linked")" = "$UH/elsewhere/linked"
 check "update keeps their config/skills link"    test -L "$UH/.gemini/config/skills"

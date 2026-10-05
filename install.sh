@@ -705,6 +705,14 @@ if [ "$UPDATE" = 1 ]; then
       log "keep   $f: no installer marker (an install older than the marker, or your own file);"
       log "       not updated. If it is ours, add --force to take it over"
     done
+    # An install holding every agent in the repo was a full install: give it every skill, so
+    # skills added upstream arrive with --update. A narrowed install (--agents/--skills) keeps its
+    # lists. A newly added agent cannot be told apart from a narrowed one, so it is only named.
+    if [ -z "$(missing_from "$D_AGENTS" "$ALL_AGENTS")" ]; then
+      for s in $(missing_from install-agents "$ALL_SKILLS"); do
+        case " $D_SKILLS " in *" $s "*) ;; *) D_SKILLS="$D_SKILLS $s" ;; esac
+      done
+    fi
     FOUND="$FOUND $h:$kind"
     # bash 3.2 has no associative arrays: one variable set per install (harness + kind)
     eval "U_${h}_${kind}_PLUGIN=\$D_PLUGIN U_${h}_${kind}_MODE=\$D_MODE U_${h}_${kind}_AGENTS=\$D_AGENTS U_${h}_${kind}_SKILLS=\$D_SKILLS U_${h}_${kind}_AS=\$D_AS"
