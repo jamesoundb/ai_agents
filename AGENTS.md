@@ -41,21 +41,24 @@ harnesses without agent files they are installed as `<name>` skills and invoked 
 | `ast-treesitter` | Code-architecture navigator over a tree-sitter code graph: how is this built, what calls or uses X, what breaks if X changes, where a change belongs. Read-only; use before refactors, impact analysis and large reviews. |
 | `build-pipeline` | TeamCity pipeline engineer: reviews project settings for cost and reliability, triages failed builds with evidence, finds systemic waste in builds and agent capacity. Read-only against the server. |
 | `helm` | Helm and GitOps (ArgoCD, Flux) engineer: reviews and authors charts, per-environment values and delivery objects, keeps test environments small and short-lived. Never installs releases. |
-| `kubernetes` | Kubernetes and GKE cost engineer: measures cluster waste, right-sizes build and test manifests from usage, proposes size tiers and namespace guardrails, reviews manifests. Read-only against clusters. |
+| `kubernetes` | Kubernetes and GKE engineer: troubleshoots live clusters and workloads from a cluster graph, measures cost waste, right-sizes manifests, sets namespace guardrails. Read-only against clusters. |
 | `terraform` | Terraform engineer for Google Cloud: reviews, writes and refactors modules and roots, explains what a plan does and how risky it is, traces the blast radius of changes. Never applies. |
 
 | skill | use it for |
 |---|---|
 | `blast-radius` | Use before a refactor, a signature, DTO, schema or infra change, or when reviewing a diff: every dependent file and symbol, the relationship, and the tests to run. |
 | `bug-fix` | Use when fixing a reported bug, failing test or wrong behaviour, before changing code: a checklist of the report's cases, a failing test per case, then the cause fixed and each case proven. |
+| `cluster-graph` | Use before kubectl get/describe loops on a live cluster: one read-only snapshot of every resource, CRDs included, then one query for what is broken, why, or what depends on an object. |
 | `code-graph` | Use instead of grep and reading files whenever you need who calls or uses a symbol, what it calls, how A reaches B, what a class contains or what a change breaks: one query on the repo's tree- sitter code graph. |
 | `code-skeleton` | Use before reading a source file longer than ~80 lines, or when asked what is in a file or directory: classes, functions, signatures and exact line ranges instead of the whole file. |
 | `gke-cost-discovery` | Use when asked why a GKE cluster costs too much, to derive build size tiers, or before tuning node pools: unused vs unallocated capacity, over-requested workloads, stale test environments. |
 | `helm-chart-review` | Use for Helm chart PRs and ArgoCD/Flux delivery changes: dependency pinning, values defaults and per-environment layering, GitOps hygiene, and a rendered-manifest review. |
 | `install-agents` | Use when a developer asks to install, update or remove this repository's agents and skills in their coding tool (Claude Code, Codex, Gemini CLI, Antigravity, Copilot), or on a first session here. |
+| `k8s-cluster-triage` | Use when a cluster or namespace misbehaves broadly (many pods failing, deploys rejected, nodes NotReady, HPAs blind): a live health sweep, shared causes first, each finding with evidence. |
 | `k8s-guardrails` | Use to generate LimitRange, ResourceQuota and test-environment TTL rules for build and test namespaces from the build size tiers. |
 | `k8s-manifest-review` | Use to review Kubernetes manifests for build and test workloads (YAML, helm template or kustomize output): requests vs size tiers, limits, TTLs, spot placement, images, hygiene. |
 | `k8s-rightsize` | Use to right-size requests and limits of build and test workloads in Kubernetes manifests from measured usage (a gke-cost-discovery report), with a diff and evidence per container. |
+| `k8s-workload-triage` | Use when one workload, pod, Job, Service or custom resource fails, restarts or is unreachable: the cause from the live cluster with quoted evidence and logs, and the fix as a manifest change. |
 | `teamcity-build-triage` | Use when a TeamCity build is red or being rerun: classifies the failure with quoted evidence; a failure-class histogram over recent builds finds systemic waste. |
 | `teamcity-config-review` | Use for changes under .teamcity/ or slow and expensive builds: TeamCity settings reviewed for timeouts, cleanup, triggers, concurrency, secrets, caches and pod templates. |
 | `terraform-module-scaffold` | Use when asked to create or scaffold Terraform: a Google Cloud module or environment root that already follows Google's structure and the company conventions. |

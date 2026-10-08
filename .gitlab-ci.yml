@@ -93,6 +93,7 @@ engine-tests:
   extends: .python-deps
   script:
     - skills/code-graph/tests/run_tests.sh   # code-graph regression suite (9-language fixture)
+    - python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case (minikube fixture)
 
 install-check:
   stage: test

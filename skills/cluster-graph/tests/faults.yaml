@@ -1,0 +1,330 @@
+# faults.yaml -- planted failures for a throwaway cluster (minikube profile agents-test), one per
+# troubleshooting case kubegraph classifies, plus a healthy control (ok-web). Source of the fixture in
+# tests/fixture/ (see tests/README.md for how it is regenerated). Never apply this to a shared cluster.
+# Images: busybox:1.36 only (IfNotPresent), so a node without registry access still runs the cases.
+apiVersion: v1
+kind: Namespace
+metadata: {name: kg-faults}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: kg-quota}
+---
+# credentials that must never reach the snapshot (sanitize: Secret data, credential env values)
+apiVersion: v1
+kind: Secret
+metadata: {name: db-credentials, namespace: kg-faults}
+stringData: {password: hunter2, username: app}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: web-cfg, namespace: kg-faults}
+data: {index.html: "ok", mode: "prod"}
+---
+# healthy control: Ready Deployment + Service with endpoints; must not be reported
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ok-web, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ok-web}}
+  template:
+    metadata: {labels: {app: ok-web}}
+    spec:
+      containers:
+        - name: web
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          env:
+            - {name: DB_PASSWORD, value: hunter2-plain}
+            - {name: DB_USER, valueFrom: {secretKeyRef: {name: db-credentials, key: username}}}
+          readinessProbe: {tcpSocket: {port: 8080}, periodSeconds: 5}
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 32Mi}}
+          volumeMounts: [{name: www, mountPath: /www}]
+      volumes: [{name: www, configMap: {name: web-cfg}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ok-web, namespace: kg-faults}
+spec: {selector: {app: ok-web}, ports: [{port: 80, targetPort: 8080}]}
+---
+# CrashLoopBackOff: exits 1 at start; its Service has no ready endpoints
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: crashy, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: crashy}}
+  template:
+    metadata: {labels: {app: crashy}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "echo 'starting api'; echo 'FATAL: cannot connect to postgres at db:5432'; exit 1"]
+          resources: {requests: {cpu: 10m, memory: 16Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: crashy, namespace: kg-faults}
+spec: {selector: {app: crashy}, ports: [{port: 80}]}
+---
+# ImagePullBackOff: registry does not exist
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: badimage, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: badimage}}
+  template:
+    metadata: {labels: {app: badimage}}
+    spec:
+      containers:
+        - {name: app, image: "registry.invalid/team/api:1.0", resources: {requests: {cpu: 10m, memory: 16Mi}}}
+---
+# Unschedulable: requests more CPU than any node has
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: toobig, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: toobig}}
+  template:
+    metadata: {labels: {app: toobig}}
+    spec:
+      containers:
+        - {name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sleep", "3600"],
+           resources: {requests: {cpu: "64", memory: 16Mi}}}
+---
+# CreateContainerConfigError: ConfigMap missing entirely
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: missing-config, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: missing-config}}
+  template:
+    metadata: {labels: {app: missing-config}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "3600"]
+          env: [{name: LOG_LEVEL, valueFrom: {configMapKeyRef: {name: app-settings, key: log_level}}}]
+          resources: {requests: {cpu: 10m, memory: 16Mi}}
+---
+# CreateContainerConfigError: ConfigMap exists, key does not
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: missing-key, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: missing-key}}
+  template:
+    metadata: {labels: {app: missing-key}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "3600"]
+          env: [{name: FEATURE, valueFrom: {configMapKeyRef: {name: web-cfg, key: feature_flags}}}]
+          resources: {requests: {cpu: 10m, memory: 16Mi}}
+---
+# OOMKilled: memory grows past a 16Mi limit
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: oomer, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: oomer}}
+  template:
+    metadata: {labels: {app: oomer}}
+    spec:
+      containers:
+        - {name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sh", "-c", "tail /dev/zero"],
+           resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 16Mi}}}
+---
+# Running but never Ready: readiness probe on a port nothing listens on
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: unready, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: unready}}
+  template:
+    metadata: {labels: {app: unready}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "3600"]
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}, periodSeconds: 5}
+          resources: {requests: {cpu: 10m, memory: 16Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: unready, namespace: kg-faults}
+spec: {selector: {app: unready}, ports: [{port: 80, targetPort: 8080}]}
+---
+# Service selector matches no pod (the pods are labelled app=ok-web)
+apiVersion: v1
+kind: Service
+metadata: {name: web-typo, namespace: kg-faults}
+spec: {selector: {app: okweb}, ports: [{port: 80, targetPort: 8080}]}
+---
+# PVC with a StorageClass that does not exist, and a pod waiting for it
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: data-pending, namespace: kg-faults}
+spec: {accessModes: [ReadWriteOnce], storageClassName: does-not-exist, resources: {requests: {storage: 1Gi}}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: uses-pvc, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: uses-pvc}}
+  template:
+    metadata: {labels: {app: uses-pvc}}
+    spec:
+      containers:
+        - {name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sleep", "3600"],
+           resources: {requests: {cpu: 10m, memory: 16Mi}}, volumeMounts: [{name: data, mountPath: /data}]}
+      volumes: [{name: data, persistentVolumeClaim: {claimName: data-pending}}]
+---
+# Job that keeps failing: BackoffLimitExceeded
+apiVersion: batch/v1
+kind: Job
+metadata: {name: migrate-db, namespace: kg-faults}
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: migrate, image: busybox:1.36, imagePullPolicy: IfNotPresent,
+           command: ["sh", "-c", "echo 'migration 0042 failed: relation users already exists'; exit 2"],
+           resources: {requests: {cpu: 10m, memory: 16Mi}}}
+---
+# HPA without metrics (target has no CPU request) and an HPA whose target does not exist
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: no-requests, namespace: kg-faults}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: no-requests}}
+  template:
+    metadata: {labels: {app: no-requests}}
+    spec:
+      containers: [{name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sleep", "3600"]}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: no-requests, namespace: kg-faults}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: no-requests}
+  minReplicas: 1
+  maxReplicas: 3
+  metrics: [{type: Resource, resource: {name: cpu, target: {type: Utilization, averageUtilization: 80}}}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: orphan-hpa, namespace: kg-faults}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: renamed-away}
+  minReplicas: 1
+  maxReplicas: 3
+  metrics: [{type: Resource, resource: {name: cpu, target: {type: Utilization, averageUtilization: 80}}}]
+---
+# Ingress whose backend Service is gone
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: shop, namespace: kg-faults}
+spec:
+  rules:
+    - host: shop.example.test
+      http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: shop-frontend, port: {number: 80}}}}
+          - {path: /web, pathType: Prefix, backend: {service: {name: ok-web, port: {number: 80}}}}
+---
+# Quota used up: the second replica is rejected (ReplicaFailure on the ReplicaSet)
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: pods, namespace: kg-quota}
+spec: {hard: {pods: "1"}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: quota-hit, namespace: kg-quota}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: quota-hit}}
+  template:
+    metadata: {labels: {app: quota-hit}}
+    spec:
+      containers:
+        - {name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sleep", "3600"],
+           resources: {requests: {cpu: 10m, memory: 16Mi}}}
+---
+# Aggregated API whose backend Service does not exist (Available=False ServiceNotFound)
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata: {name: v1beta1.broken.kg.example.com}
+spec:
+  group: broken.kg.example.com
+  version: v1beta1
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  insecureSkipTLSVerify: true
+  service: {namespace: kg-faults, name: metrics-adapter}
+---
+# Admission webhook with no backend; failurePolicy Fail, scoped to a namespace label nothing carries
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata: {name: kg-policy}
+webhooks:
+  - name: policy.kg.example.com
+    clientConfig: {service: {namespace: kg-faults, name: policy-webhook, path: /validate}}
+    rules: [{apiGroups: ["apps"], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["deployments"]}]
+    namespaceSelector: {matchLabels: {kg-webhook-victim: "true"}}
+    failurePolicy: Fail
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+---
+# A custom resource type and two instances: Ready=False and Ready=True (no status subresource, so
+# status is applied with the object)
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: testenvs.kg.example.com}
+spec:
+  group: kg.example.com
+  scope: Namespaced
+  names: {plural: testenvs, singular: testenv, kind: TestEnv, shortNames: [te]}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}
+---
+# Retained PersistentVolume whose claim is deleted by plant.sh: Released (disk kept and billed)
+apiVersion: v1
+kind: PersistentVolume
+metadata: {name: kg-retained}
+spec:
+  capacity: {storage: 1Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath: {path: /tmp/kg-retained}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: kg-claim, namespace: kg-faults}
+spec: {accessModes: [ReadWriteOnce], storageClassName: manual, volumeName: kg-retained, resources: {requests: {storage: 1Gi}}}

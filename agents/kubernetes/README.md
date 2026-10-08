@@ -1,6 +1,7 @@
 # Kubernetes Agent (GKE, cost-efficiency first)
 
-**Purpose.** Stop overprovisioning a GKE Standard cluster that runs test builds and test
+**Purpose.** Find out why something in a live cluster is broken, from a read-only graph of the
+cluster rather than `kubectl get/describe` loops. Stop overprovisioning a GKE Standard cluster that runs test builds and test
 environments, with evidence rather than guesswork, and keep it that way with tiers and admission
 guardrails. Also the home for Kubernetes manifest and dependency questions.
 
@@ -22,9 +23,11 @@ in both buckets and is usually the cheapest win.
 
 | skill | role |
 |---|---|
+| [`cluster-graph`](../../skills/cluster-graph/SKILL.md) | read-only snapshot of the live cluster (every resource type, CRDs included) linked into a graph with per-object health: `health`, `why` (cause chain, events, logs), `show`, `used-by`, `tree`, `find`, `events`, `crds`, `overview`. The only skill preloaded into the Claude subagent |
+| [`k8s-cluster-triage`](../../skills/k8s-cluster-triage/SKILL.md) | cluster-wide sweep: not-collected API groups, cluster-scoped components, system namespaces, capacity, then workload groups; shared causes first |
+| [`k8s-workload-triage`](../../skills/k8s-workload-triage/SKILL.md) | one failing workload: cause class -> fix in the manifest -> `why --refresh` after it is applied |
 | [`gke-cost-discovery`](../../skills/gke-cost-discovery/SKILL.md) | namespaces ranked by cost (estimated, or actual from the billing export) with per-namespace mitigation levers; read-only collection (gcloud, kubectl, Cloud Monitoring, Cloud Logging, TeamCity REST) and a report: two-bucket waste model, top over-requested workloads with recommended requests, stale environments, scale-down blockers, node pool review, autoscaler reasons, TeamCity demand, proposed build tiers |
 | `code-graph`, `blast-radius`, `code-skeleton` | Kubernetes object graph (Service to Deployment selection, ConfigMap/Secret/PVC references, Kustomization imports) for change impact |
-
 | [`k8s-rightsize`](../../skills/k8s-rightsize/SKILL.md) | rewrite a namespace's build/test manifests from the report's p95 (or the tier when no usage): diff + evidence + lifecycle fields |
 | [`k8s-manifest-review`](../../skills/k8s-manifest-review/SKILL.md) | tier/lifecycle/hygiene rules on plain YAML, `helm template` or `kustomize build` output; CI gate |
 | [`k8s-guardrails`](../../skills/k8s-guardrails/SKILL.md) | LimitRange, ResourceQuota and optional namespace janitor generated from `build-tiers.json` |
@@ -66,3 +69,21 @@ demo dataset.
   unpullable kubectl image) and fixed.
 
 Dollar figures are list-price approximations for ranking; the billing export is the authority.
+
+## Verified (2026-10-08): troubleshooting
+
+- minikube `agents-test` (v1.24.1) with `skills/cluster-graph/tests/faults.yaml` planted: snapshot of
+  332 objects in 30 kinds in ~1 s; every planted case classified (CrashLoopBackOff with the log line,
+  ImagePullBackOff, Unschedulable, missing ConfigMap and missing key, OOMKilled / exit-137 Killed,
+  readiness probe failing, selector matching nothing, PVC -> missing StorageClass, Job backoff, HPA
+  without metrics and with a missing target, Ingress -> missing Service, quota exhausted, APIService
+  and webhook without backend, a custom resource `Ready=False`, a Released PV), kube-system clean.
+  31+ regression tests on the saved snapshot (`skills/cluster-graph/tests/`).
+- The agent itself, headless in Claude Code against that cluster ("uses-pvc and missing-config never
+  start, shop returns 503s"): 18 turns, $0.46; named all three root causes, wrote two fixes into the
+  manifest, named the PVC re-create as an operator step, asked before inventing a missing frontend,
+  and made no cluster changes. A second run ("lots broken, kubectl prints API group errors"): 10 turns,
+  $0.31; loaded `k8s-cluster-triage` on demand and ranked the unavailable APIService first, the webhook
+  without a backend second, then the independent workload faults.
+- Context per subagent request: 10k characters (agent + preloaded `cluster-graph`) instead of 37k
+  (agent + 8 preloaded skills); the other skills load on demand.

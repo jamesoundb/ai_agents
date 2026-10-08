@@ -95,13 +95,20 @@ def folded(text, indent="  "):
 
 def render_claude(fm, body):
     tools = [TOOL_MAP["claude"].get(t, t) for t in fm.get("tools", [])]
+    # Claude Code injects the full SKILL.md of every skill named in `skills:` into the subagent's context
+    # on every request. An agent's optional `preload:` names the few it always needs; the rest stay
+    # installed and are loaded on demand through the Skill tool.
+    skills = fm.get("skills") or []
+    preload = fm.get("preload", skills)
+    if any(s not in preload for s in skills):
+        tools.append("Skill")
     lines = ["---", f"name: {fm['name']}", f"description: {folded(fm['description'])}"]
     if tools:
         lines.append("tools: " + ", ".join(dict.fromkeys(tools)))
     if fm.get("model") and fm["model"] != "inherit":
         lines.append(f"model: {fm['model']}")
-    if fm.get("skills"):
-        lines.append("skills: [" + ", ".join(fm["skills"]) + "]")
+    if preload:
+        lines.append("skills: [" + ", ".join(preload) + "]")
     lines.append("permissionMode: default")
     lines.append("---")
     return "\n".join(lines) + "\n\n" + body + "\n"

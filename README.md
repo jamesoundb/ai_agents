@@ -178,7 +178,7 @@ their published formats and have not been run.
 |---|---|
 | [ast-treesitter](agents/ast-treesitter/README.md) | Deterministic code map: tree-sitter skeletons and a relationship graph for architecture, callers/callees, blast radius, Terraform and Kubernetes dependencies. Read-only. Developer guide: [GETTING-STARTED.md](agents/ast-treesitter/GETTING-STARTED.md). |
 | [terraform](agents/terraform/README.md) | Terraform engineer for Google Cloud: rule-based review (Google best practices, GCP security, configurable policy), risk-ranked plan review, compliant scaffolding, blast radius of variable/module changes. Never applies. |
-| [kubernetes](agents/kubernetes/README.md) | GKE engineer with a cost-efficiency mandate: measures unused vs unallocated capacity, reviews and right-sizes build/test-environment manifests, generates tier-based guardrails and a janitor, tunes node pools. Read-only against clusters. |
+| [kubernetes](agents/kubernetes/README.md) | GKE engineer: troubleshoots live clusters and workloads from a read-only cluster graph (cause chain, events, logs); with a cost-efficiency mandate it measures unused vs unallocated capacity, reviews and right-sizes build/test-environment manifests, generates tier-based guardrails and a janitor, tunes node pools. Read-only against clusters. |
 | [helm](agents/helm/README.md) | Helm and GitOps (ArgoCD/Flux) engineer: chart, values layering and delivery-object review, rendered manifests checked against build tiers, promotion by version bump. Never installs releases. |
 | [build-pipeline](agents/build-pipeline/README.md) | TeamCity engineer: settings review (timeouts, cleanup, triggers, secrets, caches, pod templates vs tiers, teardown of test environments), failure triage by class with evidence, CI health and cost review. Read-only against the server. |
 
@@ -195,6 +195,9 @@ their published formats and have not been run.
 | [terraform-plan-review](skills/terraform-plan-review/SKILL.md) | Risk-ranked review of `terraform show -json` plans (data loss, exposure, IAM, drift); CI gate |
 | [terraform-module-scaffold](skills/terraform-module-scaffold/SKILL.md) | Generate compliant modules and environment roots from editable templates |
 | [gke-cost-discovery](skills/gke-cost-discovery/SKILL.md) | Read-only GKE waste discovery: unused vs unallocated, over-requested workloads with recommended requests, stale test envs, scale-down blockers, autoscaler reasons, TeamCity demand, proposed build tiers; works on synthetic data until credentials exist |
+| [cluster-graph](skills/cluster-graph/SKILL.md) | Read-only snapshot of a live cluster (every resource type, CRDs included) linked into a graph with per-object health; `health`, `why`, `show`, `used-by`, `tree`, `find`, `events`, `crds`, `overview` |
+| [k8s-cluster-triage](skills/k8s-cluster-triage/SKILL.md) | Cluster-wide health sweep on the cluster graph: shared causes first (nodes, webhooks, APIServices, system namespaces, capacity), ranked findings with evidence |
+| [k8s-workload-triage](skills/k8s-workload-triage/SKILL.md) | One failing workload, Job, Service or custom resource: cause chain, logs, fix as a manifest change, verification |
 | [k8s-rightsize](skills/k8s-rightsize/SKILL.md) | Rewrite build/test manifests' requests and limits from the discovery report's p95 (tier cap without usage), add lifecycle fields; diff with evidence |
 | [k8s-manifest-review](skills/k8s-manifest-review/SKILL.md) | Efficiency/hygiene rules for build and test manifests against the tiers (requests, limits, TTLs, replicas, spot placement, images, PVCs, privileged); CI gate |
 | [k8s-guardrails](skills/k8s-guardrails/SKILL.md) | LimitRange, ResourceQuota and optional janitor CronJob per build namespace from `build-tiers.json` |
@@ -203,7 +206,8 @@ their published formats and have not been run.
 | [teamcity-build-triage](skills/teamcity-build-triage/SKILL.md) | Failure classification with evidence from the REST API or saved logs; recent-failures histogram |
 
 The four code skills install together; `code-skeleton`, `blast-radius` and `bug-fix` use the engine
-in `../code-graph/scripts/run.sh`. The engine needs Python 3.10+; `run.sh` creates a private venv
+in `../code-graph/scripts/run.sh` (the two triage skills use `../cluster-graph/scripts/run.sh` the same
+way). The engine needs Python 3.10+; `run.sh` creates a private venv
 with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
 
 ### Install only what you use

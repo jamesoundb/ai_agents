@@ -1,0 +1,17 @@
+# testenvs.yaml -- instances of the TestEnv custom resource from faults.yaml (applied once the CRD is
+# Established). te-broken reports Ready=False; te-ok is healthy and references a Secret by name.
+apiVersion: kg.example.com/v1
+kind: TestEnv
+metadata: {name: te-broken, namespace: kg-faults}
+spec: {owner: team-payments, secretName: db-credentials, ttl: 4h}
+status:
+  conditions:
+    - {type: Ready, status: "False", reason: ProvisionFailed, message: "database quota exceeded in project test-env-42"}
+---
+apiVersion: kg.example.com/v1
+kind: TestEnv
+metadata: {name: te-ok, namespace: kg-faults}
+spec: {owner: team-search, ttl: 2h}
+status:
+  conditions:
+    - {type: Ready, status: "True", reason: Provisioned, message: "environment up"}

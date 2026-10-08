@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "kubernetes agent finds root causes from a saved cluster snapshot"
+context:
+  scaffold_script: "../scaffold/cluster-snapshot.sh"
+  add_dirs: ["../fixtures/k8s-incident/"]

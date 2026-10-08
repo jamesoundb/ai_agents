@@ -8,7 +8,8 @@ Checks:
                         (lowercase letters, digits, single hyphens, <= 64 chars); description
                         present and <= 1024 chars
   agents/<n>/AGENT.md   frontmatter parses; name == folder; description present; every entry in
-                        `skills:` exists under skills/; every entry in `tools:` is a neutral tool
+                        `skills:` exists under skills/; `preload:` (Claude) is a subset of
+                        `skills:`; every entry in `tools:` is a neutral tool
                         name known to tools/render.py
   AGENTS.md             the install.sh managed block matches what render.py generates now
                         (catches a new or renamed agent/skill without a re-run of install.sh)
@@ -80,6 +81,9 @@ def check_agents():
         for s in fm.get("skills", []):
             if s not in skills:
                 problems.append(f"{path}: skills: lists '{s}', which is not a folder under skills/")
+        for s in fm.get("preload", []):
+            if s not in fm.get("skills", []):
+                problems.append(f"{path}: preload: lists '{s}', which is not in its skills:")
         for t in fm.get("tools", []):
             if t not in NEUTRAL_TOOLS:
                 problems.append(f"{path}: tools: '{t}' is not a neutral tool name ({', '.join(sorted(NEUTRAL_TOOLS))})")

@@ -1,0 +1,982 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.",
+    "resourceVersion": "8",
+    "uid": "3dfc3318-c4e7-4c99-8469-fda74137ba0e"
+   },
+   "spec": {
+    "groupPriorityMinimum": 18000,
+    "version": "v1",
+    "versionPriority": 1
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.admissionregistration.k8s.io",
+    "resourceVersion": "7",
+    "uid": "f8944c9b-fcd4-4051-9973-5938d2c6e15d"
+   },
+   "spec": {
+    "group": "admissionregistration.k8s.io",
+    "groupPriorityMinimum": 16700,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.apiextensions.k8s.io",
+    "resourceVersion": "11",
+    "uid": "4c19c5d1-52d1-440c-9356-572eec9c0017"
+   },
+   "spec": {
+    "group": "apiextensions.k8s.io",
+    "groupPriorityMinimum": 16700,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.apps",
+    "resourceVersion": "9",
+    "uid": "914332c1-7dfb-43c5-ad6f-1d4f0de55385"
+   },
+   "spec": {
+    "group": "apps",
+    "groupPriorityMinimum": 17800,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.authentication.k8s.io",
+    "resourceVersion": "10",
+    "uid": "c34530be-dac3-4743-8448-bc34d9262929"
+   },
+   "spec": {
+    "group": "authentication.k8s.io",
+    "groupPriorityMinimum": 17700,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.authorization.k8s.io",
+    "resourceVersion": "12",
+    "uid": "082dfac8-3f3b-49f7-81e7-af7f07a67596"
+   },
+   "spec": {
+    "group": "authorization.k8s.io",
+    "groupPriorityMinimum": 17600,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.autoscaling",
+    "resourceVersion": "13",
+    "uid": "62a82759-cbe8-45f2-b84e-18430b34c1c2"
+   },
+   "spec": {
+    "group": "autoscaling",
+    "groupPriorityMinimum": 17500,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.batch",
+    "resourceVersion": "17",
+    "uid": "e6fae296-0308-4a58-ab6e-937ac4e3325e"
+   },
+   "spec": {
+    "group": "batch",
+    "groupPriorityMinimum": 17400,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.certificates.k8s.io",
+    "resourceVersion": "19",
+    "uid": "48538aa0-edfb-4597-b608-d44680f0204e"
+   },
+   "spec": {
+    "group": "certificates.k8s.io",
+    "groupPriorityMinimum": 17300,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.coordination.k8s.io",
+    "resourceVersion": "20",
+    "uid": "f8e56612-b1ef-4368-88c0-a00a8c4ba63e"
+   },
+   "spec": {
+    "group": "coordination.k8s.io",
+    "groupPriorityMinimum": 16500,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.discovery.k8s.io",
+    "resourceVersion": "21",
+    "uid": "64f901b6-8b7f-4e35-bd94-cfdfbfdaf2c3"
+   },
+   "spec": {
+    "group": "discovery.k8s.io",
+    "groupPriorityMinimum": 16200,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.events.k8s.io",
+    "resourceVersion": "23",
+    "uid": "fda66ba6-cbdd-456c-acf3-97b70e319fdb"
+   },
+   "spec": {
+    "group": "events.k8s.io",
+    "groupPriorityMinimum": 17750,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-10-08T15:56:29Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "true"
+    },
+    "name": "v1.kg.example.com",
+    "resourceVersion": "2534",
+    "uid": "dbba9780-607a-49b9-add6-8513e34f0285"
+   },
+   "spec": {
+    "group": "kg.example.com",
+    "groupPriorityMinimum": 1000,
+    "version": "v1",
+    "versionPriority": 100
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T15:56:29Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.networking.k8s.io",
+    "resourceVersion": "27",
+    "uid": "10e6495a-ea09-4c06-bb1c-f29ba36e3738"
+   },
+   "spec": {
+    "group": "networking.k8s.io",
+    "groupPriorityMinimum": 17200,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.node.k8s.io",
+    "resourceVersion": "30",
+    "uid": "ab016ddd-4711-4a98-a86d-1f19a7d5f86e"
+   },
+   "spec": {
+    "group": "node.k8s.io",
+    "groupPriorityMinimum": 16300,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.policy",
+    "resourceVersion": "32",
+    "uid": "333d6ade-1e5b-40df-b6f7-11956ee28e51"
+   },
+   "spec": {
+    "group": "policy",
+    "groupPriorityMinimum": 17100,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.rbac.authorization.k8s.io",
+    "resourceVersion": "34",
+    "uid": "c1198359-1a25-47c6-8157-5450ddfbb2cd"
+   },
+   "spec": {
+    "group": "rbac.authorization.k8s.io",
+    "groupPriorityMinimum": 17000,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.scheduling.k8s.io",
+    "resourceVersion": "35",
+    "uid": "cc4831ab-9436-477b-bfd4-7610c7cfd189"
+   },
+   "spec": {
+    "group": "scheduling.k8s.io",
+    "groupPriorityMinimum": 16600,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1.storage.k8s.io",
+    "resourceVersion": "36",
+    "uid": "4e9e200c-fc60-4706-b830-283d47349bc8"
+   },
+   "spec": {
+    "group": "storage.k8s.io",
+    "groupPriorityMinimum": 16800,
+    "version": "v1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.batch",
+    "resourceVersion": "18",
+    "uid": "d49df17e-523f-4ab2-a7ae-d0e64c068ab4"
+   },
+   "spec": {
+    "group": "batch",
+    "groupPriorityMinimum": 17400,
+    "version": "v1beta1",
+    "versionPriority": 9
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "<dropped>"
+    },
+    "creationTimestamp": "2026-10-08T15:56:29Z",
+    "name": "v1beta1.broken.kg.example.com",
+    "resourceVersion": "2526",
+    "uid": "cc35dc69-ad29-4d6e-941e-959a8d6dc345"
+   },
+   "spec": {
+    "group": "broken.kg.example.com",
+    "groupPriorityMinimum": 1000,
+    "insecureSkipTLSVerify": true,
+    "service": {
+     "name": "metrics-adapter",
+     "namespace": "kg-faults",
+     "port": 443
+    },
+    "version": "v1beta1",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T15:56:29Z",
+      "message": "service/metrics-adapter in \"kg-faults\" is not present",
+      "reason": "ServiceNotFound",
+      "status": "False",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.discovery.k8s.io",
+    "resourceVersion": "22",
+    "uid": "90e6a639-2014-4c59-bbc1-22c51704981a"
+   },
+   "spec": {
+    "group": "discovery.k8s.io",
+    "groupPriorityMinimum": 16200,
+    "version": "v1beta1",
+    "versionPriority": 12
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.events.k8s.io",
+    "resourceVersion": "24",
+    "uid": "b6c01399-23c5-4b33-abe1-79c86ac40834"
+   },
+   "spec": {
+    "group": "events.k8s.io",
+    "groupPriorityMinimum": 17750,
+    "version": "v1beta1",
+    "versionPriority": 5
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.flowcontrol.apiserver.k8s.io",
+    "resourceVersion": "25",
+    "uid": "d5482867-455d-4688-a558-db29dc023b98"
+   },
+   "spec": {
+    "group": "flowcontrol.apiserver.k8s.io",
+    "groupPriorityMinimum": 16100,
+    "version": "v1beta1",
+    "versionPriority": 12
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "<dropped>"
+    },
+    "creationTimestamp": "2026-09-07T23:13:01Z",
+    "labels": {
+     "addonmanager.kubernetes.io/mode": "Reconcile",
+     "k8s-app": "metrics-server",
+     "kubernetes.io/minikube-addons": "metrics-server"
+    },
+    "name": "v1beta1.metrics.k8s.io",
+    "resourceVersion": "2057",
+    "uid": "d274c9ab-e88c-45d7-a36e-3d0005d52abd"
+   },
+   "spec": {
+    "group": "metrics.k8s.io",
+    "groupPriorityMinimum": 100,
+    "insecureSkipTLSVerify": true,
+    "service": {
+     "name": "metrics-server",
+     "namespace": "kube-system",
+     "port": 443
+    },
+    "version": "v1beta1",
+    "versionPriority": 100
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T15:48:05Z",
+      "message": "all checks passed",
+      "reason": "Passed",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.node.k8s.io",
+    "resourceVersion": "31",
+    "uid": "28d7accc-3b16-4d9d-94a0-f285bc9ba515"
+   },
+   "spec": {
+    "group": "node.k8s.io",
+    "groupPriorityMinimum": 16300,
+    "version": "v1beta1",
+    "versionPriority": 9
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.policy",
+    "resourceVersion": "33",
+    "uid": "73bcd35c-34f5-4053-84bd-be7f4b05bad2"
+   },
+   "spec": {
+    "group": "policy",
+    "groupPriorityMinimum": 17100,
+    "version": "v1beta1",
+    "versionPriority": 9
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta1.storage.k8s.io",
+    "resourceVersion": "38",
+    "uid": "54cb7739-74ae-48ee-80e9-4f653f5dc20b"
+   },
+   "spec": {
+    "group": "storage.k8s.io",
+    "groupPriorityMinimum": 16800,
+    "version": "v1beta1",
+    "versionPriority": 9
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v1beta2.flowcontrol.apiserver.k8s.io",
+    "resourceVersion": "26",
+    "uid": "949cfa76-722a-4588-a00b-3ddd3376e2ef"
+   },
+   "spec": {
+    "group": "flowcontrol.apiserver.k8s.io",
+    "groupPriorityMinimum": 16100,
+    "version": "v1beta2",
+    "versionPriority": 15
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v2.autoscaling",
+    "resourceVersion": "15",
+    "uid": "6a982745-088f-4193-82d7-09cbecc62d13"
+   },
+   "spec": {
+    "group": "autoscaling",
+    "groupPriorityMinimum": 17500,
+    "version": "v2",
+    "versionPriority": 30
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v2beta1.autoscaling",
+    "resourceVersion": "14",
+    "uid": "7dc03056-9792-4ca1-ba95-e845dba02894"
+   },
+   "spec": {
+    "group": "autoscaling",
+    "groupPriorityMinimum": 17500,
+    "version": "v2beta1",
+    "versionPriority": 9
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "apiregistration.k8s.io/v1",
+   "kind": "APIService",
+   "metadata": {
+    "creationTimestamp": "2026-09-07T23:12:45Z",
+    "labels": {
+     "kube-aggregator.kubernetes.io/automanaged": "onstart"
+    },
+    "name": "v2beta2.autoscaling",
+    "resourceVersion": "16",
+    "uid": "6d238f87-51c6-4e71-a4f0-f99777fefe4c"
+   },
+   "spec": {
+    "group": "autoscaling",
+    "groupPriorityMinimum": 17500,
+    "version": "v2beta2",
+    "versionPriority": 1
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-07T23:12:45Z",
+      "message": "Local APIServices are always available",
+      "reason": "Local",
+      "status": "True",
+      "type": "Available"
+     }
+    ]
+   }
+  }
+ ],
+ "kind": "List"
+}
