@@ -56,9 +56,11 @@ The linker is receiver-aware and import-aware:
 - Java unqualified calls that no enclosing class defines resolve through static imports: `import static
   a.b.C.m;` before `import static a.b.C.*;`, to C's method of that name, overload chosen by the arguments
   (`import` confidence). The resolved return type then types the rest of a chain (`helper().build()`).
-- Kotlin/Java overrides need the same parameter types (an overload of the same name is not an override),
-  and `super.f(x)` inside `override fun f(...)` whose repo candidate has other parameter types is left to
-  the external base class it really calls.
+- Kotlin/Java overrides need the same parameter types (an overload of the same name is not an override;
+  a parameter list wrapped over several lines is read whole), and `super.f(x)` inside `override fun f(...)`
+  whose repo candidate has other parameter types and cannot take the call's argument count is left to the
+  external base class it really calls; a candidate that can take them is linked (`isEqualTo(Double)` calling
+  `super.isEqualTo(expected)` reaches `isEqualTo(Object)`).
   Loop and comprehension variables are typed from the iterable (`for it in self.items` with
   `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
   (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields

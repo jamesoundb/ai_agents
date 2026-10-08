@@ -571,6 +571,48 @@ def test_java_static_imports(root, G):
           f"java: callers of the 2-arg overload = the single-member import's caller only: {out.strip().splitlines()}")
 
 
+def test_overload_queries(root):
+    """A name that only overloads share is answered for every overload (no ambiguity round trip), Python
+    `@overload` stubs give way to the implementation, and a flag of another query subcommand is ignored."""
+    print("# overloads and shared flags in queries")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
+
+    def q(*args):
+        return subprocess.run([sys.executable, "-B", ENGINE, "query", "--graph", gp, *args], capture_output=True, text=True)
+
+    src = q("source", "Messages.shouldContain")
+    check(src.returncode == 0 and "2 overloads" in src.stdout and "shouldContain(String actual)" in src.stdout
+          and "shouldContain(String actual, int count)" in src.stdout and "is ambiguous" not in src.stdout,
+          f"java: source of an overloaded name prints every overload: {src.stdout.strip().splitlines()[:2]}")
+    py = q("source", "read")
+    check(py.returncode == 0 and py.stdout.splitlines()[0].endswith("python/app/overloads.py:8-10 (3 lines)"),
+          f"python: `@overload` stubs give way to the implementation: {py.stdout.strip().splitlines()[:1]}")
+    path = q("path", "Checks.check", "Messages.shouldContain")
+    check(path.returncode == 0 and "--calls" in path.stdout and "Messages.shouldContain" in path.stdout,
+          f"path accepts an overloaded endpoint: {path.stdout.strip().splitlines()[:2]}")
+    for base, impl in (("Bootstrap.open", "LineBootstrap.open"), ("Source.read", "FileSource.read")):
+        card = q("symbol", base).stdout
+        check(f"Overridden by (1): {impl}" in card,
+              f"an override is found when the base signature wraps its parameter list ({base}): "
+              f"{[l for l in card.splitlines() if 'Overrid' in l]}")
+    sup = q("callees", "LineBootstrap.open").stdout
+    check("Bootstrap.open  L5 -> java/src/main/java/com/acme/Bootstrap.java:8" in sup,
+          f"java: `super.open(cfg, main)` inside open(cfg, main, version) links to the 2-arg overload: {sup.strip().splitlines()[1:]}")
+    wrapped = q("path", "Bootstrap.start", "LineBootstrap.open")
+    check("Bootstrap.open --dispatch (override)--> LineBootstrap.open" in wrapped.stdout,
+          f"path dispatches through a wrapped abstract signature: {wrapped.stdout.strip().splitlines()}")
+    disp = q("path", "Areas.total", "Square.area")
+    check(disp.returncode == 0 and "Shape.area --dispatch (override)--> Square.area" in disp.stdout,
+          f"path follows a call through an interface to the overriding method: {disp.stdout.strip().splitlines()}")
+    for args, want in ((("callers", "Messages.shouldContain@11", "--all"), "Checks.check"),
+                       (("symbol", "Messages", "--no-tests"), "Messages")):
+        r = q(*args)
+        check(r.returncode == 0 and want in r.stdout and f"{args[-1]} ignored" in r.stderr,
+              f"`{' '.join(args)}`: another subcommand's flag is ignored with a note: rc={r.returncode} {r.stderr.strip()[:90]}")
+    bad = q("symbol", "Messages", "--depth", "2")
+    check(bad.returncode == 2, f"a value flag the subcommand lacks is still an error (rc={bad.returncode})")
+
+
 def test_build_lock(root):
     """A query waits for a build another process is running (the session-start hook's), ignores a lock
     whose process is gone, and the default graph directory ignores itself."""
@@ -1210,6 +1252,7 @@ def main():
         test_kotlin_rules(root, G)
         test_java_constructors(root, G)
         test_java_static_imports(root, G)
+        test_overload_queries(root)
         test_build_lock(root)
         test_autobuild_hook()
         test_tests_detection(root, G)

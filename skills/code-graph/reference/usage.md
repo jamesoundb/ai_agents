@@ -138,12 +138,19 @@ an external library, a builtin, or generated/unindexed code.
 - `query file PATH --no-calls --used-by --within DIR` counts only users under DIR (or a glob).
 - `find` lists exact-name matches first and caps substring hits at 15 when exact matches exist
   (`--kind` drops path-only hits; `--no-tests` hides test-file symbols).
-- `path` ignores `ambiguous` edges unless `--include-ambiguous`.
+- `path` ignores `ambiguous` edges unless `--include-ambiguous`. A call to an interface or base method
+  continues into its overrides (`--dispatch (override)-->` hops), except from a class with more than 50
+  direct subtypes.
 - `source X --max-lines N` (default 60; 0 = all): a longer function is cut with the remaining range
   named, a longer class prints its member outline with ranges instead. All names in one call share a
   150-line budget; a name past it gets its header and range only. `--refs N` names more callers.
 - `Name@line` picks one overload: the definition starting on that line, else the one whose body contains
-  it (`ObjectMapper.readValue@3860`); `file:Name@line` works too.
+  it (`ObjectMapper.readValue@3860`); `file:Name@line` works too. A name that only overloads share
+  (`Messages.shouldContain`, up to 12 of them) is answered for every overload by `source`, `symbol`,
+  `callers`, `callees` and `tests-for`, and `path` searches from/to all of them; Python `@overload` stubs
+  give way to the implementation. Names matching unrelated symbols still list the ids to choose from.
+- An on/off flag of another query subcommand (`callers X --all`, `symbol X --no-tests`) is ignored with a
+  `note:` on stderr instead of a usage error; flags taking a value are still checked.
 - `tests-for X` lists the test functions that reach X through up to `--depth 3` caller hops, grouped by
   test file, firm paths first; `?` marks a test reached only through an ambiguous edge (tests often call
   through untyped locals). `--no-ambiguous` keeps firm paths only, `--top N` lists more files.

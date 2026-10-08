@@ -76,6 +76,8 @@ CAP_SUMMARY_TOP = 15           # rows per section in --summary          -> --top
 CAP_PER_FILE = 6               # trace-deps rows per file               -> --per-file
 CAP_OVERRIDES = 8              # `Overrides:` entries on a method card
 CAP_OVERRIDDEN_BY = 12         # `Overridden by:` entries on a method card -> symbol --all
+CAP_OVERLOADS = 12             # overloads of one name answered by one query (more: the id list)
+CAP_DISPATCH_FANOUT = 50       # `path` follows overrides of a method whose class has at most this many direct subtypes
 CAP_UNRESOLVED = 12            # `Unresolved (external or not indexed)` entries
 CAP_IMPORTED_BY = 20           # `imported by:` files on a file card
 CAP_SOURCE_LINES = 60          # `source` body lines (a longer class: member outline) -> --max-lines (0 = all)
@@ -5899,9 +5901,13 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     and enc is not None and enc["name"] == name:
                 # `super.visitFile(file)` inside `override fun visitFile(file: PsiFile)` calls what that
                 # override overrides: a repo method with other parameter types is not it (the real one is
-                # an external base class's)
+                # an external base class's). With a known argument count the evidence is the arity: a repo
+                # method that can take the call's arguments is a real target, even when its parameter types
+                # differ from the override's (`getSchema(p, t, opt)` calling `super.getSchema(p, t)`,
+                # AssertJ's `extracting(String, InstanceOfAssertFactory)` calling the `AssertFactory` overload).
                 mine, theirs = param_type_names(enc), param_type_names(targets[0])
-                if mine is not None and theirs is not None and mine != theirs:
+                if mine is not None and theirs is not None and mine != theirs \
+                        and (not admits_argc(targets[0]) if _cur.get("argc") is not None else True):
                     return [], None, "external"
             if not targets and lang == "kotlin" and (name in KOTLIN_SYNTHETIC_MEMBERS or re.match(r"^component\d+$", name)):
                 return [], None, "builtin"   # data-class copy/componentN, enum valueOf/values/entries, Any members
@@ -6649,31 +6655,55 @@ def fmt_node(n, with_file=True):
     return f"{kind_label(n)}{sig}{ann}" + (f"  ({loc})" if with_file and loc else "")
 
 
+def narrow_matches(query, matches):
+    """The matches a reader most likely means by `query`: the exact name, case-exact, production code,
+    bodies over prototypes, top level over nested. Several can remain (overloads, same-named members)."""
+    qn = query.split(":", 1)[1] if ":" in query and "::" not in query else query
+    qn = qn.replace("::", ".")      # C++ callers write `Class::member`; qnames are dotted
+    exact = [m for m in matches
+             if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower()
+             or m["qname"].lower().endswith("." + qn.lower())   # `MatMulOp.Compute` in a namespace
+             or m["file"] == query]
+    # Lookup is case-insensitive, but in Go, Java, C++ ... case is part of the name: `Context.Plan`
+    # (exported) and `Context.plan` are different methods. A case-exact match wins.
+    same_case = [m for m in exact if m["name"] == qn or m["qname"] == qn or m["qname"].endswith("." + qn)]
+    if same_case and len(same_case) < len(exact):
+        exact = same_case
+    for narrow in (lambda m: not is_test_file(m["file"]),
+                   # A C++ member matches twice: the header declaration and the .cc definition.
+                   # The body is what a reader wants, so prefer it over the prototype.
+                   lambda m: not m.get("extra", {}).get("is_declaration"),
+                   # Python `@overload` stubs are typing declarations of the one implementation below them.
+                   lambda m: not any(a.rsplit(".", 1)[-1] == "overload" for a in m.get("annotations") or []),
+                   lambda m: m.get("parent") == m.get("file")):
+        sub = [m for m in exact if narrow(m)]   # production code before tests, top-level before nested
+        if sub and len(sub) < len(exact):
+            exact = sub
+    return exact
+
+
+def overload_set(g, query, kinds=None):
+    """The overloads `query` names when it names nothing else (`Messages.shouldContain`: one qname, several
+    signatures), sorted by location; None when it resolves to one node or to unrelated symbols. Queries
+    answer for each overload instead of failing on the ambiguity: the reader usually does not know the
+    signature yet, and a failed call costs a round trip that re-sends the whole conversation."""
+    matches = g.resolve(query, kinds)
+    if len({m["id"] for m in matches}) < 2:
+        return None
+    exact = narrow_matches(query, matches)
+    if (1 < len(exact) <= CAP_OVERLOADS and len({m["qname"] for m in exact}) == 1
+            and all(m["kind"] in ("method", "function", "constructor") for m in exact)):
+        return sorted({m["id"]: m for m in exact}.values(), key=lambda m: (m["file"], m["line"]))
+    return None
+
+
 def ensure_one(g, query, kinds=None):
     matches = g.resolve(query, kinds)
     if not matches:
         bare = re.split(r"[.:/]", query.strip())[-1] or query
         raise QueryError(f"no symbol or file matches '{query}'. Try: query find {bare}" + (" (then `symbol <id>`; the member may live on another class)" if bare != query else ""))
     if len(matches) > 1 and not all(m["id"] == matches[0]["id"] for m in matches):
-        qn = query.split(":", 1)[1] if ":" in query and "::" not in query else query
-        qn = qn.replace("::", ".")      # C++ callers write `Class::member`; qnames are dotted
-        exact = [m for m in matches
-                 if m["name"].lower() == qn.lower() or m["qname"].lower() == qn.lower()
-                 or m["qname"].lower().endswith("." + qn.lower())   # `MatMulOp.Compute` in a namespace
-                 or m["file"] == query]
-        # Lookup is case-insensitive, but in Go, Java, C++ ... case is part of the name: `Context.Plan`
-        # (exported) and `Context.plan` are different methods. A case-exact match wins.
-        same_case = [m for m in exact if m["name"] == qn or m["qname"] == qn or m["qname"].endswith("." + qn)]
-        if same_case and len(same_case) < len(exact):
-            exact = same_case
-        for narrow in (lambda m: not is_test_file(m["file"]),
-                       # A C++ member matches twice: the header declaration and the .cc definition.
-                       # The body is what a reader wants, so prefer it over the prototype.
-                       lambda m: not m.get("extra", {}).get("is_declaration"),
-                       lambda m: m.get("parent") == m.get("file")):
-            sub = [m for m in exact if narrow(m)]   # production code before tests, top-level before nested
-            if sub and len(sub) < len(exact):
-                exact = sub
+        exact = narrow_matches(query, matches)
         if len(exact) == 1:
             return exact[0]
         preferred = [m for m in exact if m["kind"] in TYPE_LIKE_KINDS | {"k8s_object", "resource", "module_call", "file", "terraform_module", "package"}]
@@ -6745,7 +6775,9 @@ def param_type_names(n):
     """Parameter type names of a Kotlin/Java callable from its signature text (`fun f(a: A, b: B<C> = x)`,
     `void f(final A a, B... b)`), generics and nullability dropped; None when the text cannot be parsed.
     An override has the same list as the method it overrides; an overload of the same name does not."""
-    sig = (n.get("signature") or "").split("\n")[0]
+    # The whole signature, whitespace collapsed: a Java parameter list may wrap (`open(String cfg, boolean main,`
+    # / `int version)`), and its first line alone loses the parameters after the break.
+    sig = " ".join((n.get("signature") or "").split())
     i = sig.find(n.get("name", "") + "(")
     i = sig.find("(", i if i >= 0 else 0)
     if i < 0:
@@ -7281,6 +7313,13 @@ def for_each_name(fn):
     still run; the exit code is non-zero only when every name failed."""
     def run(g, args):
         names = args.name if isinstance(args.name, list) else [args.name]
+        expanded = []
+        for name in names:
+            ov = overload_set(g, name)
+            if ov and not getattr(args, "json", False):
+                print(f"{name}: {len(ov)} overloads, each answered below (one of them: `{ov[0]['qname']}@<line>`)")
+            expanded.extend(n["id"] for n in ov) if ov else expanded.append(name)
+        names = expanded
         if len(names) == 1:
             return fn(g, argparse.Namespace(**{**vars(args), "name": names[0]}))
         failed = 0
@@ -7566,17 +7605,27 @@ def print_used_by(g, path, nodes, top, no_tests, within=None):
 
 
 def q_path(g, args):
-    a, b = ensure_one(g, args.src), ensure_one(g, args.dst)
-    a_ids = [a["id"]] + [k["id"] for k in g.children(a["id"])]
-    b_ids = {b["id"]} | {k["id"] for k in g.children(b["id"])}
+    # An overloaded endpoint means any of its overloads: the reader asks how A reaches B, not which signature.
+    srcs, dsts = (overload_set(g, q) or [ensure_one(g, q)] for q in (args.src, args.dst))
+    a, b = srcs[0], dsts[0]
+    a_ids = [x for n in srcs for x in [n["id"]] + [k["id"] for k in g.children(n["id"])]]
+    b_ids = {x for n in dsts for x in [n["id"]] + [k["id"] for k in g.children(n["id"])]}
     prev = {x: None for x in a_ids}
     dq = deque(a_ids)
     found = None
+    dispatch = {"type": "dispatch", "confidence": "override"}
     while dq and found is None:
         x = dq.popleft()
-        for e in g.out.get(x, []):
-            if e["type"] == "contains" or (e["confidence"] == "ambiguous" and not getattr(args, "include_ambiguous", False)):
-                continue
+        hops = [e for e in g.out.get(x, [])
+                if e["type"] != "contains" and (e["confidence"] != "ambiguous" or getattr(args, "include_ambiguous", False))]
+        # A call to an interface or base method runs an override at runtime (`InputBootstrapper.bootstrapInput`
+        # -> `ReaderBootstrapper.bootstrapInput`): continue into the overriding methods. Skipped for a hub base
+        # class, whose descendant walk is unbounded (see overrides_of).
+        xn = g.nodes.get(x) or {}
+        par = g.nodes.get(xn.get("parent"))
+        if xn.get("kind") == "method" and par and len(g.in_edges(par["id"], {"extends", "implements"})) <= CAP_DISPATCH_FANOUT:
+            hops += [dict(dispatch, dst=k["id"]) for k in overrides_of(g, xn)[1]]
+        for e in hops:
             y = e["dst"]
             if y not in prev:
                 prev[y] = (x, e)
@@ -7772,8 +7821,28 @@ def main(argv=None):
             sys.exit(0)
     q.set_defaults(fn=run_query)
 
-    args = ap.parse_args(argv)
+    args = ap.parse_args(drop_foreign_flags(qs, sys.argv[1:] if argv is None else list(argv)))
     args.fn(args)
+
+
+def drop_foreign_flags(qs, argv):
+    """Remove on/off flags that belong to another query subcommand (`callers X --all`, `symbol X --no-tests`):
+    agents carry flags from one query to the next, and a usage error costs a whole round trip. The flag is
+    named on stderr; flags taking a value and unknown flags still fail as usage errors."""
+    if "query" not in argv:
+        return argv
+    i = argv.index("query")
+    cmd = next((a for a in argv[i + 1:] if a in qs.choices), None)
+    if cmd is None:
+        return argv
+    switches = lambda p: {s for act in p._actions if act.nargs == 0 for s in act.option_strings}   # noqa: E731
+    own = switches(qs.choices[cmd])
+    foreign = set().union(*(switches(p) for p in qs.choices.values())) - own
+    start = argv.index(cmd, i + 1) + 1
+    drop = [a for a in argv[start:] if a in foreign]
+    for a in drop:
+        print(f"note: {a} ignored (not a `{cmd}` option)", file=sys.stderr)
+    return argv[:start] + [a for a in argv[start:] if a not in foreign]
 
 
 if __name__ == "__main__":
