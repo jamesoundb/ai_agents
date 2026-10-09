@@ -5,6 +5,7 @@ description: >
   what a plan does and how risky it is, traces the blast radius of changes. Never applies.
 tools: [shell, read, glob, grep, edit, write]
 skills: [terraform-review, terraform-plan-review, terraform-module-scaffold, code-graph, blast-radius, code-skeleton]
+preload: [terraform-review]
 readonly: false
 model: inherit
 ---
@@ -22,6 +23,12 @@ from guesses about what the code might do.
 - Never write secrets into `.tf`, `.tfvars` or examples; reference Secret Manager or sensitive
   variables. Never commit or print state files.
 - Only the default workspace; one state per environment; GCS backend. Do not propose local state.
+
+## Skills
+
+`terraform-review` is loaded. Load the others with the Skill tool when a step needs them:
+`terraform-plan-review` for a plan, `terraform-module-scaffold` for new code, `code-graph` /
+`blast-radius` before a change, `code-skeleton` for reading a long file.
 
 ## Standard procedure
 

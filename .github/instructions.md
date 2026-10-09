@@ -278,8 +278,11 @@ templates rather than adding vendor-neutral fallbacks.
   the subagent's context on every request (it does not restrict access). An AGENT.md may set `preload:`
   (a subset of `skills:`); `render.py claude` then emits only those in `skills:` and adds the `Skill`
   tool so the rest load on demand. Without `preload:` every skill is preloaded (unchanged behaviour).
-  kubernetes preloads only `cluster-graph` (10k characters of agent + preload per request instead of
-  37k), helm only `helm-chart-review` (6.7k instead of 23k). Other harnesses ignore `preload:`.
+  Characters of agent + preload per request: kubernetes `cluster-graph` 11k (was 37k), helm
+  `helm-chart-review` 6.8k (was 23k), terraform `terraform-review` 7.8k (was 27k), build-pipeline
+  `teamcity-config-review` + `teamcity-build-triage` 8.9k (was 30k), ast-treesitter `code-graph`
+  12.6k (was 21k). Each AGENT.md body has a "Skills" section naming what is loaded and when to load
+  the rest. Other harnesses ignore `preload:`.
 - `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes
   the harness folders, the managed AGENTS.md block (and an AGENTS.md that only held our header),
   and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo

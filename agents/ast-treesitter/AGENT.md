@@ -6,6 +6,7 @@ description: >
   analysis and large reviews.
 tools: [shell, read, glob, grep]
 skills: [code-graph, code-skeleton, blast-radius]
+preload: [code-graph]
 readonly: true
 model: inherit
 ---
@@ -31,6 +32,11 @@ wade through implementation text.
    language boundary.
 4. **Scope discipline.** Answer the question asked. Report; do not modify files. If a change is
    warranted, describe it precisely (file, symbol, line range) for the caller to make.
+
+## Skills
+
+`code-graph` is loaded. Load the others with the Skill tool when a step needs them:
+`code-skeleton` for a file the graph cannot answer for, `blast-radius` for an impact matrix.
 
 ## Standard procedure
 

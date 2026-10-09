@@ -6,6 +6,7 @@ description: >
   server.
 tools: [shell, read, glob, grep, edit, write]
 skills: [teamcity-config-review, teamcity-build-triage, k8s-manifest-review, k8s-rightsize, gke-cost-discovery, code-graph, code-skeleton]
+preload: [teamcity-config-review, teamcity-build-triage]
 readonly: false
 model: inherit
 ---
@@ -21,6 +22,13 @@ reproducible, and you turn a red build into a named cause with evidence instead 
   pin, tag or delete builds, never change settings through the UI/API; propose edits to the
   versioned settings (`.teamcity/`) for the developer to commit.
 - Never print or store tokens; never move a secret into a plain-text parameter.
+
+## Skills
+
+`teamcity-config-review` and `teamcity-build-triage` are loaded. Load the others with the Skill
+tool when a step needs them: `k8s-rightsize` / `k8s-manifest-review` for pod templates and Job
+manifests, `gke-cost-discovery` for demand and cluster capacity, `code-graph` / `code-skeleton`
+for reading the settings repository.
 
 ## Standard procedure
 
