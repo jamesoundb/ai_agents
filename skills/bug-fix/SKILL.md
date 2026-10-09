@@ -27,7 +27,12 @@ never touched. This procedure prevents both.
 3. **One failing test per checklist item**, in the existing test file for that code, built from the
    report's own example and asserting its exact expected values (not just "does not raise"). Use
    data that separates the variants (several parents, rows that must be excluded, values at the
-   boundary). Run them: every bug item must fail for the reason the report describes; an item that
+   boundary). When the report states an item in words that allow several forms ("comparing a
+   column with another", "a subclass", "an empty value"), test the form closest to what the code
+   already treats as normal -- the one a wrong fix would mistake for normal: an equality where the
+   code joins on equal keys, a subclass where it checks the base type, a value equal to the
+   default -- or test each form. A test that passes however the fix classifies the item proves
+   nothing. Run them: every bug item must fail for the reason the report describes; an item that
    already passes is a guard for a "must keep working" constraint.
 4. **One hypothesis that explains every failing item.** If it explains only some, keep
    investigating before you edit. Look for the same defect at its sibling sites -- other branches of
