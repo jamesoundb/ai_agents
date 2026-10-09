@@ -6,4 +6,4 @@ set -euo pipefail
 REPO="${EVAL_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cp -r "$REPO/skills/cluster-graph/tests/fixture" cluster-snapshot
 "$(dirname "${BASH_SOURCE[0]}")/prepare.sh"
-echo "scaffold: cluster snapshot copied ($(ls cluster-snapshot | wc -l) files)"
+echo "scaffold: cluster snapshot copied ($(find cluster-snapshot -mindepth 1 -maxdepth 1 | wc -l) files)"
