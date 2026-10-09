@@ -1,0 +1,5 @@
+apiVersion: v2
+name: kg-shop
+description: test chart for cluster-graph (Helm release health); installed by tests/plant.sh
+version: 0.1.0
+appVersion: "1.0"

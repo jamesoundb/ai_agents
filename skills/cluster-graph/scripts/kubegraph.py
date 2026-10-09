@@ -97,11 +97,23 @@ ADVICE = {
     "FailedGetResourceMetric": "the HPA has no metric: target pods lack resource requests or "
                                "metrics-server is down",
     "NodeNotReady": "the kubelet stopped reporting: node down, network, or kubelet failure",
+    "NodeLost": "the pod's node stopped reporting: after the eviction timeout (5 min by default) its pods are replaced "
+                "elsewhere, unless a nodeSelector/affinity, a local volume or a missing toleration ties them to that node",
     "WebhookUnavailable": "an admission webhook has no backend: with failurePolicy Fail it blocks "
                           "creating or updating matched objects",
     "ServiceNotFound": "the aggregated API's backend Service is gone: its API group is unavailable",
     "FailedDiscoveryCheck": "the aggregated API's backend does not answer: check its pods",
     "QuotaExhausted": "the namespace ResourceQuota is used up: new pods are rejected",
+    "UpgradeFailed": "the upgrade's objects did not become ready in time (or a hook failed): the failing objects "
+                     "deployed by the release are why. Fix the chart/values and upgrade again through GitOps, or have "
+                     "an operator roll back to the last good revision",
+    "InstallFailed": "the install's objects did not become ready (or a hook failed): fix them; the release must be "
+                     "uninstalled or upgraded by an operator before a clean retry",
+    "PendingOperation": "a helm operation was interrupted (CI job killed, client timeout) and left its lock: an operator "
+                        "rolls back to the last good revision (`helm rollback NAME REV`) before any new upgrade can run; "
+                        "then find out why the interrupted one hung",
+    "DeployedButFailing": "helm reports the release deployed (it did not wait for readiness), but objects it deployed "
+                          "fail: the release is only as healthy as the objects listed below",
     "RolloutStuck": "the new revision's pods fail while the old revision keeps serving: fix the change that "
                     "went into the new pod template (image, config, probes), or roll the manifest back",
 }
@@ -573,9 +585,33 @@ def generic_health(o):
     return "-", "", ""
 
 
+def release_health(o, now):
+    """A Helm release from its storage objects' labels: the latest revision's status decides."""
+    revs = o.get("revisions") or []
+    if not revs:
+        return "-", "", ""
+    v, status, modified = revs[-1]
+    ok = [r[0] for r in revs if r[1] in ("deployed", "superseded")]
+    last_ok = max((r[0] for r in revs if r[1] == "deployed"), default=None) or (max(ok) if ok else None)
+    age = now - (modified or now)
+    prev = f"; last good revision {last_ok}" if last_ok and last_ok != v else ("; nothing was ever deployed" if not last_ok else "")
+    if status == "deployed":
+        return "ok", "deployed", f"revision {v} deployed {ago(age)} ago"
+    if status == "failed":
+        return "fail", "UpgradeFailed" if v > 1 else "InstallFailed", f"revision {v} failed {ago(age)} ago{prev}"
+    if status.startswith("pending-"):
+        if age > 300:   # helm's default --timeout is 5m: past it, the client that held the lock is gone
+            return "fail", "PendingOperation", (f"revision {v} {status} for {ago(age)}: helm refuses every new operation "
+                                                f"('another operation is in progress') until it is resolved{prev}")
+        return "warn", status, f"revision {v} {status} for {ago(age)}"
+    return "warn", status or "unknown", f"revision {v} {status}{prev}"
+
+
 def own_health(kind, o, now):
     if kind == "Pod":
         return pod_health(o, now)
+    if kind == "Release" and o.get("apiVersion") == "helm.sh/v3":
+        return release_health(o, now)
     if kind in ("Deployment", "ReplicaSet", "StatefulSet", "ReplicationController"):
         h = replicas_health(kind, o)
         if kind == "ReplicaSet" and (o.get("spec") or {}).get("replicas", 1) == 0:
@@ -706,8 +742,85 @@ class Builder:
             self.health[dst] = ("fail", "missing", f"referenced by {src} but not found")
         self.edge(src, dst, etype, detail)
 
+    def add_helm_releases(self):
+        """Helm 3 keeps one storage object per release revision (Secret type helm.sh/release.v1, or a ConfigMap)
+        labelled owner=helm, name, status, version. The labels are enough; the payload is never read."""
+        revs = {}
+        for i, (kind, _g, ns, _n) in list(self.meta.items()):
+            o = self.objs.get(i)
+            if kind not in ("Secret", "ConfigMap") or not o:
+                continue
+            md = o.get("metadata") or {}
+            lb = md.get("labels") or {}
+            if (lb.get("owner") or lb.get("OWNER") or "").lower() != "helm" or not (lb.get("name") or lb.get("NAME")):
+                continue
+            name = lb.get("name") or lb.get("NAME")
+            ver = str(lb.get("version") or lb.get("VERSION") or "0")
+            modified = lb.get("modifiedAt")
+            when = float(modified) if modified and modified.isdigit() else ts(md.get("creationTimestamp"))
+            revs.setdefault((ns, name), []).append((int(ver) if ver.isdigit() else 0,
+                                                    (lb.get("status") or lb.get("STATUS") or "").lower(), when, md.get("creationTimestamp")))
+        if revs:
+            self.kind_groups.setdefault("Release", set()).add("helm.sh")
+        for (ns, name), rows in revs.items():
+            rows.sort()
+            i = self.oid("Release", "helm.sh", ns, name)
+            self.objs[i] = {"apiVersion": "helm.sh/v3", "kind": "Release",
+                            "metadata": {"name": name, "namespace": ns, "creationTimestamp": rows[0][3]},
+                            "revisions": [[v, st, w] for v, st, w, _c in rows]}
+            self.meta[i] = ["Release", "helm.sh", ns, name]
+
+    def link_delivery(self):
+        """What delivered each object: the Helm release (annotations), the Argo CD Application (status.resources),
+        the Flux HelmRelease (its Helm release) and Flux Kustomization (status.inventory)."""
+        for i in list(self.objs):
+            kind, group, ns, name = self.meta[i]
+            o = self.objs[i]
+            ann = (o.get("metadata") or {}).get("annotations") or {}
+            rel = ann.get("meta.helm.sh/release-name")
+            if rel and kind != "Release" and not (o.get("metadata") or {}).get("ownerReferences"):
+                r = self.oid("Release", "helm.sh", ann.get("meta.helm.sh/release-namespace") or ns, rel)
+                if r in self.objs:
+                    self.edge(r, i, "deploys")
+            st, spec = o.get("status") or {}, o.get("spec") or {}
+            if kind == "Application" and group == "argoproj.io":
+                dest_ns = (spec.get("destination") or {}).get("namespace") or ""
+                for res in st.get("resources") or []:
+                    rns = res.get("namespace") if res.get("namespace") is not None else dest_ns
+                    rhealth = (res.get("health") or {}).get("status")
+                    self.need(i, res.get("kind"), rns or "", res.get("name"), "manages",
+                              f"argo health {rhealth or '-'}, sync {res.get('status', '-')}", optional=rhealth != "Missing")
+            elif kind == "HelmRelease" and group == "helm.toolkit.fluxcd.io":
+                rname = spec.get("releaseName") or (f"{spec['targetNamespace']}-{name}" if spec.get("targetNamespace") else name)
+                r = self.oid("Release", "helm.sh", spec.get("storageNamespace") or spec.get("targetNamespace") or ns, rname)
+                if r in self.objs:
+                    self.edge(i, r, "manages", "helm release")
+            elif kind == "Kustomization" and group == "kustomize.toolkit.fluxcd.io":
+                for e in ((st.get("inventory") or {}).get("entries")) or []:
+                    parts = (e.get("id") or "").split("_")
+                    if len(parts) == 4:
+                        self.need(i, parts[3], parts[0], parts[1], "manages", "inventory", optional=True)
+
+    def release_rollup(self):
+        """A release helm calls deployed is only as healthy as what it deployed; a pending release whose
+        manager (Flux) already reports Helm's lock is the lock, whatever its age."""
+        for s_, d, t, _ in list(self.edges):
+            if t == "manages" and self.meta.get(d, [""])[0] == "Release" and self.health.get(d, ("-", ""))[1].startswith("pending-"):
+                msgs = " ".join(str(c.get("message", "")) for c in ((self.objs.get(s_) or {}).get("status") or {}).get("conditions") or [])
+                if "another operation" in msgs:
+                    self.health[d] = ("fail", "PendingOperation", self.health[d][2] + f"; {s_} reports Helm's lock: "
+                                      "helm refuses every new operation until it is resolved")
+        for i, (kind, *_r) in self.meta.items():
+            if kind != "Release" or self.health.get(i, ("-",))[0] != "ok":
+                continue
+            bad = [d for s_, d, t, _ in self.edges if s_ == i and t == "deploys" and self.health.get(d, ("-",))[0] == "fail"]
+            if bad:
+                self.health[i] = ("warn", "DeployedButFailing",
+                                  f"{self.health[i][2]}, but {len(bad)} of its objects fail: {', '.join(sorted(bad)[:3])}")
+
     def link(self):
         now = self.now
+        self.add_helm_releases()
         for i, o in self.objs.items():
             self.health[i] = own_health(self.meta[i][0], o, now)
         # usage onto pods and nodes
@@ -773,16 +886,19 @@ class Builder:
                         self.edge(i, p, "selects")
             elif kind == "StatefulSet" and spec.get("serviceName"):
                 self.need(i, "Service", ns, spec["serviceName"], "uses", "serviceName", optional=True)
-            elif kind not in BUILTIN_KINDS:
+            elif kind not in BUILTIN_KINDS and kind != "Release":
                 self.link_generic(i, ns, spec)
         for i in list(self.objs):
             kind, _g, ns, _n = self.meta[i]
             if kind in ("ValidatingWebhookConfiguration", "MutatingWebhookConfiguration"):
                 self.link_webhooks(i, self.objs[i])
+        self.link_delivery()
         self.link_ingress_health()
         self.attach_events()
         self.event_health()
         self.rollout_health()
+        self.release_rollup()
+        self.node_lost()
         self.node_requests()
 
     def link_podspec(self, i, ns, spec):
@@ -994,6 +1110,16 @@ class Builder:
             self.health[i] = ("fail" if h == "fail" else "warn", "RolloutStuck",
                               f"revision {new_rev} {ready}/{want} ready, its pods {pod_r}; revision "
                               f"{','.join(str(x[0]) for x in old)} still serving {serving} pods{deadline}")
+
+    def node_lost(self):
+        """Pods on a node that stopped reporting keep the kubelet's last status: say it is stale."""
+        for s_, d, t, _ in self.edges:
+            if t == "runs-on" and self.health.get(d, ("-", ""))[1] == "NodeNotReady" and self.health.get(s_, ("-",))[0] in ("ok", "warn"):
+                o = self.objs.get(s_) or {}
+                if (o.get("status") or {}).get("phase") in ("Succeeded", "Failed"):
+                    continue
+                gone = " (being evicted)" if (o.get("metadata") or {}).get("deletionTimestamp") else ""
+                self.health[s_] = ("fail", "NodeLost", f"on {d}, which stopped reporting: the last status shown is stale{gone}")
 
     def node_requests(self):
         req = {}
@@ -1259,7 +1385,8 @@ class Graph:
         return [s for s, t, _ in self.inn.get(i, []) if t == "owns"]
 
     def children(self, i):
-        return [d for d, t, _ in self.out.get(i, []) if t == "owns"]
+        """Owned objects, and what a Helm release / GitOps object delivered."""
+        return [d for d, t, _ in self.out.get(i, []) if t in ("owns", "deploys", "manages")]
 
     def root(self, i):
         seen = set()
@@ -1271,12 +1398,13 @@ class Graph:
             i = o[0]
 
     def descendants(self, i, depth=6):
-        out, frontier = [], [i]
+        out, frontier, seen = [], [i], {i}
         for _ in range(depth):
             nxt = []
             for f in frontier:
                 for c in self.children(f):
-                    out.append(c); nxt.append(c)
+                    if c not in seen:
+                        seen.add(c); out.append(c); nxt.append(c)
             frontier = nxt
         return out
 
@@ -1487,6 +1615,34 @@ def candidates(g, i, n=3):
     return out
 
 
+def node_lines(g, i):
+    """Node card: last heartbeat, taints, conditions that are not as they should be, requests and usage."""
+    o = g.raw(i)
+    st, spec = o.get("status") or {}, o.get("spec") or {}
+    rows = []
+    ready = cond_map(st).get("Ready") or {}
+    hb = ts(ready.get("lastHeartbeatTime"))
+    if hb:
+        rows.append(f"last heartbeat {ago(g.now - hb)} ago; Ready={ready.get('status')} since {ago(g.now - (ts(ready.get('lastTransitionTime')) or g.now))}")
+    taints = [f"{t.get('key')}{'=' + t['value'] if t.get('value') else ''}:{t.get('effect')}" for t in spec.get("taints") or []]
+    rows.append("taints: " + (", ".join(taints) if taints else "none") + ("; cordoned" if spec.get("unschedulable") else ""))
+    bad = [f"{t}={c.get('status')}" for t, c in cond_map(st).items()
+           if (t == "Ready" and c.get("status") != "True") or (t != "Ready" and c.get("status") != "False")]
+    if bad:
+        rows.append("conditions: " + ", ".join(bad))
+    al = st.get("allocatable") or {}
+    r = o.get("_requests") or [0, 0]
+    use = f", used cpu {fcpu(o['_usage'][0])} mem {fmem(o['_usage'][1])}" if o.get("_usage") else ""
+    rows.append(f"requested cpu {fcpu(r[0])}/{fcpu(cpu(al.get('cpu')))} mem {fmem(r[1])}/{fmem(mem(al.get('memory')))}{use}")
+    lb = (o.get("metadata") or {}).get("labels") or {}
+    pool = lb.get("cloud.google.com/gke-nodepool") or lb.get("eks.amazonaws.com/nodegroup") or lb.get("agentpool")
+    zone = lb.get("topology.kubernetes.io/zone")
+    if pool or zone or lb.get("node.kubernetes.io/instance-type"):
+        rows.append(f"pool {pool or '-'}, zone {zone or '-'}, machine {lb.get('node.kubernetes.io/instance-type', '-')}"
+                    + (", spot" if lb.get("cloud.google.com/gke-spot") == "true" or lb.get("cloud.google.com/gke-preemptible") == "true" else ""))
+    return rows
+
+
 def webhook_lines(g, i):
     """Per webhook: what it intercepts, how it fails, and which namespaces it matches in this snapshot."""
     o = g.raw(i)
@@ -1601,6 +1757,23 @@ def event_lines(g, ids, cap, warnings_only=True):
 
 
 DEP_EDGES = ("uses", "selects", "routes-to", "calls", "scales", "bound-to", "runs-on")
+# reasons that stop everything under them: chosen as the cause before any failing pod
+BLOCKING = ("PendingOperation", "NodeNotReady", "WebhookUnavailable", "QuotaExhausted", "ReplicaFailure")
+
+
+def other_causes(g, i, first, n=3):
+    """Distinct failures under i besides the chosen cause: missing objects and leaf failures by reason."""
+    seen, out = {g.h(first)[1]}, []
+    for x in [i] + g.descendants(i):
+        for y in [x] + [d for d, t, _ in g.out.get(x, []) if t in DEP_EDGES or t == "manages"]:
+            h, r, _s = g.h(y)
+            if h != "fail" or r in seen or y == first or g.children(y) and r not in ("missing", "missing key") + BLOCKING:
+                continue
+            seen.add(r)
+            out.append(y)
+            if len(out) >= n:
+                return out
+    return out
 
 
 def cause(g, i, seen=None):
@@ -1617,9 +1790,16 @@ def cause(g, i, seen=None):
                 deeper = cause(g, d, seen) if g.nodes[d][6] not in ("missing", "missing key") else (d, None, None)
                 c = deeper[0] or d
                 found.append((g.h(c)[1].startswith("missing"), c, deeper[1] or x, deeper[2] or det))
+    in_scope = set(scope)
+    missing = [f for f in found if f[0]]
+    if missing:
+        return missing[0][1], missing[0][2], missing[0][3]
+    for x in scope + [f[1] for f in found]:
+        if g.h(x)[0] == "fail" and g.h(x)[1] in BLOCKING:
+            return x, None, None
     if found:
-        found.sort(key=lambda f: not f[0])
-        return found[0][1], found[0][2], found[0][3]
+        c, via, det = found[0][1], found[0][2], found[0][3]
+        return (c, None, None) if c in in_scope else (c, via, det)
     for x in reversed(scope):
         if g.h(x)[0] == "fail" and g.nodes[x][1] == "Pod":
             return x, None, None
@@ -1667,6 +1847,9 @@ def q_why(g, a):
         if g.nodes[i][1] in ("ValidatingWebhookConfiguration", "MutatingWebhookConfiguration"):
             for r in webhook_lines(g, i):
                 print(r)
+        if g.nodes[i][1] == "Node":
+            for r in node_lines(g, i):
+                print(r)
         chain = []
         x = i
         while g.owners(x):
@@ -1675,9 +1858,10 @@ def q_why(g, a):
         if chain:
             print("owned by " + " <- ".join(f"{c} ({tag(g.h(c)[0])})" for c in chain))
         kids = g.descendants(i, 3)
-        if kids:
+        shown_kids = collapse(g, [k for k in kids if g.h(k)[0] != "-" or g.nodes[k][1] == "Pod"])[:a.cap]
+        if shown_kids:
             print("children:")
-            for k, more in collapse(g, [k for k in kids if g.h(k)[0] != "-" or g.nodes[k][1] == "Pod"])[:a.cap]:
+            for k, more in shown_kids:
                 print("  " + line(g, k) + (more or ""))
         deps, more = dep_lines(g, i, a.cap)
         for k in kids:
@@ -1753,6 +1937,8 @@ def q_why(g, a):
             if g.nodes[c][1] == "Pod" and not a.no_logs:
                 for l in pod_logs(g, c, a.tail):
                     print(l)
+            for o_ in other_causes(g, i, c):
+                print(f"also: {o_} {g.h(o_)[1]}: {g.h(o_)[2]}")
             nxt = next_steps(g, c)
             if nxt:
                 print("next: " + " ; ".join(nxt))
@@ -1772,6 +1958,15 @@ def next_steps(g, i):
         return [f"{k} describe pod {name}"]
     if r.startswith("missing"):
         return [f"query used-by {i} (what needs it)"]
+    if kind == "Node" and r in ("NodeNotReady", "MemoryPressure", "DiskPressure", "PIDPressure", "NetworkUnavailable"):
+        lb = (g.raw(i).get("metadata") or {}).get("labels") or {}
+        if lb.get("cloud.google.com/gke-nodepool"):
+            zone = lb.get("topology.kubernetes.io/zone", "ZONE")
+            return [f"gcloud compute instances describe {name} --zone {zone}",
+                    f"gcloud logging read 'resource.type=\"k8s_node\" AND resource.labels.node_name=\"{name}\"' --limit 50"]
+        return [f"the machine and its kubelet: is {name} up, and what does `journalctl -u kubelet` on it say"]
+    if kind == "Release":
+        return [f"helm --kube-context {ctx} -n {ns} history {name} --max 5", f"helm --kube-context {ctx} -n {ns} status {name}"]
     return [f"{k} describe {kind.lower()} {name}"]
 
 
@@ -1792,6 +1987,9 @@ def q_show(g, a):
         if g.nodes[i][1] in ("ValidatingWebhookConfiguration", "MutatingWebhookConfiguration"):
             for r in webhook_lines(g, i):
                 print(r)
+        if g.nodes[i][1] == "Node":
+            for r in node_lines(g, i):
+                print(r)
         if md.get("creationTimestamp"):
             print(f"age {ago(g.now - ts(md['creationTimestamp']))}" + (f", labels {json.dumps(md.get('labels'), sort_keys=True)[:200]}" if md.get("labels") else ""))
         pod_spec = podspec_of(g.nodes[i][1], o)
@@ -1803,10 +2001,9 @@ def q_show(g, a):
             if want is not None:
                 pc, pm = pod_requests(pod_spec)
                 print(f"requests per pod cpu {fcpu(pc)} mem {fmem(pm)}; x{want} replicas = cpu {fcpu(pc * want)} mem {fmem(pm * want)}")
-        if o.get("_usage"):
+        if o.get("_usage") and g.nodes[i][1] != "Node":
             print(f"usage now: cpu {fcpu(o['_usage'][0])} mem {fmem(o['_usage'][1])}")
-        if o.get("_requests"):
-            print(f"requested by pods: cpu {fcpu(o['_requests'][0])} mem {fmem(o['_requests'][1])}")
+
         own = g.owners(i)
         if own:
             print("owner: " + ", ".join(own))

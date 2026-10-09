@@ -46,10 +46,21 @@ ConfigMaps as key names (`dataKeys`) only; env values whose name looks like a cr
 | Namespace | | Terminating for over 5 min |
 | CRD | Established / NamesAccepted False | |
 | custom resources | condition Ready/Available/Healthy/Synced/... False, Degraded/Failed/Stalled True, phase Failed/Error, Argo CD health Degraded/Missing | OutOfSync, Progressing, Reconciling, observedGeneration behind generation |
+| Release (Helm, from the `owner=helm` release Secrets/ConfigMaps; labels only, the payload is never read) | latest revision `failed` (`UpgradeFailed`, `InstallFailed`), `pending-*` for over 10 min (`PendingOperation`: Helm's lock) | `pending-*` under 10 min, `DeployedButFailing` (deployed, but objects it deployed fail) |
+| Argo CD Application, Flux HelmRelease / Kustomization | as custom resources (health, sync, conditions) | |
 | referenced object that does not exist | `missing` (unless the reference is `optional`), `missing key` for a configMapKeyRef/secretKeyRef key | |
 
 Health is computed at snapshot time against the snapshot's own clock, so a saved snapshot answers the
 same way later.
+
+## Delivery links
+
+- `deploys`: Release -> every object carrying `meta.helm.sh/release-name`/`-namespace` annotations.
+- `manages`: Argo CD Application -> each entry of `status.resources` (an entry with health `Missing` becomes a
+  `missing` node); Flux HelmRelease -> its Helm release (`releaseName`, else `[targetNamespace-]name`); Flux
+  Kustomization -> each `status.inventory` entry.
+- Both count as children: `why`, `tree` and `cause:` follow them, so `why Application/x` ends at the
+  failing pod or missing object behind a Degraded application.
 
 ## Queries
 
@@ -72,6 +83,10 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
   namespace first, same name in another namespace flagged, the default StorageClass marked); for
   `missing key`, the keys the ConfigMap/Secret does have. Webhook configurations get one line per
   webhook: operations and resources, failurePolicy, the namespaces its selector matches in the snapshot.
+  Nodes get their last heartbeat, taints, abnormal conditions, requests vs allocatable and usage, and the node
+  pool / zone / machine type / spot labels; pods on a node that stopped reporting are `NodeLost` (their status
+  is the kubelet's last report). `why` adds `also:` lines for other distinct failures under the object, and
+  picks a blocking cause (Helm lock, NotReady node, webhook, quota, ReplicaFailure) before failing pods.
 - `show OBJ...`: labels, containers with images and requests/limits, requests x replicas, current usage,
   owner, children, uses, used by, warning events.
 - `used-by OBJ...`: reverse dependencies by depth (`--depth`, default 4): users of a ConfigMap, Secret,

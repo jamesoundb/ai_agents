@@ -1,0 +1,46 @@
+# faults-3.yaml -- third set of planted cases (applied by plant.sh): GitOps objects with realistic status
+# shapes, the namespace the Helm releases go into, and a workload pinned to the second node (whose kubelet
+# plant.sh stops). The Argo CD and Flux CRDs are minimal stand-ins: no controller runs, the status is
+# written with the object, which is exactly what the snapshot reads. Never apply to a shared cluster.
+apiVersion: v1
+kind: Namespace
+metadata: {name: kg-helm}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: kg-gitops}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: applications.argoproj.io}
+spec:
+  group: argoproj.io
+  scope: Namespaced
+  names: {plural: applications, singular: application, kind: Application, shortNames: [app, apps]}
+  versions:
+    - {name: v1alpha1, served: true, storage: true, schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: helmreleases.helm.toolkit.fluxcd.io}
+spec:
+  group: helm.toolkit.fluxcd.io
+  scope: Namespaced
+  names: {plural: helmreleases, singular: helmrelease, kind: HelmRelease, shortNames: [hr]}
+  versions:
+    - {name: v2, served: true, storage: true, schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}}
+---
+# pinned to the second node; plant.sh stops that node's kubelet afterwards
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: on-m02, namespace: kg-faults}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: on-m02}}
+  template:
+    metadata: {labels: {app: on-m02}}
+    spec:
+      nodeSelector: {kubernetes.io/hostname: agents-test-m02}
+      containers:
+        - {name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sleep", "86400"],
+           resources: {requests: {cpu: 10m, memory: 16Mi}}}

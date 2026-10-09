@@ -31,6 +31,8 @@ cluster: the fix goes into the manifest or Helm values for the developer or GitO
    | `ProbeFailing`, `NotReady` | probe path/port, `initialDelaySeconds`, a `startupProbe` | the event names the probe and the error |
    | `NoPods` | Service selector or pod labels | `why` prints the closest pod labels |
    | `NoReadyEndpoints`, `BackendUnavailable` | the pods behind it | follow `cause:` |
+   | Release `UpgradeFailed`, `InstallFailed`, `DeployedButFailing` | the chart or values: `cause:` names the deployed object that fails | an operator may roll back to the last good revision meanwhile; the fix still goes through GitOps |
+   | Release `PendingOperation` (Helm lock) | nothing in the repository yet: an operator runs `helm rollback NAME LAST_GOOD`; then find why the interrupted upgrade hung | `why` prints the last good revision |
    | `RolloutStuck` | what changed in the new pod template (image, config, probes), or roll the manifest back | the old revision still serves: urgent, not an outage |
    | healthy but "cannot connect" / timeouts | NetworkPolicy rules, Service port/targetPort | `reach SOURCE DEST`: the rule that allows or the rules that deny, DNS, whether policies are enforced |
    | PVC `Pending`, `ProvisioningFailed` | `storageClassName` | `cause:` follows pod -> PVC -> StorageClass |

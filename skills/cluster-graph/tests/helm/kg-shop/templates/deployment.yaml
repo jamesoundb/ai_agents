@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app }}
+  labels: {app: {{ .Values.app }}}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector: {matchLabels: {app: {{ .Values.app }}}}
+  template:
+    metadata: {labels: {app: {{ .Values.app }}}}
+    spec:
+      nodeSelector: {{ toJson .Values.nodeSelector }}
+      containers:
+        - name: app
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "86400"]
+          resources: {requests: {cpu: 10m, memory: 16Mi}}

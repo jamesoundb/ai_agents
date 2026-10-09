@@ -102,3 +102,15 @@ Dollar figures are list-price approximations for ranking; the billing export is 
     ~$157/month of unallocated node capacity routed to the terraform agent, manifest fixes and guardrails.
 - Context per subagent request: kubernetes 10k characters, helm 6.7k (helm now preloads only
   `helm-chart-review`).
+
+## Verified (2026-10-09): Helm releases, GitOps objects, node failure
+
+- minikube with a second node whose kubelet `plant.sh` stops, two Helm releases from
+  `skills/cluster-graph/tests/helm/kg-shop` (a failed upgrade, an upgrade killed mid-flight that leaves Helm's
+  pending lock), stand-in Argo CD Application and Flux HelmRelease objects. 43 regression tests.
+- helm agent ("kg-shop failed its upgrade, Flux says cart is stuck with another operation in progress"):
+  16 turns, $0.34; told the failed upgrade from the leftover lock, traced the image to the values file line,
+  fixed values and the HelmRelease remediation in Git, named `helm rollback` as the operator step.
+- kubernetes agent ("on-m02 is down although its pods say Running, kube-proxy degraded"): 11 turns, $0.37;
+  one cause (the node's kubelet stopped), stale pod status explained, the nodeSelector line that pins the app
+  to one node, operator steps to bring the node back.

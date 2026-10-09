@@ -289,6 +289,19 @@
   ]
  },
  {
+  "name": "applications",
+  "short": [
+   "app",
+   "apps"
+  ],
+  "group": "argoproj.io",
+  "namespaced": true,
+  "kind": "Application",
+  "verbs": [
+   "delete,deletecollection,get,list,patch,create,update,watch"
+  ]
+ },
+ {
   "name": "horizontalpodautoscalers",
   "short": [
    "hpa"
@@ -384,6 +397,18 @@
   "kind": "PriorityLevelConfiguration",
   "verbs": [
    "create,delete,deletecollection,get,list,patch,update,watch"
+  ]
+ },
+ {
+  "name": "helmreleases",
+  "short": [
+   "hr"
+  ],
+  "group": "helm.toolkit.fluxcd.io",
+  "namespaced": true,
+  "kind": "HelmRelease",
+  "verbs": [
+   "delete,deletecollection,get,list,patch,create,update,watch"
   ]
  },
  {

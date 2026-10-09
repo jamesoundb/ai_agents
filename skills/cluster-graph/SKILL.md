@@ -44,6 +44,9 @@ full path, one command per call. Read-only by construction: it only runs `get`, 
    | what the cluster wastes now (~$/month) | `waste` |
    | can A talk to B (NetworkPolicy, DNS) | `reach A B` (`--port N`) |
 
+   Helm releases are objects too (`Release/NS/NAME`, from Helm's release Secrets: status per revision,
+   linked to what they deployed), and Argo CD Applications / Flux HelmReleases and Kustomizations link to
+   what they manage, so `why` on any of them reaches the failing workload behind it.
    Objects are written as kind/name, kind/namespace/name, the id a query printed
    (`Deployment/shop/api`), a short name (`deploy/api`, `svc/api`, `te/env-1`) or a bare name
    (a workload wins); `-n` narrows.

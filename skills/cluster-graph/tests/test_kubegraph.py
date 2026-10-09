@@ -61,7 +61,8 @@ class Fixture(unittest.TestCase):
         out = self.q("health")
         self.assertNotIn("ok-web ", out)
         system = out.split("\nkube-system\n")[1].split("\n\n")[0] if "\nkube-system\n" in out else ""
-        self.assertNotIn("FAIL", system)   # a healthy control plane fails nothing (a reboot's restarts may warn)
+        fails = [l for l in system.splitlines() if "FAIL" in l]
+        self.assertTrue(all("NodeLost" in l for l in fails), fails)   # only pods stranded on the stopped node
         self.assertNotIn("etcd", system)   # restarts of long-lived instances (node reboot) are not reported
 
     # ---- pod failure classes
@@ -209,7 +210,7 @@ class Fixture(unittest.TestCase):
     def test_rollout_stuck(self):
         h, r, s = self.g.h("Deployment/kg-faults/checkout")
         self.assertEqual((h, r), ("fail", "RolloutStuck"))
-        self.assertIn("revision 2 0/1 ready, its pods ImagePullBackOff; revision 1 still serving 2 pods", s)
+        self.assertRegex(s, r"revision \d+ 0/1 ready, its pods (ImagePullBackOff|ErrImagePull|NodeLost); revision \d+ still serving 2 pods")
 
     def test_reboot_restart_is_not_the_cause(self):
         # the unready pod's previous instance ran ~4h and died with the node: still a readiness problem
@@ -275,6 +276,49 @@ class Fixture(unittest.TestCase):
         out = self.q("reach", "deploy/api", "svc/db", "-n", "kg-net", "--repo", repo)
         self.assertIn("NetworkPolicy/kg-net/api-egress defined at net.yaml:", out)
         self.assertNotIn("pod-template-hash", out)
+
+    # ---- Helm releases, GitOps objects, node failure
+    def test_helm_release_failed_upgrade(self):
+        h, r, s = self.g.h("Release/kg-helm/kg-shop")
+        self.assertEqual((h, r), ("fail", "UpgradeFailed"))
+        self.assertIn("revision 2 failed", s)
+        self.assertIn("last good revision 1", s)
+        out = self.q("why", "Release/kg-helm/kg-shop", "--no-logs", "--no-repo")
+        self.assertRegex(out, r"cause: Pod/kg-helm/kg-shop-\S+ (ImagePullBackOff|ErrImagePull)")
+        self.assertNotIn("(via Service", out)                        # the pod is the release's own descendant
+        self.assertEqual(len(out.split("children:")[1].split("depends on:")[0].splitlines()),
+                         len(set(out.split("children:")[1].split("depends on:")[0].splitlines())))   # no duplicates
+
+    def test_helm_lock(self):
+        # Flux reports Helm's lock: the pending revision is the cause, whatever its age
+        self.assertEqual(self.health("Release/kg-helm/kg-cart"), ("fail", "PendingOperation"))
+        out = self.q("why", "HelmRelease/kg-helm/cart", "--no-logs", "--no-repo")
+        self.assertIn("cause: Release/kg-helm/kg-cart PendingOperation", out)
+        self.assertIn("advice: a helm operation was interrupted", out)
+        # without a manager: pending under helm's 5-minute timeout warns, past it fails
+        rel = {"apiVersion": "helm.sh/v3", "revisions": [[1, "deployed", 1000.0], [2, "pending-upgrade", 2000.0]]}
+        self.assertEqual(kg.release_health(rel, 2100.0)[:2], ("warn", "pending-upgrade"))
+        self.assertEqual(kg.release_health(rel, 2400.0)[:2], ("fail", "PendingOperation"))
+
+    def test_argo_application(self):
+        out = self.q("why", "Application/kg-gitops/shop", "--no-logs", "--no-repo")
+        self.assertIn("manages FAIL ConfigMap/kg-helm/kg-shop-flags  missing", out)   # Argo health Missing
+        self.assertIn("[argo health Degraded, sync Synced]", out)
+        self.assertRegex(out, r"cause: Pod/kg-helm/kg-shop-\S+ (ImagePullBackOff|ErrImagePull)")
+        self.assertIn("also: ConfigMap/kg-helm/kg-shop-flags missing", out)
+
+    def test_node_failure(self):
+        self.assertEqual(self.health("Node/agents-test-m02"), ("fail", "NodeNotReady"))
+        pods = [i for i in self.g.nodes if i.startswith("Pod/kg-faults/on-m02-")]
+        self.assertTrue(pods and all(self.health(p) == ("fail", "NodeLost") for p in pods), pods)
+        out = self.q("why", "deploy/on-m02", "--no-logs", "--no-repo")
+        self.assertIn("cause: Node/agents-test-m02 NodeNotReady", out)
+        out = self.q("why", "Node/agents-test-m02", "--no-logs", "--no-repo")
+        self.assertNotIn("children:\nused by", out)                 # no empty section header
+        self.assertIn("runs-on by FAIL Pod/kg-faults/on-m02-", out)
+        self.assertRegex(out, r"taints: .*node.kubernetes.io/unreachable:NoExecute")    # no describe node needed
+        self.assertIn("next: the machine and its kubelet", out)
+        self.assertRegex(out, r"last heartbeat \d+m ago; Ready=Unknown")
 
     # ---- secrets never stored
     def test_no_secret_values_stored(self):

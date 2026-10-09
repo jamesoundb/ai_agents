@@ -44,7 +44,9 @@ bump rather than by drift.
 5. Verify: `helm lint`, both renders succeed, the review gate passes. Report before/after
    effective requests and replicas per environment so the cost effect is visible.
 6. After the GitOps controller syncs, check the live result read-only: `cluster-graph`
-   `why Application/<name>` (or the HelmRelease) gives sync/health and the failing objects behind it.
+   `why Application/<name>`, `why HelmRelease/<name>` or `why Release/<namespace>/<release>` gives sync,
+   health, the Helm revision status (failed upgrade, a pending-operation lock) and the failing objects
+   behind it. Rollbacks and lock removal are operator steps; name them, never run them.
 
 ## Output shapes
 
