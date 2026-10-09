@@ -9,9 +9,14 @@ allowed-tools: Bash(*/cluster-graph/scripts/run.sh *), Bash(*/k8s-cluster-triage
 # k8s-cluster-triage: one sweep, shared causes first
 
 When many things fail at once, they rarely have many causes. Find the shared one before fixing
-symptoms one by one. Engine: `../cluster-graph/scripts/run.sh`, relative to this skill folder (installed
-side by side). Read-only: fixes go into manifests, Helm values or Terraform; operational steps (cordon,
-restart, delete) are named for an operator, never run.
+symptoms one by one. Engine: the `cluster-graph` skill's `scripts/run.sh`, installed side by side
+(for example `.claude/skills/cluster-graph/scripts/run.sh` or
+`.agents/skills/cluster-graph/scripts/run.sh`; written `../cluster-graph/scripts/run.sh` below).
+Call it by that path from the working directory, one command per call: no `cd` into a skill folder,
+no shell variable, nothing piped or chained after it. Permission rules match the literal command;
+Antigravity denies a chain if any part lacks a grant, and installed skill folders are links outside
+the working directory. Read-only: fixes go into manifests, Helm values or Terraform; operational
+steps (cordon, restart, delete) are named for an operator, never run.
 
 ## Procedure
 

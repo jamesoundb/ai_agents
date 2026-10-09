@@ -8,6 +8,13 @@ allowed-tools: Bash(python3 */helm-chart-review/scripts/helmreview.py *), Bash(*
 
 # helm-chart-review: chart, values and delivery in one pass
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/helm-chart-review/scripts/...` or `.agents/skills/helm-chart-review/scripts/...`),
+one command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after
+it. Permission rules match the literal command; Antigravity denies a chain if any part lacks a
+grant, and installed skill folders are links outside the working directory. The `Gate` line at the
+end states pass or fail; do not echo `$?`.
+
 ```bash
 scripts/helmreview.py CHART_DIR [GITOPS_FILES_OR_DIRS ...] [--env-values values-test.yaml] \
                       [--values-glob 'values*.yaml'] [--policy helm-review.json] [--fail-on high] [--no-tools] [--json]

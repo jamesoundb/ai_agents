@@ -18,6 +18,13 @@ directory: no `.terraform/`, an existing `.terraform.lock.hcl` is only read (`-l
 a lock file that no longer matches the provider constraints fails `init`), and a lock file `init`
 had to create is removed afterwards.
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/terraform-review/scripts/...` or `.agents/skills/terraform-review/scripts/...`), one
+command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after it.
+Permission rules match the literal command; Antigravity denies a chain if any part lacks a grant,
+and installed skill folders are links outside the working directory. The `Gate` line at the end
+states pass or fail; do not echo `$?`.
+
 ```bash
 scripts/run.sh [PATH ...] [--config tfreview.json] [--fail-on high|medium|...] [--no-tools] [--json]
 scripts/run.sh --rules          # list rule ids and default severities

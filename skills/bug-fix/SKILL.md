@@ -18,8 +18,9 @@ never touched. This procedure prevents both.
 1. **Checklist from the report.** Before reading code, write a numbered list of every behaviour
    the report requires: each failing variant it names, each "must keep working" constraint, and
    the exact expected values it gives. This list is the definition of done; keep it in view.
-2. **Locate the cause through the graph** (engine `../code-graph/scripts/run.sh`, relative to this
-   skill folder; `build --root .` once if the repo has no `.ast-graph/`). `query source X` on the
+2. **Locate the cause through the graph** (engine: `code-graph`'s `scripts/run.sh` called by its path
+   from the working directory, e.g. `.claude/skills/code-graph/scripts/run.sh`, one command per call,
+   never after `cd` into a skill folder; `build --root .` once if the repo has no `.ast-graph/`). `query source X` on the
    entry point the report names gives its code, callers and callees in one call; `query tests-for
    X` gives the existing tests to extend. When the report names a path that works (lazy vs eager
    loading, unbuffered vs buffered, one input type vs another), read that path too: the

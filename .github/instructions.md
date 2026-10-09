@@ -283,6 +283,21 @@ templates rather than adding vendor-neutral fallbacks.
   `teamcity-config-review` + `teamcity-build-triage` 8.9k (was 30k), ast-treesitter `code-graph`
   12.6k (was 21k). Each AGENT.md body has a "Skills" section naming what is loaded and when to load
   the rest. Other harnesses ignore `preload:`.
+- Skill scripts are called by their installed path from the working directory
+  (`.claude/skills/<s>/scripts/...`, `.agents/skills/<s>/scripts/...`), one command per call: no `cd`
+  into a skill folder, no shell variable, nothing piped or chained after it; every SKILL.md that runs a
+  script says so. Measured 2026-10-09 with headless runs told to execute a command verbatim:
+  - Antigravity CLI 1.3.1 (`agy -p`, grants in `~/.gemini/antigravity-cli/settings.json`
+    `permissions.allow`): headless mode denies any command without a grant. A chain passes only when
+    every part has one (`run.sh x && run.sh y` with a `run.sh` grant passes; `| head`, `; echo`,
+    `S=path; $S`, `cd ...` are denied); `2>&1` is fine. `command(.agents/skills/cluster-graph/scripts/run.sh)`
+    (literal relative path) matches; `command(.*/cluster-graph/...)` and `command(run.sh)` do not.
+  - Claude Code 2.1.289 (`claude -p`, the skills' `allowed-tools` rules): read-only parts (`head`,
+    `echo`, `ls`) and `S=path; $S` pass; `cd <skill> && scripts/run.sh` is denied (the relative path
+    no longer contains `<skill>/scripts/`), and with symlinked installs any `cd`/`ls` into a skill
+    folder leaves the working directory and needs approval; `echo "$?"`, redirects to files and `sed`
+    expressions containing `$` are denied.
+  Gate scripts print a `Gate (--fail-on ..): PASS|FAIL` line, so agents never need `$?`.
 - `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes
   the harness folders, the managed AGENTS.md block (and an AGENTS.md that only held our header),
   and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo

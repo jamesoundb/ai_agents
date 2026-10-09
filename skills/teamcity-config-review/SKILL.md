@@ -8,6 +8,13 @@ allowed-tools: Bash(python3 */teamcity-config-review/scripts/tcreview.py *), Bas
 
 # teamcity-config-review: the build template is a cost decision
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/teamcity-config-review/scripts/...` or
+`.agents/skills/teamcity-config-review/scripts/...`), one command per call: no `cd` into a skill
+folder, no shell variable, nothing piped or chained after it. Permission rules match the literal
+command; Antigravity denies a chain if any part lacks a grant, and installed skill folders are links
+outside the working directory. The `Gate` line at the end states pass or fail; do not echo `$?`.
+
 ```bash
 scripts/tcreview.py .teamcity [--policy tc-review.json] [--fail-on high] [--json]
 scripts/tcreview.py .teamcity/settings.kts .teamcity/Api/buildTypes/*.xml

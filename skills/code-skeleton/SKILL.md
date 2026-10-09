@@ -22,6 +22,13 @@ subsequent reads can target a range instead of the whole file. Measured on this 
 The saving grows with file size, so the skeleton is worth most on exactly the files you least want
 to read whole. Below roughly 80 lines it stops paying for itself — see "Small files" below.
 
+Engine: the `code-graph` skill's `scripts/run.sh`, installed side by side (for example
+`.claude/skills/code-graph/scripts/run.sh` or `.agents/skills/code-graph/scripts/run.sh`; written
+`../code-graph/scripts/run.sh` below). Call it by that path from the working directory, one command
+per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after it.
+Permission rules match the literal command; Antigravity denies a chain if any part lacks a grant,
+and installed skill folders are links outside the working directory.
+
 ```bash
 ../code-graph/scripts/run.sh skeleton $ARGUMENTS
 ```

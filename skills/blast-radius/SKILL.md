@@ -13,8 +13,12 @@ component that will change, list every dependent file with the dependent symbol,
 (`calls`, `imports`, `extends`, `implements`, `instantiates`, `references` via a signature or
 Terraform/K8s reference, `uses_module`, `selects`, `depends_on`), and the resolution confidence.
 
-Engine: `../code-graph/scripts/run.sh`, relative to this skill folder (the three skills are
-installed side by side).
+Engine: the `code-graph` skill's `scripts/run.sh`, installed side by side (for example
+`.claude/skills/code-graph/scripts/run.sh` or `.agents/skills/code-graph/scripts/run.sh`; written
+`../code-graph/scripts/run.sh` below). Call it by that path from the working directory, one command
+per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after it.
+Permission rules match the literal command; Antigravity denies a chain if any part lacks a grant,
+and installed skill folders are links outside the working directory.
 
 ## Procedure
 

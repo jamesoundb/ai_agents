@@ -12,6 +12,13 @@ allowed-tools: Bash(*/k8s-manifest-review/scripts/run.sh *), Bash(python3 */k8s-
 a per-repo policy and the build size tiers produced by `gke-cost-discovery`. Exit code 1 at the
 `--fail-on` gate (default `high`) makes it a CI step. Rule catalogue: `reference/rules.md`.
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/k8s-manifest-review/scripts/...` or
+`.agents/skills/k8s-manifest-review/scripts/...`), one command per call: no `cd` into a skill
+folder, no shell variable, nothing piped or chained after it. Permission rules match the literal
+command; Antigravity denies a chain if any part lacks a grant, and installed skill folders are links
+outside the working directory. The `Gate` line at the end states pass or fail; do not echo `$?`.
+
 ```bash
 scripts/run.sh PATH... [--policy k8s-review.json] [--tiers build-tiers.json] [--fail-on high] [--build] [--no-tools] [--json]
 helm template my-chart -f values-test.yaml | scripts/run.sh - --build

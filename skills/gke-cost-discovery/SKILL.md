@@ -13,6 +13,12 @@ optional and a missing one becomes a `MISSING-*` note); `scripts/analyze.py` tur
 into a report with a two-bucket waste model, top offenders in cores, GiB and approximate dollars,
 proposed build size tiers, and prioritized recommendations. Neither script changes anything.
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/gke-cost-discovery/scripts/...` or `.agents/skills/gke-cost-discovery/scripts/...`),
+one command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after
+it. Permission rules match the literal command; Antigravity denies a chain if any part lacks a
+grant, and installed skill folders are links outside the working directory.
+
 ```bash
 # 1. configure (copy gke-cost-discovery.env.example -> gke-cost-discovery.env and fill in)
 set -a; . ./gke-cost-discovery.env; set +a

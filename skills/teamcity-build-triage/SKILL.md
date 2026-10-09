@@ -8,6 +8,13 @@ allowed-tools: Bash(python3 */teamcity-build-triage/scripts/tctriage.py *), Bash
 
 # teamcity-build-triage: classify before you rerun
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/teamcity-build-triage/scripts/...` or
+`.agents/skills/teamcity-build-triage/scripts/...`), one command per call: no `cd` into a skill
+folder, no shell variable, nothing piped or chained after it. Permission rules match the literal
+command; Antigravity denies a chain if any part lacks a grant, and installed skill folders are links
+outside the working directory.
+
 ```bash
 export TEAMCITY_URL=https://teamcity.example.com TEAMCITY_TOKEN=<read-only token>
 scripts/tctriage.py --build-id 12345                 # one build: class, advice, evidence, failed tests

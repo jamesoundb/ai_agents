@@ -17,9 +17,12 @@ Warning events are attached to the object they are about. One query then replace
 `get`/`describe` calls: every tool call re-sends the whole conversation, so **fewer calls** matters
 more than smaller output.
 
-Engine: `scripts/run.sh` (stdlib Python 3.10+, needs `kubectl` with a working context). Call it by its
-full path, one command per call. Read-only by construction: it only runs `get`, `api-resources`,
-`logs`, `version` and `config current-context`. Secret values are never stored (key names only).
+Engine: `scripts/run.sh` (stdlib Python 3.10+, needs `kubectl` with a working context). Call it by
+its full path from the working directory, one command per call: no `cd` into a skill folder, no
+shell variable, nothing piped or chained after it. Permission rules match the literal command;
+Antigravity denies a chain if any part lacks a grant, and installed skill folders are links outside
+the working directory. Read-only by construction: it only runs `get`, `api-resources`, `logs`,
+`version` and `config current-context`. Secret values are never stored (key names only).
 
 ## Workflow
 

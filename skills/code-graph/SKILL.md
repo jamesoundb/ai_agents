@@ -16,8 +16,9 @@ grepping, and let one query replace the grep + read round trips: every tool call
 conversation, so **fewer calls** matters more than smaller output.
 
 Engine: `scripts/run.sh` (installs tree-sitter into a private venv under `~/.cache/astgraph` on
-first use; Python 3.10+). Call it by its full path, one command per call, not through a shell
-variable or chained after other commands: permission rules match the literal command.
+first use; Python 3.10+). Call it by its full path from the working directory, one command per
+call, not through a shell variable, piped or chained after other commands, and never after `cd` into
+a skill folder: permission rules match the literal command.
 
 ## Workflow
 

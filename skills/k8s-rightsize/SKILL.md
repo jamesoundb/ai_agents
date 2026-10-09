@@ -23,6 +23,12 @@ Evidence comes from one of three places, in order of preference:
 CPU is sized from p95 (throttling is survivable), memory from the observed peak (exceeding it is
 an OOM kill); both get the headroom factor.
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/k8s-rightsize/scripts/...` or `.agents/skills/k8s-rightsize/scripts/...`), one
+command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after it.
+Permission rules match the literal command; Antigravity denies a chain if any part lacks a grant,
+and installed skill folders are links outside the working directory.
+
 ```bash
 # 1a. platform: produce and publish the evidence (gke-cost-discovery)
 ../gke-cost-discovery/scripts/analyze.py ./discovery/latest --json > discovery/latest/report.json

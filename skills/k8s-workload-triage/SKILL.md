@@ -8,7 +8,12 @@ allowed-tools: Bash(*/cluster-graph/scripts/run.sh *), Bash(*/k8s-workload-triag
 
 # k8s-workload-triage: cause, evidence, fix in the manifest
 
-Engine: `../cluster-graph/scripts/run.sh`, relative to this skill folder. Read-only against the
+Engine: the `cluster-graph` skill's `scripts/run.sh`, installed side by side (for example
+`.claude/skills/cluster-graph/scripts/run.sh` or `.agents/skills/cluster-graph/scripts/run.sh`;
+written `../cluster-graph/scripts/run.sh` below). Call it by that path from the working directory,
+one command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after
+it. Permission rules match the literal command; Antigravity denies a chain if any part lacks a
+grant, and installed skill folders are links outside the working directory. Read-only against the
 cluster: the fix goes into the manifest or Helm values for the developer or GitOps to apply.
 
 ## Procedure

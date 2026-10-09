@@ -12,6 +12,13 @@ allowed-tools: Bash(python3 */terraform-plan-review/scripts/planreview.py *), Ba
 Cloud. Prefer the `show -json` form: the streaming form lacks before/after values, so IAM roles
 and firewall ports cannot be inspected there.
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/terraform-plan-review/scripts/...` or
+`.agents/skills/terraform-plan-review/scripts/...`), one command per call: no `cd` into a skill
+folder, no shell variable, nothing piped or chained after it. Permission rules match the literal
+command; Antigravity denies a chain if any part lacks a grant, and installed skill folders are links
+outside the working directory. The `Gate` line at the end states pass or fail; do not echo `$?`.
+
 ```bash
 terraform plan -out plan.tfplan            # the developer or CI runs this with real credentials
 terraform show -json plan.tfplan > plan.json

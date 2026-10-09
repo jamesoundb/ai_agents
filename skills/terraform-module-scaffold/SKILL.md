@@ -11,6 +11,13 @@ allowed-tools: Bash(python3 */terraform-module-scaffold/scripts/scaffold.py *), 
 Templates live in `templates/module` and `templates/root`; `{{placeholders}}` are filled by
 `scripts/scaffold.py`. Edit the templates to change company conventions for everyone.
 
+Run the scripts by their installed path from the working directory (for example
+`.claude/skills/terraform-module-scaffold/scripts/...` or
+`.agents/skills/terraform-module-scaffold/scripts/...`), one command per call: no `cd` into a skill
+folder, no shell variable, nothing piped or chained after it. Permission rules match the literal
+command; Antigravity denies a chain if any part lacks a grant, and installed skill folders are links
+outside the working directory.
+
 ```bash
 # reusable module under modules/<name>
 scripts/scaffold.py module <name> [--description "..."] [--dir modules/<name>] [--google-provider-version 5.0]
