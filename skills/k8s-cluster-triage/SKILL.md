@@ -32,7 +32,9 @@ restart, delete) are named for an operator, never run.
 4. **Explain the top groups in one call:** `why A B C` with the first object of each of the top 1-3
    groups. `why` prints the cause chain, events, the failing container's logs and the next command;
    do not repeat it with `describe`.
-5. **Report**, ranked by blast radius (cluster-wide, then namespace, then single workload):
+5. **Cost side, when asked or when capacity is the symptom:** `waste` in one call (idle requests,
+   unmounted disks, load balancers, environments without a TTL, scale-down blockers, underfilled nodes).
+6. **Report**, ranked by blast radius (cluster-wide, then namespace, then single workload):
 
    | # | severity | object | reason | evidence (quoted) | cause | fix and owner |
    |---|---|---|---|---|---|---|

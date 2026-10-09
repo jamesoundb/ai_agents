@@ -1,33 +1,3 @@
-{
- "apiVersion": "v1",
- "items": [
-  {
-   "apiVersion": "v1",
-   "kind": "ResourceQuota",
-   "metadata": {
-    "annotations": {
-     "kubectl.kubernetes.io/last-applied-configuration": "<dropped>"
-    },
-    "creationTimestamp": "2026-10-08T15:56:29Z",
-    "name": "pods",
-    "namespace": "kg-quota",
-    "resourceVersion": "2585",
-    "uid": "11437a52-9cfa-411a-ade3-e38b88229780"
-   },
-   "spec": {
-    "hard": {
-     "pods": "1"
-    }
-   },
-   "status": {
-    "hard": {
-     "pods": "1"
-    },
-    "used": {
-     "pods": "1"
-    }
-   }
-  }
- ],
- "kind": "List"
-}
+{"apiVersion": "v1", "kind": "List", "items": [
+{"apiVersion":"v1","kind":"ResourceQuota","metadata":{"annotations":{"kubectl.kubernetes.io/last-applied-configuration":"<dropped>"},"creationTimestamp":"2026-10-08T15:56:29Z","name":"pods","namespace":"kg-quota","resourceVersion":"2585","uid":"11437a52-9cfa-411a-ade3-e38b88229780"},"spec":{"hard":{"pods":"1"}},"status":{"hard":{"pods":"1"},"used":{"pods":"1"}}}
+]}

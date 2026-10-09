@@ -195,7 +195,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `terraform-review` | tree-sitter HCL rule engine (TF*/SEC*/CO* rules, `reference/rules.md`), configurable policy via `tfreview.json`, optional terraform fmt/validate (temp `TF_DATA_DIR`, lock file read-only or removed: writes nothing into the reviewed dir), tflint, trivy; exit 1 at `--fail-on` | `skills/terraform-review/scripts/run.sh` |
 | `terraform-plan-review` | risk model over `terraform show -json` (or `plan -json` stream); stdlib only; exit 1 at `--fail-on` | `skills/terraform-plan-review/scripts/planreview.py` |
 | `terraform-module-scaffold` | `templates/module` and `templates/root` rendered by `scripts/scaffold.py`; the templates define the conventions; edit them to change them | `skills/terraform-module-scaffold/scripts/scaffold.py` |
-| `cluster-graph` | `kubegraph.py` (stdlib): read-only `kubectl get -o json` of every listable type (CRDs included, 12 in parallel) -> per-object health + links (owners, selectors, references, routes, HPA targets, webhooks/APIServices -> Services, PVC -> PV -> StorageClass, CR -> CRD, `missing` targets) in `~/.cache/kubegraph/<context>.db`; queries re-snapshot after 5 min; Secret/ConfigMap values never stored; kubectl verbs other than get/api-resources/logs/version refused in code. Tests: `tests/test_kubegraph.py` on `tests/fixture/` (sanitized `--save` of minikube with `tests/faults.yaml` + `testenvs.yaml` planted) | `skills/cluster-graph/scripts/run.sh` |
+| `cluster-graph` | `kubegraph.py` (stdlib): read-only `kubectl get -o json` of every listable type (CRDs included, 12 in parallel) -> per-object health + links (owners, selectors, references, routes, HPA targets, webhooks/APIServices -> Services, PVC -> PV -> StorageClass, CR -> CRD, `missing` targets) in `~/.cache/kubegraph/<context>.db`; queries re-snapshot after 5 min; `why`/`show` map objects to the repo's YAML (`defined at file:line`, line-based scan, no YAML library) and list candidates for a `missing` reference; `waste` prices live waste with `../gke-cost-discovery/reference/pricing.json` (now also `pd_gb_month`, `lb_month`); `reach` evaluates NetworkPolicies (+ DNS, enforcing CNI); `RolloutStuck` health; Secret/ConfigMap values never stored; kubectl verbs other than get/api-resources/logs/version refused in code. Tests: `tests/test_kubegraph.py` on `tests/fixture/` (sanitized `--save` of minikube with `tests/faults.yaml` + `testenvs.yaml` planted) | `skills/cluster-graph/scripts/run.sh` |
 | `k8s-cluster-triage` | procedure only: `health` sweep read top-down (not collected, cluster-scoped, system namespaces, capacity, shared-cause table), `why` on the top groups | `../cluster-graph/scripts/run.sh` |
 | `k8s-workload-triage` | procedure only: `why` -> cause class -> fix in the manifest -> `why --refresh` after it is applied | `../cluster-graph/scripts/run.sh` |
 | `code-graph` | build `.ast-graph/graph.db` once (queries refresh it when the git tree changed); `find`, `symbol`, `source`, `callers`, `callees`, `tests-for`, `trace-deps`, `overview`, `file`, `path`, `stats` | `skills/code-graph/scripts/run.sh` |
@@ -278,8 +278,8 @@ templates rather than adding vendor-neutral fallbacks.
   the subagent's context on every request (it does not restrict access). An AGENT.md may set `preload:`
   (a subset of `skills:`); `render.py claude` then emits only those in `skills:` and adds the `Skill`
   tool so the rest load on demand. Without `preload:` every skill is preloaded (unchanged behaviour).
-  kubernetes preloads only `cluster-graph`: 10k characters of agent + preload per request instead of
-  37k. Other harnesses ignore `preload:`.
+  kubernetes preloads only `cluster-graph` (10k characters of agent + preload per request instead of
+  37k), helm only `helm-chart-review` (6.7k instead of 23k). Other harnesses ignore `preload:`.
 - `install.sh --harness <h> --target <repo> --uninstall` restores a clean working tree: it removes
   the harness folders, the managed AGENTS.md block (and an AGENTS.md that only held our header),
   and an import-only CLAUDE.md/GEMINI.md the install created. Verified as a round trip on a repo
@@ -381,9 +381,11 @@ No Node.js is required. The machine used for development has no system tree-sitt
 ## Lower-environment testing
 A throwaway minikube profile (`minikube start -p agents-test --driver=docker --addons=metrics-server`)
 is the lower environment for anything Kubernetes: guardrail admission behaviour, the janitor,
-`kubectl top`, discovery's kubectl path, cluster-graph (`kubectl apply -f skills/cluster-graph/tests/faults.yaml`,
-then `testenvs.yaml` once the CRD is Established, then delete PVC `kg-faults/kg-claim` to release its PV;
-namespaces `kg-faults`, `kg-quota` plus cluster-scoped `kg-*` objects). Use `kubectl --context agents-test`; never a shared or
+`kubectl top`, discovery's kubectl path, cluster-graph (`skills/cluster-graph/tests/plant.sh agents-test [tests/fixture]` plants
+`faults.yaml`, `faults-2.yaml`, `testenvs.yaml`, the Released PV and the stuck rollout, idempotently, and with a
+directory saves the sanitized fixture; it refuses contexts that are not minikube/kind; namespaces `kg-faults`,
+`kg-quota`, `kg-preview-123`, `kg-net` plus cluster-scoped `kg-*` objects). `minikube stop` removes the context
+from kubeconfig; start again with `--driver=docker` (the default driver here is virtualbox). Use `kubectl --context agents-test`; never a shared or
 production cluster. `minikube stop -p agents-test` between sessions; `minikube delete -p agents-test`
 to remove. Starting minikube switches the current kubectl context (even with `--keep-context`, seen 2026-10-08 on
 an existing profile); restore it afterwards.

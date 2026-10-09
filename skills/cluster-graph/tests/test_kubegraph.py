@@ -60,7 +60,9 @@ class Fixture(unittest.TestCase):
         self.assertEqual(self.health("Service/kg-faults/ok-web")[0], "ok")
         out = self.q("health")
         self.assertNotIn("ok-web ", out)
-        self.assertNotIn("\nkube-system", out)   # a healthy control plane produces no group
+        system = out.split("\nkube-system\n")[1].split("\n\n")[0] if "\nkube-system\n" in out else ""
+        self.assertNotIn("FAIL", system)   # a healthy control plane fails nothing (a reboot's restarts may warn)
+        self.assertNotIn("etcd", system)   # restarts of long-lived instances (node reboot) are not reported
 
     # ---- pod failure classes
     def test_crashloop(self):
@@ -201,7 +203,78 @@ class Fixture(unittest.TestCase):
         out = self.q("health", "-n", "kg-faults")
         block = out.split("FAIL Deployment/kg-faults/crashy")[1].split("\n  FAIL")[0]
         self.assertIn("└ FAIL Pod/kg-faults/crashy-", block)
-        self.assertNotIn("ReplicaSet", block)   # intermediate owners mirror the root: hidden
+        self.assertNotIn("FAIL ReplicaSet/", block)   # intermediate owners mirror the root: hidden
+
+    # ---- rollout, candidates, manifests, webhooks, waste, reach
+    def test_rollout_stuck(self):
+        h, r, s = self.g.h("Deployment/kg-faults/checkout")
+        self.assertEqual((h, r), ("fail", "RolloutStuck"))
+        self.assertIn("revision 2 0/1 ready, its pods ImagePullBackOff; revision 1 still serving 2 pods", s)
+
+    def test_reboot_restart_is_not_the_cause(self):
+        # the unready pod's previous instance ran ~4h and died with the node: still a readiness problem
+        pod = [i for i in self.g.nodes if i.startswith("Pod/kg-faults/unready-")][0]
+        self.assertEqual(self.health(pod), ("fail", "ProbeFailing"))
+
+    def test_missing_candidates(self):
+        out = self.q("why", "deploy/uses-pvc", "deploy/missing-config", "deploy/missing-key", "--no-logs")
+        self.assertIn("no StorageClass named does-not-exist in any namespace; existing: StorageClass/standard (default)", out)
+        self.assertIn("no ConfigMap named app-settings in any namespace; existing: ConfigMap/kg-faults/web-cfg", out)
+        self.assertNotIn("kube-root-ca.crt", out)
+        self.assertIn("keys present: index.html, mode", out)
+
+    def test_manifest_locations(self):
+        repo = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(repo, "k8s"), exist_ok=True)
+        shutil.copy(os.path.join(HERE, "faults.yaml"), os.path.join(repo, "k8s", "app.yaml"))
+        out = self.q("why", "deploy/missing-config", "--repo", repo, "--no-logs")
+        self.assertIn("defined at k8s/app.yaml:103", out)                         # block metadata
+        self.assertIn("ConfigMap/kg-faults/app-settings not defined in this repository", out)
+        out = self.q("why", "ingress/shop", "--repo", repo, "--no-logs")
+        self.assertIn("Ingress/kg-faults/shop defined at k8s/app.yaml:", out)       # flow metadata
+        self.assertNotIn("defined at", self.q("why", "deploy/crashy", "--no-repo", "--no-logs"))
+
+    def test_webhook_scope(self):
+        out = self.q("show", "ValidatingWebhookConfiguration/kg-policy")
+        self.assertIn("CREATE/UPDATE deployments; failurePolicy Fail; matches no namespace now", out)
+
+    def test_waste(self):
+        out = self.q("waste", "--min-age", "0")
+        self.assertIn("Deployment/kg-faults/crashy  1 pod(s) CrashLoopBackOff", out)          # held requests
+        self.assertIn("Deployment/kg-preview-123/preview-app  2 pod(s) request cpu 1.00", out)  # over-requested
+        self.assertIn("PersistentVolumeClaim/kg-preview-123/orphan-data  Bound 5Gi, no pod mounts it", out)
+        self.assertNotIn("used-data", out)                                                    # mounted: not waste
+        self.assertIn("PersistentVolume/kg-retained  Released 1Gi", out)
+        self.assertIn("Service/kg-preview-123/preview-lb", out)
+        self.assertIn("Job/kg-preview-123/seed-data  Complete, no ttlSecondsAfterFinished", out)
+        self.assertNotIn("Job/kg-faults/migrate-db", out)                                     # has a TTL
+        self.assertIn("Deployment/kg-preview-123/preview-app  up", out)                       # env without TTL
+        self.assertNotIn("preview-ttl", out)                                                  # env with TTL
+        self.assertIn("Pod/kg-preview-123/debug-shell  no controller (bare pod), local storage", out)
+        self.assertIn("safe-to-evict=false", out)
+        self.assertIn("PodDisruptionBudget/kg-preview-123/pinned  allows 0 disruptions", out)
+
+    def test_reach(self):
+        out = self.q("reach", "deploy/frontend", "svc/api", "-n", "kg-net")
+        self.assertIn("port: Service port 80 -> targetPort http = 8080", out)       # named targetPort resolved
+        self.assertIn("allowed by NetworkPolicy/kg-net/api-from-frontend ingress rule 1", out)
+        self.assertIn("verdict: allowed", out)
+        self.assertIn("no policy-enforcing CNI found", out)
+        out = self.q("reach", "deploy/tester", "svc/api", "-n", "kg-net")
+        self.assertIn("ingress to destination: DENIED", out)
+        self.assertIn("NetworkPolicy/kg-net/default-deny-ingress: no ingress rules (deny all)", out)
+        self.assertIn("verdict: denied", out)
+        out = self.q("reach", "deploy/api", "svc/db", "-n", "kg-net")
+        self.assertIn("egress from source: allowed by NetworkPolicy/kg-net/api-egress", out)
+        self.assertIn("ingress to destination: allowed by NetworkPolicy/kg-net/db-from-api", out)   # named port pg
+        self.assertIn("dns from source (kube-dns 53/UDP): DENIED", out)
+        self.assertIn("podSelector: {matchLabels: {k8s-app: kube-dns}}", out)       # the rule to add
+        repo = os.path.join(self.tmp, "netrepo")
+        os.makedirs(repo, exist_ok=True)
+        shutil.copy(os.path.join(HERE, "faults-2.yaml"), os.path.join(repo, "net.yaml"))
+        out = self.q("reach", "deploy/api", "svc/db", "-n", "kg-net", "--repo", repo)
+        self.assertIn("NetworkPolicy/kg-net/api-egress defined at net.yaml:", out)
+        self.assertNotIn("pod-template-hash", out)
 
     # ---- secrets never stored
     def test_no_secret_values_stored(self):

@@ -32,7 +32,7 @@ ConfigMaps as key names (`dataKeys`) only; env values whose name looks like a cr
 | kind | fail | warn |
 |---|---|---|
 | Pod | waiting reason (CrashLoopBackOff, ImagePullBackOff, CreateContainerConfigError, ...), last termination OOMKilled / exit 137 (`Killed`), Unschedulable, Evicted, Failed, Unknown, not Ready after 2 min (`ProbeFailing` when Unhealthy events exist), ContainerCreating after 2 min (FailedMount ...) | starting (< 2 min), 3+ restarts, stuck Terminating, Unschedulable with a TriggeredScaleUp event |
-| Deployment, StatefulSet, ReplicaSet | ReplicaFailure (quota, admission), ProgressDeadlineExceeded, 0 available | fewer ready than desired, rollout in progress |
+| Deployment, StatefulSet, ReplicaSet | ReplicaFailure (quota, admission), ProgressDeadlineExceeded, 0 available | fewer ready than desired, rollout in progress, `RolloutStuck` (newest ReplicaSet's pods fail while an older one serves; fail once the progress deadline passed) |
 | DaemonSet | 0 ready | fewer ready, misscheduled |
 | Job | Failed condition (BackoffLimitExceeded, DeadlineExceeded) | |
 | Service | selector matches no pod (`NoPods`), no Ready pod (`NoReadyEndpoints`) | LoadBalancer without an address |
@@ -64,6 +64,14 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
   the deepest failing pod), `advice:` for that class, the failing container's last 20 log lines
   (`--previous` when it restarted; `--tail N`, `--no-logs`; live snapshots only) and `next:` commands.
   For a Service whose selector matches nothing it prints the closest pod label sets.
+- In a git checkout (or with `--repo DIR`), `why` and `show` print where the repository defines the
+  object (`defined at path:line`, pods and ReplicaSets mapped to their top owner), or `not defined in this
+  repository`. Plain YAML only (block or flow `metadata`, up to 3,000 files); Helm templates and Kustomize
+  name transforms are not resolved. `--no-repo` skips the scan.
+- For a `missing` cause, `why` lists the existing objects of that kind with the closest names (same
+  namespace first, same name in another namespace flagged, the default StorageClass marked); for
+  `missing key`, the keys the ConfigMap/Secret does have. Webhook configurations get one line per
+  webhook: operations and resources, failurePolicy, the namespaces its selector matches in the snapshot.
 - `show OBJ...`: labels, containers with images and requests/limits, requests x replicas, current usage,
   owner, children, uses, used by, warning events.
 - `used-by OBJ...`: reverse dependencies by depth (`--depth`, default 4): users of a ConfigMap, Secret,
@@ -73,13 +81,27 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
 - `events [OBJ] [-n NS]`: grouped events, newest first; warnings only unless `--all`.
 - `crds`: every CRD with its instance count and unhealthy instances.
 - `overview`: per namespace running/total pods, workloads, requests vs usage (cpu, memory), unhealthy.
+- `waste`: what the snapshot shows the cluster paying for without use, in ~$/month at the list prices of
+  `../gke-cost-discovery/reference/pricing.json`: requests reserved by scheduled pods that fail; pods
+  requesting far more than they use now (one sample: a lead for `gke-cost-discovery`, not a size);
+  Bound PVCs no pod mounts, Released/Available PVs (priced by the StorageClass's PD type); LoadBalancer
+  Services; finished Jobs without `ttlSecondsAfterFinished`; Deployments/StatefulSets in test namespaces
+  (`--env-ns`, default `*preview*,*review*,*test*,pr-*,*-pr-*,*ephemeral*,*sandbox*`) older than
+  `--min-age` hours (4) without `janitor/ttl`/`janitor/expires` on them or their namespace; scale-down
+  blockers (safe-to-evict=false, bare pods, local storage, PDBs allowing 0 disruptions); nodes under 40%
+  requested.
+- `reach A B [--port N] [--protocol P]`: NetworkPolicy evaluation for traffic from A (pod, workload) to B
+  (pod, workload or Service; a Service's targetPort, named ports resolved, is the default port): egress
+  policies selecting A, ingress policies selecting B, each with the rule that allows it or the rules that
+  exist when it is denied; whether A's egress policies allow DNS to kube-dns (53/UDP); and whether a
+  policy-enforcing CNI runs in kube-system (without one, policies are not enforced at all).
 
 ## Limits
 
 - A snapshot is a point in time: re-run with `--refresh` after a change, and treat states younger than
   2 minutes as transient.
-- No exec, no port-forward, no network probes: DNS or connectivity between pods is inferred (Service
-  endpoints, NetworkPolicy selection), not tested.
+- No exec, no port-forward, no network probes: connectivity is evaluated from Service endpoints and
+  NetworkPolicies (`reach`), not tested; ipBlock peers are matched against pod IPs only.
 - Logs are only fetched by `why`, never stored.
 - Custom resources get generic health (conditions, phase, Argo CD health/sync, observedGeneration) and
   generic references (`secretName`, `serviceName`, `*Ref.name` to objects that exist).

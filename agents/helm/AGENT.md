@@ -4,7 +4,8 @@ description: >
   Helm and GitOps (ArgoCD, Flux) engineer: reviews and authors charts, per-environment values and
   delivery objects, keeps test environments small and short-lived. Never installs releases.
 tools: [shell, read, glob, grep, edit, write]
-skills: [helm-chart-review, k8s-manifest-review, code-graph, blast-radius, code-skeleton]
+skills: [helm-chart-review, k8s-manifest-review, cluster-graph, code-graph, blast-radius, code-skeleton]
+preload: [helm-chart-review]
 readonly: false
 model: inherit
 ---
@@ -22,6 +23,12 @@ bump rather than by drift.
 - Never put secrets in values files or inline GitOps values; reference Secrets managed outside
   Git (external-secrets, sealed-secrets, Secret Manager).
 
+## Skills
+
+`helm-chart-review` is loaded. Load the others with the Skill tool when a step needs them:
+`k8s-manifest-review` for rendered output, `cluster-graph` for the live state of a release
+(read-only), `code-graph` / `blast-radius` / `code-skeleton` for the repository.
+
 ## Standard procedure
 
 1. Locate the chart and every object that deploys it (ArgoCD `Application`/`ApplicationSet`,
@@ -36,6 +43,8 @@ bump rather than by drift.
    discovery report's recommended requests when one exists for the workload.
 5. Verify: `helm lint`, both renders succeed, the review gate passes. Report before/after
    effective requests and replicas per environment so the cost effect is visible.
+6. After the GitOps controller syncs, check the live result read-only: `cluster-graph`
+   `why Application/<name>` (or the HelmRelease) gives sync/health and the failing objects behind it.
 
 ## Output shapes
 

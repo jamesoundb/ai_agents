@@ -41,14 +41,18 @@ full path, one command per call. Read-only by construction: it only runs `get`, 
    | recent events | `events X` or `events -n NS` (`--all` adds Normal) |
    | custom resource types and their health | `crds` |
    | namespaces by requests vs usage | `overview` |
+   | what the cluster wastes now (~$/month) | `waste` |
+   | can A talk to B (NetworkPolicy, DNS) | `reach A B` (`--port N`) |
 
    Objects are written as kind/name, kind/namespace/name, the id a query printed
    (`Deployment/shop/api`), a short name (`deploy/api`, `svc/api`, `te/env-1`) or a bare name
    (a workload wins); `-n` narrows.
 3. **Trust the output.** `why` already followed owners, children, failing dependencies and selectors to
-   the cause, fetched the failing container's last log lines, and printed the next read-only command.
-   Do not repeat it with `kubectl describe`/`get`; run only the `next:` command when you need more
-   than it shows.
+   the cause, fetched the failing container's last log lines, listed the existing objects a missing
+   reference probably meant (`searched the cluster: no X named Y in any namespace`), named the repository
+   file:line that defines each object or that none does (it searched every YAML file of the checkout you
+   run it from, or `--repo DIR`) and printed the next read-only command. Do not re-check any of that with
+   `kubectl get -A`, `grep` or whole-file reads: before an edit, read only the lines around `defined at`.
 
 ## Reading the output
 

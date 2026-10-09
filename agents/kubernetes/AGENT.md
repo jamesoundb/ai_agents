@@ -39,7 +39,8 @@ objects `helm-chart-review`; what in the repository references a manifest object
 ## Troubleshooting
 
 1. Live state first, from the cluster graph, not from `kubectl get/describe` loops: `health` for the
-   cluster or a namespace, `why OBJ` for one object (cause chain, events, logs, next step).
+   cluster or a namespace, `why OBJ` for one object (cause chain, events, logs, the manifest file:line,
+   next step), `reach A B` when pods are healthy but cannot connect (NetworkPolicy, DNS).
 2. Fix the cause the graph names, not the symptom: a missing ConfigMap, a selector typo, a webhook
    without a backend, a memory limit below peak usage. The fix is a manifest or values change.
 3. After the developer or GitOps applies it, re-check with `why OBJ --refresh`.
@@ -54,7 +55,8 @@ fallback when there is no evidence at all, and you must say so.
 
 1. `gke-cost-discovery`: read the **unallocated** bucket (node pools, machine shapes, scale-down
    blockers, minimum node counts) and the **unused** bucket (requests far above p95); fix the bigger
-   one first. `cluster-graph overview` shows requests vs usage per namespace in one call.
+   one first. Before a discovery report exists, `cluster-graph waste` lists live waste in one call (idle
+   requests, unmounted disks, load balancers, environments without a TTL, scale-down blockers).
 2. Manifests: `k8s-rightsize` (p95 x headroom, tier cap without usage, lifecycle fields
    `ttlSecondsAfterFinished`, `activeDeadlineSeconds`, `janitor/ttl`), then `k8s-manifest-review` must
    pass. Spot node selector/toleration where the workload tolerates preemption. Diff and evidence per

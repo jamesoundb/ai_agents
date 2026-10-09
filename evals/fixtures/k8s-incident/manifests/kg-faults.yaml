@@ -313,7 +313,7 @@ spec:
       storage: true
       schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}
 ---
-# Retained PersistentVolume whose claim is deleted by plant.sh: Released (disk kept and billed)
+# Retained PersistentVolume: plant.sh binds a claim to it and deletes the claim -> Released (disk kept and billed)
 apiVersion: v1
 kind: PersistentVolume
 metadata: {name: kg-retained}
@@ -323,8 +323,3 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: manual
   hostPath: {path: /tmp/kg-retained}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: {name: kg-claim, namespace: kg-faults}
-spec: {accessModes: [ReadWriteOnce], storageClassName: manual, volumeName: kg-retained, resources: {requests: {storage: 1Gi}}}

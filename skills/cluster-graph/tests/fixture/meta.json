@@ -1,6 +1,6 @@
 {
  "context": "agents-test",
- "taken_at": 1791475247.8264987,
+ "taken_at": 1791489106.518401,
  "server": "v1.24.1",
  "errors": [
   "API group broken.kg.example.com/v1beta1: unavailable, its resources were not listed"

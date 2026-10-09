@@ -1,49 +1,5 @@
-{
- "apiVersion": "v1",
- "items": [
-  {
-   "apiVersion": "v1",
-   "kind": "PersistentVolume",
-   "metadata": {
-    "annotations": {
-     "kubectl.kubernetes.io/last-applied-configuration": "<dropped>",
-     "pv.kubernetes.io/bound-by-controller": "yes"
-    },
-    "creationTimestamp": "2026-10-08T15:56:29Z",
-    "finalizers": [
-     "kubernetes.io/pv-protection"
-    ],
-    "name": "kg-retained",
-    "resourceVersion": "2720",
-    "uid": "878a53c5-032e-4201-a4d7-81c8fe91d897"
-   },
-   "spec": {
-    "accessModes": [
-     "ReadWriteOnce"
-    ],
-    "capacity": {
-     "storage": "1Gi"
-    },
-    "claimRef": {
-     "apiVersion": "v1",
-     "kind": "PersistentVolumeClaim",
-     "name": "kg-claim",
-     "namespace": "kg-faults",
-     "resourceVersion": "2540",
-     "uid": "6d2fc116-3c20-4bc5-8aad-9fa1c9ca75f1"
-    },
-    "hostPath": {
-     "path": "/tmp/kg-retained",
-     "type": ""
-    },
-    "persistentVolumeReclaimPolicy": "Retain",
-    "storageClassName": "manual",
-    "volumeMode": "Filesystem"
-   },
-   "status": {
-    "phase": "Released"
-   }
-  }
- ],
- "kind": "List"
-}
+{"apiVersion": "v1", "kind": "List", "items": [
+{"apiVersion":"v1","kind":"PersistentVolume","metadata":{"annotations":{"kubectl.kubernetes.io/last-applied-configuration":"<dropped>","pv.kubernetes.io/bound-by-controller":"yes"},"creationTimestamp":"2026-10-08T15:56:29Z","finalizers":["kubernetes.io/pv-protection"],"name":"kg-retained","resourceVersion":"2720","uid":"878a53c5-032e-4201-a4d7-81c8fe91d897"},"spec":{"accessModes":["ReadWriteOnce"],"capacity":{"storage":"1Gi"},"claimRef":{"apiVersion":"v1","kind":"PersistentVolumeClaim","name":"kg-claim","namespace":"kg-faults","resourceVersion":"2540","uid":"6d2fc116-3c20-4bc5-8aad-9fa1c9ca75f1"},"hostPath":{"path":"/tmp/kg-retained","type":""},"persistentVolumeReclaimPolicy":"Retain","storageClassName":"manual","volumeMode":"Filesystem"},"status":{"phase":"Released"}},
+{"apiVersion":"v1","kind":"PersistentVolume","metadata":{"annotations":{"hostPathProvisionerIdentity":"e2624461-6ff8-4bba-baf6-c81aee2ced63","pv.kubernetes.io/provisioned-by":"k8s.io/minikube-hostpath"},"creationTimestamp":"2026-10-08T19:47:34Z","finalizers":["kubernetes.io/pv-protection"],"name":"pvc-0e9dfeb5-3845-4eb0-a5d8-d58b8e6f3749","resourceVersion":"3993","uid":"e724f910-75c2-44f2-918c-f6b199ce7f67"},"spec":{"accessModes":["ReadWriteOnce"],"capacity":{"storage":"5Gi"},"claimRef":{"apiVersion":"v1","kind":"PersistentVolumeClaim","name":"orphan-data","namespace":"kg-preview-123","resourceVersion":"3972","uid":"0e9dfeb5-3845-4eb0-a5d8-d58b8e6f3749"},"hostPath":{"path":"/tmp/hostpath-provisioner/kg-preview-123/orphan-data","type":""},"persistentVolumeReclaimPolicy":"Delete","storageClassName":"standard","volumeMode":"Filesystem"},"status":{"phase":"Bound"}},
+{"apiVersion":"v1","kind":"PersistentVolume","metadata":{"annotations":{"hostPathProvisionerIdentity":"e2624461-6ff8-4bba-baf6-c81aee2ced63","pv.kubernetes.io/provisioned-by":"k8s.io/minikube-hostpath"},"creationTimestamp":"2026-10-08T19:47:34Z","finalizers":["kubernetes.io/pv-protection"],"name":"pvc-68deb787-e6ef-4108-ab44-0d7fef1c7c71","resourceVersion":"4010","uid":"e095e84a-0a22-47c9-aa73-fbe76ef293f2"},"spec":{"accessModes":["ReadWriteOnce"],"capacity":{"storage":"1Gi"},"claimRef":{"apiVersion":"v1","kind":"PersistentVolumeClaim","name":"used-data","namespace":"kg-preview-123","resourceVersion":"3985","uid":"68deb787-e6ef-4108-ab44-0d7fef1c7c71"},"hostPath":{"path":"/tmp/hostpath-provisioner/kg-preview-123/used-data","type":""},"persistentVolumeReclaimPolicy":"Delete","storageClassName":"standard","volumeMode":"Filesystem"},"status":{"phase":"Bound"}}
+]}

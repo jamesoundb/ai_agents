@@ -26,18 +26,22 @@ cluster: the fix goes into the manifest or Helm values for the developer or GitO
    | `CrashLoopBackOff`, `Error` | app config, command/args, a dependency it needs at startup | quote the log line that names it |
    | `OOMKilled`, `Killed` (137) | `resources.limits.memory` | `show` gives current usage; with a discovery report, size from its peak (`k8s-rightsize`) |
    | `ImagePullBackOff`, `ErrImagePull` | image name/tag, `imagePullSecrets` | the event names registry and error |
-   | `CreateContainerConfigError`, `missing`, `missing key` | create the ConfigMap/Secret through GitOps, or fix the name/key | `used-by` shows who else needs it |
+   | `CreateContainerConfigError`, `missing`, `missing key` | create the ConfigMap/Secret through GitOps, or fix the name/key | `used-by` shows who else needs it; if none of the `existing:` objects is clearly the one meant, ask before pointing the reference at another object (a different backend changes behaviour) |
    | `Unschedulable` | requests vs free capacity, nodeSelector/affinity, tolerations | the message lists each node's reason; do not raise node pools before checking over-requesting |
    | `ProbeFailing`, `NotReady` | probe path/port, `initialDelaySeconds`, a `startupProbe` | the event names the probe and the error |
    | `NoPods` | Service selector or pod labels | `why` prints the closest pod labels |
    | `NoReadyEndpoints`, `BackendUnavailable` | the pods behind it | follow `cause:` |
+   | `RolloutStuck` | what changed in the new pod template (image, config, probes), or roll the manifest back | the old revision still serves: urgent, not an outage |
+   | healthy but "cannot connect" / timeouts | NetworkPolicy rules, Service port/targetPort | `reach SOURCE DEST`: the rule that allows or the rules that deny, DNS, whether policies are enforced |
    | PVC `Pending`, `ProvisioningFailed` | `storageClassName` | `cause:` follows pod -> PVC -> StorageClass |
    | `BackoffLimitExceeded`, `DeadlineExceeded` | the job's command, data or `activeDeadlineSeconds` | logs of the last pod |
    | `FailedGetResourceMetric` (HPA) | CPU/memory requests on the target, or metrics-server | |
    | `ReplicaFailure` | quota, LimitRange, PodSecurity, a webhook | the message says which |
    | custom resource `Ready=False ...` | what the controller's message says | the controller's own logs: `find <operator> --kind pod` |
 
-4. **Fix in the repo.** Locate the manifest or values file (`Grep` for the object name), edit it, and
+4. **Fix in the repo.** `why` names the file:line that defines each object (`defined at`): read ~40 lines
+   from there and edit. `not defined in this repository` means every YAML file was searched (Helm templates
+   and Kustomize name transforms are the exception: then `Grep`). Then
    validate with `kubectl apply --dry-run=client -f FILE` (and `--dry-run=server` when the cluster is
    reachable); build and test manifests also go through `k8s-manifest-review`.
 5. **Verify after the change is applied** (by the developer or GitOps): `why KIND/NAME --refresh`. A new

@@ -87,3 +87,18 @@ Dollar figures are list-price approximations for ranking; the billing export is 
   without a backend second, then the independent workload faults.
 - Context per subagent request: 10k characters (agent + preloaded `cluster-graph`) instead of 37k
   (agent + 8 preloaded skills); the other skills load on demand.
+
+## Verified (2026-10-08): waste, reachability, rollouts
+
+- Added on minikube (`skills/cluster-graph/tests/plant.sh`): live cost waste (`waste`), NetworkPolicy
+  reachability (`reach`), a stuck rollout, manifest file:line in `why`, candidates for missing references.
+  39 regression tests on the re-captured snapshot.
+- Agent runs, headless in Claude Code against that cluster, no cluster changes in any:
+  - workload triage (same prompt as above): 13 turns, $0.31 (before: 18 turns, $0.46), reading only the
+    manifest lines `why` pointed at;
+  - "api times out talking to the database, tester cannot reach api": 13 turns, $0.31; found the egress
+    policy that blocks DNS and the default-deny that blocks the tester, wrote both policy fixes;
+  - "the test cluster costs too much, no discovery report": 20 turns, $0.62; ~$37/month of live waste plus
+    ~$157/month of unallocated node capacity routed to the terraform agent, manifest fixes and guardrails.
+- Context per subagent request: kubernetes 10k characters, helm 6.7k (helm now preloads only
+  `helm-chart-review`).
