@@ -58,9 +58,18 @@ The linker is receiver-aware and import-aware:
   (`import` confidence). The resolved return type then types the rest of a chain (`helper().build()`).
 - Kotlin/Java overrides need the same parameter types (an overload of the same name is not an override;
   a parameter list wrapped over several lines is read whole), and `super.f(x)` inside `override fun f(...)`
-  whose repo candidate has other parameter types and cannot take the call's argument count is left to the
-  external base class it really calls; a candidate that can take them is linked (`isEqualTo(Double)` calling
-  `super.isEqualTo(expected)` reaches `isEqualTo(Object)`).
+  whose repo candidate has other parameter types and cannot take the call's arguments (their count, or an
+  argument that certainly cannot be passed: a function value for a non-function parameter, another named
+  type for `String`) is left to the external base class it really calls; a candidate that can take them is
+  linked (`isEqualTo(Double)` calling `super.isEqualTo(expected)` reaches `isEqualTo(Object)`).
+- Kotlin overload choice binds arguments the way Kotlin does: a parameter with a default value is optional,
+  a named argument lands on its parameter, positional arguments stay on a `vararg` once they reach it, and
+  a trailing lambda is the last parameter (`index("n", unique = true, a, b) { … }`). Lambdas and callable
+  references (`String::uppercase`, `Media.Status::name`) are function values, an identifier naming an
+  `object` is of that object's type; in every language a chained-call argument (`a.b().c()`) is typed by
+  its last call, not its first.
+  A tie between a generic and a non-generic overload stays `ambiguous` (the receiver's type arguments are
+  not tracked).
   Loop and comprehension variables are typed from the iterable (`for it in self.items` with
   `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
   (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields

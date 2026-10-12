@@ -601,6 +601,36 @@ def test_overload_queries(root):
     wrapped = q("path", "Bootstrap.start", "LineBootstrap.open")
     check("Bootstrap.open --dispatch (override)--> LineBootstrap.open" in wrapped.stdout,
           f"path dispatches through a wrapped abstract signature: {wrapped.stdout.strip().splitlines()}")
+    kt = q("callees", "label").stdout
+    check("pad  L11 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:4" in kt,
+          f"kotlin: `pad(\"x\")` with a defaulted second parameter calls pad(text, width = 8): {kt.strip().splitlines()[1:]}")
+    ref = q("callees", "shout").stdout
+    check("render  L19 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:17  [same_file]" in ref,
+          f"kotlin: a callable-reference argument picks the function-typed overload: {ref.strip().splitlines()[1:]}")
+    qref = q("callees", "shoutQualified").stdout
+    check("render  L74 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:17  [same_file]" in qref,
+          f"kotlin: a qualified callable reference is a function value: {qref.strip().splitlines()[1:]}")
+    nul = q("callees", "Writers.open").stdout
+    check("open  L10 -> java/src/main/java/com/acme/Writers.java:13  [typed]" in nul,
+          f"java: a null argument fits a String parameter: {nul.strip().splitlines()[1:]}")
+    box = q("callees", "Boxes.check").stdout
+    check("BaseBox.check  L13 -> java/src/main/java/com/acme/Boxes.java:6" in box,
+          f"java: super.check(Long) reaches check(Object): {box.strip().splitlines()[1:]}")
+    chain = q("callees", "Boxes.chained", "--include-ambiguous").stdout
+    check("label  L34 -> java/src/main/java/com/acme/Boxes.java:24  [typed]" in chain,
+          f"java: a chained-call argument is typed by its last call: {chain.strip().splitlines()[1:]}")
+    idx = q("callees", "byName").stdout
+    check("index  L34 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:25  [same_file]" in idx,
+          f"kotlin: vararg, named argument and trailing lambda bind like Kotlin's: {idx.strip().splitlines()[1:]}")
+    named = q("callees", "picked").stdout
+    check("pick  L41 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:37  [same_file]" in named,
+          f"kotlin: named arguments out of order bind by name: {named.strip().splitlines()[1:]}")
+    lint = q("callees", "LintSpec.linted", "--include-ambiguous").stdout   # reaching this point: it used to loop forever
+    check("lint  L52 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:45" in lint and "Pads.kt:47  [same_file]" not in lint,
+          f"kotlin: an argument typed only by its initializer is unknown (no endless loop, no wrong overload): {lint.strip().splitlines()[1:]}")
+    obj = q("callees", "tabled").stdout
+    check("table  L65 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:63  [same_file]" in obj,
+          f"kotlin: an object argument is typed as its object: {obj.strip().splitlines()[1:]}")
     disp = q("path", "Areas.total", "Square.area")
     check(disp.returncode == 0 and "Shape.area --dispatch (override)--> Square.area" in disp.stdout,
           f"path follows a call through an interface to the overriding method: {disp.stdout.strip().splitlines()}")

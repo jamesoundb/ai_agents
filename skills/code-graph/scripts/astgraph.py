@@ -379,6 +379,20 @@ class Ctx:
         self.refs.append(ref)
         return ref
 
+    def chained_callee(self, c, ctext):
+        """The outermost callee of a call argument that is a chain (`a.b().c()` -> `a.b().c`), whose text
+        before the first `(` names the wrong call; None when the argument is a single call."""
+        f = c.child_by_field_name("name") or c.child_by_field_name("function") or (c.named_children[0] if c.named_children else None)
+        if f is None:
+            return None
+        def last(s):
+            return re.split(r"[.:]", re.sub(r"<[^<>]*>", "", s.replace("?.", ".")))[-1].strip()
+
+        if last(self.text(f)) == last(ctext.split("(", 1)[0]):
+            return None
+        obj = c.child_by_field_name("object")   # Java: `name` is the bare method name
+        return (self.text(obj) + "." + self.text(f)) if c.type == "method_invocation" and obj is not None else self.text(f)
+
     def arg_info(self, named):
         """(argc, arg_types) for a list of argument nodes; argc None when a spread/splat is present."""
         spread = any(c.type in ("spread_element", "list_splat", "dictionary_splat", "variadic_argument", "spread_argument")
@@ -392,10 +406,16 @@ class Ctx:
                     for c in named:
                         t = None
                         ctext = self.text(c)
-                        if c.type == "identifier":
+                        if c.type in ("identifier", "simple_identifier"):   # Kotlin names a plain identifier simple_identifier
                             t = self.lookup(ctext) or ("<field>" + ctext)   # not in scope: maybe a field via implicit this
                         elif c.type in LITERAL_TYPES.get(self.lang, {}):
                             t = LITERAL_TYPES[self.lang][c.type]
+                        elif c.type in ("callable_reference", "lambda_literal", "annotated_lambda") \
+                                or (c.type == "navigation_expression" and c.named_children
+                                    and self.text(c.named_children[-1]).startswith("::")):
+                            # Kotlin `Status::name`, `Media.Status::name` (parsed as a navigation), `{ … }`:
+                            # a function value, never a Boolean or a String
+                            t = "(…) -> …"
                         elif c.type in ("cast_expression", "as_expression") and c.child_by_field_name("type") is not None:
                             t = self.text(c.child_by_field_name("type"))
                         elif c.type in ("object_creation_expression", "new_expression"):
@@ -408,6 +428,12 @@ class Ctx:
                                 t = base[:-2]
                             elif base and base.startswith("[]"):
                                 t = base[2:]
+                        elif c.type in ("call", "call_expression", "method_invocation") and "(" in ctext and self.chained_callee(c, ctext):
+                            # `a.getProperty().getName()`: typed by the last call (resolved through the chain), not the first
+                            callee = self.chained_callee(c, ctext).strip()
+                            root = re.split(r"[.(:]", callee, maxsplit=1)[0].strip()
+                            root_type = self.lookup(root) if root and not root[0].isupper() else None
+                            t = "<call>" + callee + "|" + (root_type or "")
                         elif c.type in ("call", "call_expression", "method_invocation") and "(" in ctext and ctext.split("(", 1)[0].strip()[:1].isupper() and "." not in ctext.split("(", 1)[0]:
                             t = ctext.split("(", 1)[0].strip()   # `Order("2")`: a constructor call
                         elif c.type in ("call", "call_expression", "method_invocation") and "(" in ctext:
@@ -1711,7 +1737,12 @@ def kt_function(ctx, n):
     params_n = next((c for c in n.named_children if c.type == "function_value_parameters"), None)
     # parameters: `vararg` modifiers precede their parameter as a sibling
     parts, declared, pending_vararg = [], [], False
-    for c in (params_n.named_children if params_n is not None else []):
+    for c in (params_n.children if params_n is not None else []):
+        if c.type == "=" and parts:
+            # A default value is a sibling of its `parameter` node (`ignoreCase: Boolean = false`). Keep the
+            # `= …` marker: arity() counts such a parameter as optional, so `f(x)` can still pick this overload.
+            parts[-1] += " = …"
+            continue
         if c.type == "parameter_modifiers":
             pending_vararg = "vararg" in ctx.text(c)
             continue
@@ -1868,19 +1899,25 @@ def kt_call(ctx, n):
     if head is None:
         return False
     suffix = next((c for c in n.named_children if c.type == "call_suffix"), None)
-    named = []
+    named, bind = [], []   # bind: per argument, its parameter name (`isUnique = false`), "<trailing>" or None
     if suffix is not None:
         va = next((c for c in suffix.named_children if c.type == "value_arguments"), None)
         if va is not None:
             for a in va.named_children:
                 if a.type == "value_argument" and a.named_children:
                     named.append(a.named_children[-1])
+                    kids = a.children
+                    bind.append(ctx.text(kids[0]) if len(kids) >= 3 and kids[0].type == "simple_identifier"
+                                and kids[1].type == "=" else None)
         if any(c.type == "annotated_lambda" for c in suffix.named_children):
             named.append(next(c for c in suffix.named_children if c.type == "annotated_lambda"))
+            bind.append("<trailing>")   # a trailing lambda is the LAST parameter, whatever comes before it
     argc, types = ctx.arg_info(named)
     extra = {"argc": argc}
     if types:
         extra["arg_types"] = types
+        if any(bind):
+            extra["arg_bind"] = bind
     lam = {"callee": None, "recv": None, "hint_type": None, "chain": None, "argc": argc}
     if head.type == "simple_identifier":
         vt = ctx.lookup(ctx.text(head))
@@ -4765,11 +4802,48 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             return p
         return ""
 
+    def arg_params(ps, n, lang):
+        """The parameter type each of the call's n arguments lands on ('' or None when unknown). Positional
+        arguments fill the parameters in order and stay on a vararg once they reach it (Kotlin's
+        `index(name, unique, vararg cols, filter = …)`); a named Kotlin argument lands on that parameter, a
+        trailing lambda on the last one."""
+        bind = _cur.get("arg_bind") or [None] * n
+        types = [param_type(p, lang) for p in ps]
+        names = [p.split(":", 1)[0].replace("vararg ", "").strip() for p in ps]
+        out, k = [], 0
+        for i in range(n):
+            b = bind[i] if i < len(bind) else None
+            if b == "<trailing>":
+                out.append(types[-1] if types else None)
+            elif b:
+                j = names.index(b) if b in names else None
+                out.append(types[j] if j is not None else None)
+                if j is not None and not types[j].endswith("..."):
+                    k = max(k, j + 1)   # positional arguments may follow a named one only in its own position
+            elif k < len(types):
+                out.append(types[k])
+                if not types[k].endswith("..."):
+                    k += 1
+            else:
+                out.append(None)
+        return out
+
+    _norm_cache = {}
+
     def norm_type(t):
+        hit = _norm_cache.get(t)
+        if hit is None:
+            hit = _norm_cache[t] = _norm_type(t)   # pure in its text: overload scoring asks for the same few types
+        return hit
+
+    def _norm_type(t):
         t = t.replace("final ", "").replace("mut ", "").replace("&", "").replace(" ", "")
         t = re.sub(r"<[^<>]*>", "", t)
         while "<" in t and ">" in t:
-            t = re.sub(r"<[^<>]*>", "", t)
+            t2 = re.sub(r"<[^<>]*>", "", t)
+            if t2 == t:
+                break   # no bracket pair left (a `->` before a `<` in expression text): it would loop forever
+            t = t2
         return t.split(".")[-1] if "..." not in t else t.split(".")[-4] + "..." if t.count(".") > 3 else t
 
     _sub_cache = {}
@@ -4796,8 +4870,28 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 break
         return res
 
+    def cannot_take(param, arg):
+        """True only when the argument certainly cannot be passed to the parameter (unlike compat_score's 0,
+        which also covers boxing and generics it cannot judge): a function value vs a non-function type, or
+        another named type vs String (final in Java and Kotlin; `super.visitFile(file: PsiFile)`)."""
+        p, a = norm_type(param), norm_type(arg)
+        if not p or not a or p == a:
+            return False
+        pb, ab = p.rstrip("[].").lstrip("[]"), a.rstrip("[].").lstrip("[]")
+        if pb == ab or (len(pb) == 1 and pb.isupper()):
+            return False
+        if ("->" in ab) != ("->" in pb) and pb not in ("Object", "Any", "Function"):
+            return True                      # a function value and a non-function parameter (or the reverse)
+        return pb == "String" and ab != "null" and not (len(ab) == 1 and ab.isupper())
+
+    _compat_cache = {}
+
     def compat_score(param, arg):
         """0 = clearly incompatible; 4 exact, 3 subtype, 2 `Object/Any`, 1 generic/unknown."""
+        # memoized: Kotlin overload sets with typed identifier arguments score the same pairs many times
+        return _memo(_compat_cache, (param, arg), lambda: _compat_score(param, arg))
+
+    def _compat_score(param, arg):
         if not compatible(param, arg):
             return 0
         p, a = norm_type(param), norm_type(arg)
@@ -4808,6 +4902,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             return 4                         # exact
         if len(pb) == 1 and pb.isupper():
             return 1                         # generic parameter
+        if cannot_take(param, arg):
+            return 0
         if pb in ("Object", "Any"):
             return 2 if ab not in PRIMITIVE_TYPES else 0   # accepts anything: least specific match
         if candidates(pb, TYPE_LIKE_KINDS):
@@ -4894,7 +4990,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         _arity_cache[node["id"]] = res
         return res
 
-    _cur = {"argc": None, "arg_types": None, "rel": None, "cont": None}   # the call being resolved
+    _cur = {"argc": None, "arg_types": None, "arg_bind": None, "rel": None, "cont": None}   # the call being resolved
 
     def arg_type_text(a):
         """Materialize an argument type recorded as `<call>expr|root`, `<field>name` or `<chain>a.b|root`
@@ -4902,9 +4998,12 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         if a is None or not a.startswith("<"):
             return a
         saved = dict(_cur)
-        _cur.update({"argc": None, "arg_types": None})
+        _cur.update({"argc": None, "arg_types": None, "arg_bind": None})
         try:
-            return _arg_type_text(a)
+            t = _arg_type_text(a)
+            # a field or callee typed only by its own initializer (`val code = """…""".trimIndent()`) comes back
+            # as another `<call>…` record: unknown, not a type (its text is expression code)
+            return None if t is not None and t.startswith(("<call>", "<call?>", "<field>", "<chain>")) else t
         finally:
             _cur.clear()
             _cur.update(saved)
@@ -4918,6 +5017,9 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     if fname in field_types.get(oid, {}):
                         q = field_qual[oid].get(fname)
                         return (q + "." if q else "") + field_types[oid][fname]
+            if fname[:1].isupper() and rel and lang_of(rel) == "kotlin":
+                tn = type_node(fname, rel)   # `withTables(Words) { … }`: a Kotlin object named as a value is of its own type
+                return tn["name"] if tn is not None else None
             return None
         if a.startswith("<chain>"):
             body = a[len("<chain>"):]
@@ -4939,7 +5041,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             t = follow_chain(tn, rest)
             return t["name"] if t and t != "" else None
         body = a.split(">", 1)[1]
-        expr, _, root_type = body.partition("|")
+        expr, _, root_type = body.rpartition("|")   # the callee text may hold a `|` (`a.b(x || y).c`), the root type never
         hint, name = (expr.rsplit(".", 1) if "." in expr else (None, expr))
         fake = {"kind": "call", "name": name.strip(), "hint": hint, "src": cont["id"] if cont else rel, "line": 0, "argc": None}
         if hint and root_type:
@@ -4983,14 +5085,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     continue
                 lang = lang_of(c["file"]) if c.get("file") in files else None
                 total, good = 0, True
-                for i, a in enumerate(at):
-                    if a is None:
-                        continue
-                    if i < len(ps):
-                        pt = param_type(ps[i], lang)
-                    elif ps and param_type(ps[-1], lang).endswith("..."):
-                        pt = param_type(ps[-1], lang)
-                    else:
+                for a, pt in zip(at, arg_params(ps, len(at), lang), strict=True):
+                    if a is None or pt is None:
                         continue
                     sc = compat_score(pt, a)
                     if sc == 0:
@@ -5108,6 +5204,21 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             return True
         ar = arity(c)
         return ar is None or (ar[0] <= argc and (ar[1] is None or argc <= ar[1]))
+
+    def admits_args(c):
+        """admits_argc, and no argument of known type certainly incompatible with the parameter it lands on."""
+        if not admits_argc(c):
+            return False
+        ps = params_of(c) if c["kind"] in ("function", "method", "constructor") else None
+        if not ps:
+            return True
+        lang = lang_of(c["file"]) if c.get("file") in files else None
+        at = _cur.get("arg_types") or []
+        for a, pt in zip(at, arg_params(ps, len(at), lang), strict=True):
+            t = arg_type_text(a) if a is not None else None
+            if t is not None and pt is not None and cannot_take(pt, t):
+                return False
+        return True
 
     def lead_pick(cands, rel):
         """Receiver of unknown type: a same-file definition is plausible; otherwise a few same-language leads."""
@@ -5711,7 +5822,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         """Resolve one call ref -> (targets, confidence, mode); mode 'external'/'builtin' mean no edge.
         When several same-arity overloads remain undecided, they are all returned as `ambiguous`."""
         saved = dict(_cur)   # re-entrant: typing an argument or receiver may resolve nested calls
-        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src")})
+        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src")})
         try:
             targets, conf, mode = _resolve_call(r, rel, lang, cont)
             if targets and _cur.get("overload_undecided") and conf in ("typed", "same_file", "package", "import"):
@@ -5901,13 +6012,14 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     and enc is not None and enc["name"] == name:
                 # `super.visitFile(file)` inside `override fun visitFile(file: PsiFile)` calls what that
                 # override overrides: a repo method with other parameter types is not it (the real one is
-                # an external base class's). With a known argument count the evidence is the arity: a repo
-                # method that can take the call's arguments is a real target, even when its parameter types
-                # differ from the override's (`getSchema(p, t, opt)` calling `super.getSchema(p, t)`,
-                # AssertJ's `extracting(String, InstanceOfAssertFactory)` calling the `AssertFactory` overload).
+                # an external base class's). With a known argument count the evidence is the arguments: a repo
+                # method that can take them (count, and type where known) is a real target, even when its
+                # parameter types differ from the override's (`getSchema(p, t, opt)` calling
+                # `super.getSchema(p, t)`, AssertJ's `extracting(String, InstanceOfAssertFactory)` calling the
+                # `AssertFactory` overload); `super.visitFile(file: PsiFile)` cannot land on `visitFile(String, Int = …)`.
                 mine, theirs = param_type_names(enc), param_type_names(targets[0])
                 if mine is not None and theirs is not None and mine != theirs \
-                        and (not admits_argc(targets[0]) if _cur.get("argc") is not None else True):
+                        and (not admits_args(targets[0]) if _cur.get("argc") is not None else True):
                     return [], None, "external"
             if not targets and lang == "kotlin" and (name in KOTLIN_SYNTHETIC_MEMBERS or re.match(r"^component\d+$", name)):
                 return [], None, "builtin"   # data-class copy/componentN, enum valueOf/values/entries, Any members
@@ -5983,7 +6095,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         if not ctors:
             continue
         saved = dict(_cur)
-        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "rel": rel,
+        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel,
                      "cont": container_of(r["src"]), "overload_undecided": False, "src": r.get("src")})
         try:
             pickc = by_arity(ctors)
