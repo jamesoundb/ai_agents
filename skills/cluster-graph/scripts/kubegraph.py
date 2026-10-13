@@ -34,6 +34,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -147,7 +148,11 @@ def clean_err(err):
 
 
 def current_context():
-    rc, out, err = kubectl(None, ["config", "current-context"], timeout=15)
+    # no kubectl on PATH (CI, an offline review of saved snapshots) counts as no context: same hint
+    if shutil.which(KUBECTL) is None:
+        rc, out, err = 127, "", f"{KUBECTL} not found"
+    else:
+        rc, out, err = kubectl(None, ["config", "current-context"], timeout=15)
     if rc != 0 or not out.strip():
         # name the saved snapshots: an offline one (`snapshot --from`) is queried by its own context
         saved = sorted(f[:-3] for f in os.listdir(DB_DIR) if f.endswith(".db")) if os.path.isdir(DB_DIR) else []

@@ -88,9 +88,12 @@ fi
 
 echo "== 5. no write access: one line, no traceback =="
 mkdir -p "$WORK/ro" && chmod 555 "$WORK/ro"
+RO="$WORK/ro"
+# root ignores directory modes (CI containers run as root): a regular file in the path blocks it instead
+[ "$(id -u)" = 0 ] && { touch "$WORK/ro-file"; RO="$WORK/ro-file"; }
 for s in code-graph terraform-review k8s-manifest-review k8s-rightsize; do
   [ "$s" = k8s-rightsize ] && [ "$SYS_YAML" = 1 ] && { echo "  skip k8s-rightsize: the system python3 has PyYAML"; continue; }
-  ASTGRAPH_VENV="$WORK/ro/venv" PATH="$NOUV_PATH" "$S/$s/scripts/run.sh" --help > "$WORK/out" 2>&1; rc=$?
+  ASTGRAPH_VENV="$RO/venv" PATH="$NOUV_PATH" "$S/$s/scripts/run.sh" --help > "$WORK/out" 2>&1; rc=$?
   if [ "$rc" = 2 ] && grep -q -- '--setup' "$WORK/out" && ! grep -q Traceback "$WORK/out"; then ok "$s: $(grep -- '--setup' "$WORK/out" | head -1 | cut -c1-90)"
   else bad "$s with an unwritable cache (exit $rc)"; fi
 done

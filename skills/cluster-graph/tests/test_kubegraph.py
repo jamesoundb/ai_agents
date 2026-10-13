@@ -435,6 +435,17 @@ class OfflineContext(unittest.TestCase):
         self.assertIn("pass --context", str(rc))
         self.assertIn("agents-test", str(rc))
 
+    def test_no_kubectl_lists_saved_snapshots(self):
+        # a machine with saved snapshots and no kubectl (CI, offline review) gets the same hint
+        run("snapshot", "--from", FIXTURE)
+        saved_kubectl, kg.KUBECTL = kg.KUBECTL, "kubegraph-test-no-such-kubectl"
+        try:
+            rc, _ = run("health", "-n", "kg-faults")
+        finally:
+            kg.KUBECTL = saved_kubectl
+        self.assertIn("pass --context", str(rc))
+        self.assertIn("agents-test", str(rc))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
