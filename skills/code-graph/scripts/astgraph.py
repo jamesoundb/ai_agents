@@ -313,6 +313,9 @@ class Ctx:
             if type_text.strip().endswith("]") and "[" in type_text:
                 t += "[]"                     # keep array-ness for overload resolution (`String[] tags`)
             self.scopes[-1][name] = t
+            if self.lang == "kotlin":
+                # `o: Op<Boolean>`: the type arguments choose among extensions on Op (None shadows an outer one)
+                self.scopes[-1]["<>" + name] = type_text.strip() if "<" in type_text else None
 
     def lookup(self, name):
         for sc in reversed(self.scopes):
@@ -373,6 +376,9 @@ class Ctx:
             if root_type:
                 ref["hint_type"] = root_type
                 ref["chain"] = chain[1:]
+                targs = self.lookup("<>" + root) if self.lang == "kotlin" else None
+                if targs:
+                    ref["hint_targs"] = targs
         ref.update(extra)
         if kind == "call" and self.lambda_stack and (not hint or split_chain(hint)[0] in ("it", "this")):
             ref["lam"] = self.lambda_stack[-1]   # implicit receiver / `it` of the enclosing lambda (resolved at link time)
@@ -1637,6 +1643,20 @@ def kt_type_text(node):
     return node
 
 
+def type_args(t, unknown=()):
+    """Type arguments of a type text (`SearchOperator.Equality<String>?` -> ["String"]), or None without any.
+    Projections (`*`), names in `unknown` (type parameters) and single-letter names come back as "*" (any)."""
+    t = (t or "").strip().rstrip("?").strip()
+    i = t.find("<")
+    if i < 0 or not t.endswith(">"):
+        return None
+    out = []
+    for a in split_top(t[i + 1:-1]):
+        a = re.sub(r"^(?:in|out)\s+", "", a.strip()).rstrip("?").strip()
+        out.append("*" if a == "*" or a in unknown or re.fullmatch(r"[A-Z][0-9]?", a) else a)
+    return out
+
+
 def kt_package(ctx, n):
     ident = next((c for c in n.named_children if c.type == "identifier"), None)
     ctx.file_extra["package"] = ctx.text(ident) if ident is not None else ""
@@ -1768,9 +1788,17 @@ def kt_function(ctx, n):
     tp = next((c for c in n.named_children if c.type == "type_parameters"), None)
     sig = f"fun{' ' + ctx.text(tp) if tp is not None else ''} {rtype + '.' if rtype else ''}{name}({', '.join(parts)})" + (f": {ret}" if ret else "")
     kind = "method" if (rtype or ctx.top()["kind"] in ("class", "interface", "enum")) else "function"
+    extra = {"receiver_type": rtype} if rtype else {}
+    if rtype:
+        # `fun Op<String>.f()` vs `fun <T> Op<T>.f()`: the receiver's type arguments, the function's own type
+        # parameters as "*", let the linker choose by the call receiver's type arguments
+        tps = {m.group(1) for p in split_top(ctx.text(tp).strip()[1:-1]) if (m := re.match(r"^\s*(?:reified\s+)?([A-Za-z_]\w*)", p))} if tp is not None else set()
+        rargs = type_args(ctx.text(recv), tps)
+        if rargs:
+            extra["receiver_args"] = rargs
     node = ctx.add_node(kind, name, n, signature=sig, annotations=kt_annotations(ctx, n),
                         qname=f"{rtype}.{name}" if rtype and ctx.top()["kind"] == "file" else None,
-                        extra={"receiver_type": rtype} if rtype else {},
+                        extra=extra,
                         type_text=", ".join(t for _, t in declared) + (" " + ret if ret else ""))
     ctx.push(node)
     ctx.push_scope()
@@ -5056,9 +5084,29 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             return None
         return return_type(targets[0])
 
+    def recv_rank(c):
+        """Kotlin extension on a generic type vs the call receiver's type arguments (`_cur["recv_args"]`): None when
+        it cannot take the receiver (`Op<String>.f` on an `Op<Boolean>`), else how many arguments match exactly,
+        so `Op<String>.f` beats `<T> Op<T>.f` on an `Op<String>` (Kotlin prefers the non-generic one)."""
+        ra, decl = _cur.get("recv_args"), c["extra"].get("receiver_args")
+        if not ra or not decl or ra[0] != c["name"] or len(ra[1]) != len(decl):
+            return 0
+        rank = 0
+        for d, a in zip(decl, ra[1], strict=True):
+            if d == "*" or a == "*" or d in ("Any", "Object"):
+                continue   # a type parameter, a projection or `Any` (with `out` variance) takes any argument
+            if norm_type(d) == norm_type(a):
+                rank += 1
+            elif compat_score(d, a) == 0:
+                return None   # type arguments are reference types: no boxing between them
+        return rank
+
     def by_arity(cands):
         """Among same-named callables, keep those whose parameter count admits the call's argument count,
-        then those whose parameter types are compatible with the known argument types."""
+        then those whose parameter types are compatible with the known argument types; a Kotlin extension
+        must take the receiver's type arguments, and the closer receiver match wins a tie."""
+        if _cur.get("recv_args") and len(cands) > 1:
+            cands = [c for c in cands if recv_rank(c) is not None] or cands
         argc = _cur["argc"]
         if argc is None or len(cands) <= 1 or not any(c["kind"] in ("function", "method", "constructor") for c in cands):
             return cands   # not an overload choice (types, packages): argument state does not apply
@@ -5098,6 +5146,9 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             if scored:
                 best = max(t for t, _ in scored)
                 ok = [c for t, c in scored if t == best]
+        if len(ok) > 1 and _cur.get("recv_args"):
+            best = max(recv_rank(c) or 0 for c in ok)
+            ok = [c for c in ok if (recv_rank(c) or 0) == best]
         if len(ok) > 1 and all(c["qname"] == ok[0]["qname"] and c["file"] == ok[0]["file"] for c in ok):
             _cur["overload_undecided"] = True   # same-arity overloads the arguments cannot separate
         return ok
@@ -5500,10 +5551,14 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 frontier.extend(_parents(x["id"]))
         return None
 
+    _chain_raw = [None]   # declared type text of the last follow_chain's final step, type arguments kept
+
     def follow_chain(tn, chain, flags=None):
         """Walk `a.b.c` / `a.b().c` through field types and method return types from container node tn
         (fields may be inherited). Returns the final container node, "" when the chain provably leaves
-        the repo (a field of an external type, an unbounded generic), or None."""
+        the repo (a field of an external type, an unbounded generic), or None. The final step's declared
+        type text (`Op<String>`) and its owner's type parameters are left in _chain_raw[0]."""
+        raw = None
         for i, seg in enumerate(chain):
             if flags and i < len(flags) and flags[i]:
                 # method-call segment: the type of `x.m()` is m's return type
@@ -5524,13 +5579,13 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     return ""
                 if nxt is None:
                     return None
-                tn = nxt
+                tn, raw = nxt, (rt, ())
                 continue
             found = field_owner(tn, seg)
             if found is None:
                 nested = [c for c in candidates(seg, TYPE_LIKE_KINDS) if c.get("parent") == tn["id"]]
                 if nested:
-                    tn = nested[0]   # `Outer.Inner.f()`
+                    tn, raw = nested[0], None   # `Outer.Inner.f()`
                     continue
                 props, _ = typed_pick([c for c in candidates(seg, {"method"}) if any(a.endswith(("property", "cached_property", "getter")) for a in c.get("annotations", []))], tn)
                 if props:
@@ -5540,7 +5595,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                         return ""
                     if nxt is None:
                         return None
-                    tn = nxt
+                    tn, raw = nxt, None
                     continue
                 return None
             owner, ft, q = found
@@ -5550,7 +5605,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     return ""
                 if nxt is None:
                     return None
-                tn = nxt
+                tn, raw = nxt, None
                 continue
             bounds = generic_bounds(owner)
             if not q and ft in bounds:
@@ -5565,6 +5620,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             if nxt is None:
                 return None
             tn = nxt
+            raw = next(((field_types_raw[oid][seg], tuple(bounds)) for oid in owner_ids(owner) if seg in field_types_raw.get(oid, {})), None)
+        _chain_raw[0] = raw   # written last: resolving a step may run nested chains
         return tn
 
     # Pass 2a: extends, implements, instantiates, signature type uses (types must be linked before calls)
@@ -5700,10 +5757,14 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         ext = ns_ext.get(rel, ())
         repo = ns_repo.get(rel, {})
 
-        def from_node(tn, rest, rest_flags=None):
+        def from_node(tn, rest, rest_flags=None, root_raw=None):
             t = follow_chain(tn, rest, rest_flags)
             if t == "":
                 return "external", None
+            if t:
+                raw = _chain_raw[0] if rest else (root_raw, ())
+                args = type_args(raw[0], raw[1]) if raw and raw[0] else None
+                _cur["recv_args"] = (r["name"], args) if args and any(a != "*" for a in args) else None
             return ("typed", t) if t else ("unknown", None)
 
         if first and re.match(r"^(?:[bBrRfFuU]{0,2}[\"'`]|[\[{]|\d)", first):
@@ -5720,7 +5781,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 return "unknown", None    # bound to a call the graph cannot resolve
             if kind == "ext" or tn is None:
                 return "external", None   # external package type, builtin (string, error, List) or unresolvable
-            return from_node(tn, r.get("chain") or [], flags[1:])
+            return from_node(tn, r.get("chain") or [], flags[1:], root_raw=r.get("hint_targs") or r["hint_type"])
         if flags[0] and first not in ("self", "this", "cls", "Self"):
             # receiver is a call: `getStyle().x()` / `make().save()` -> the callee's return type
             if cont is not None and any(first in field_types.get(oid, {}) for oid in owner_ids(cont)):
@@ -5822,7 +5883,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         """Resolve one call ref -> (targets, confidence, mode); mode 'external'/'builtin' mean no edge.
         When several same-arity overloads remain undecided, they are all returned as `ambiguous`."""
         saved = dict(_cur)   # re-entrant: typing an argument or receiver may resolve nested calls
-        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src")})
+        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src"), "recv_args": None})
         try:
             targets, conf, mode = _resolve_call(r, rel, lang, cont)
             if targets and _cur.get("overload_undecided") and conf in ("typed", "same_file", "package", "import"):
@@ -6096,7 +6157,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             continue
         saved = dict(_cur)
         _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel,
-                     "cont": container_of(r["src"]), "overload_undecided": False, "src": r.get("src")})
+                     "cont": container_of(r["src"]), "overload_undecided": False, "src": r.get("src"), "recv_args": None})
         try:
             pickc = by_arity(ctors)
         finally:

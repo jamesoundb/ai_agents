@@ -68,8 +68,11 @@ The linker is receiver-aware and import-aware:
   references (`String::uppercase`, `Media.Status::name`) are function values, an identifier naming an
   `object` is of that object's type; in every language a chained-call argument (`a.b().c()`) is typed by
   its last call, not its first.
-  A tie between a generic and a non-generic overload stays `ambiguous` (the receiver's type arguments are
-  not tracked).
+  Extensions on one generic type are chosen by the receiver's type arguments, read from the declared type
+  of the receiver's last property, call or parameter (`cond.op.f(x)` with `val op: Op<String>`): one whose
+  concrete argument cannot take them is dropped (`Op<String>.f` on an `Op<Boolean>`), and on a tie the
+  closer match wins (`Op<String>.f` over `<T> Op<T>.f`, as Kotlin prefers the non-generic one). An unknown
+  receiver argument (a type parameter, `*`) decides nothing: that tie stays `ambiguous`.
   Loop and comprehension variables are typed from the iterable (`for it in self.items` with
   `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
   (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields

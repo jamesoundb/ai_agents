@@ -631,6 +631,12 @@ def test_overload_queries(root):
     obj = q("callees", "tabled").stdout
     check("table  L65 -> kotlin/src/main/kotlin/com/acme/text/Pads.kt:63  [same_file]" in obj,
           f"kotlin: an object argument is typed as its object: {obj.strip().splitlines()[1:]}")
+    # extensions on Op<String> vs <T> Op<T>: the receiver's type argument decides (Op<String> -> the non-generic one,
+    # Op<Boolean> -> only the generic one admits it), through a smart-cast property and a typed parameter
+    ops = q("callees", "condition", "flagged", "--include-ambiguous").stdout
+    for line, want in (("L24", "Ops.kt:12  [typed]"), ("L25", "Ops.kt:14  [typed]"), ("L28", "Ops.kt:14  [typed]")):
+        check(f"meets  {line} -> kotlin/src/main/kotlin/com/acme/text/{want}" in ops,
+              f"kotlin: the receiver's type argument picks the extension overload ({line} -> {want}): {ops.strip().splitlines()}")
     disp = q("path", "Areas.total", "Square.area")
     check(disp.returncode == 0 and "Shape.area --dispatch (override)--> Square.area" in disp.stdout,
           f"path follows a call through an interface to the overriding method: {disp.stdout.strip().splitlines()}")
