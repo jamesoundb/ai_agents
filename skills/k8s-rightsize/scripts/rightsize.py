@@ -2,7 +2,7 @@
 """
 rightsize.py — rewrite requests/limits of build and test workloads from measured usage.
 
-  rightsize.py MANIFEST... --report discovery.json [--tiers build-tiers.json] [--policy k8s-review.json]
+  rightsize.py MANIFEST|DIR... --report discovery.json [--tiers build-tiers.json] [--policy k8s-review.json]
                [--headroom 1.25] [--cpu-limit-factor 2] [--lifecycle] [--write] [--json]
 
   --report   JSON from `analyze.py DIR --json` (gke-cost-discovery); its usage.workloads rows carry
@@ -19,6 +19,7 @@ PyYAML re-serialises the documents, so comments are dropped; review the diff bef
 """
 import argparse
 import difflib
+import glob
 import json
 import math
 import os
@@ -190,7 +191,7 @@ def rightsize_doc(doc, idx, P, headroom, cpu_factor, lifecycle):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("manifests", nargs="+")
+    ap.add_argument("manifests", nargs="+", help="YAML files or directories")
     ap.add_argument("--report", help="analyze.py --json output (default: $GKE_DISCOVERY_REPORT, ./report.json, ./discovery/latest/report.json); without it only tier capping/defaults apply")
     ap.add_argument("--tiers")
     ap.add_argument("--policy")
@@ -219,8 +220,15 @@ def main(argv=None):
     idx = build_index(report)
     if not idx and a.report:
         print("warning: the report has no usage.workloads rows (no Cloud Monitoring data); applying tier capping only", file=sys.stderr)
+    # A directory stands for its YAML files, the same expansion as k8s-manifest-review.
+    files = []
+    for p in a.manifests:
+        if os.path.isdir(p):
+            files += sorted(f for f in glob.glob(os.path.join(p, "**", "*.y*ml"), recursive=True) if "/templates/" not in f and "/charts/" not in f)
+        else:
+            files.append(p)
     all_changes, diffs = [], []
-    for f in a.manifests:
+    for f in files:
         text = open(f, encoding="utf-8").read()
         if "{{" in text:
             print(f"skip {f}: Helm template (render first, or change values instead)", file=sys.stderr)

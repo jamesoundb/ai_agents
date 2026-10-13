@@ -319,7 +319,7 @@ def main(argv=None):
     ap.add_argument("chart", help="chart directory (or - to skip the chart layer)")
     ap.add_argument("gitops", nargs="*", help="ArgoCD Application / Flux HelmRelease files or directories")
     ap.add_argument("--values-glob", default="values*.y*ml")
-    ap.add_argument("--env-values", help="environment values file (relative to chart) to render and review as a build/test env")
+    ap.add_argument("--env-values", help="environment values file (relative to the chart or the working directory) to render and review as a build/test env")
     ap.add_argument("--policy")
     ap.add_argument("--fail-on", default="high", choices=SEVERITIES)
     ap.add_argument("--no-tools", action="store_true")
@@ -338,6 +338,13 @@ def main(argv=None):
     rep = Report(P)
     name, base_vals, layers = None, {}, {}
     chart_dir = None if a.chart == "-" else os.path.abspath(a.chart)
+    if chart_dir and a.env_values and not os.path.exists(os.path.join(chart_dir, a.env_values)):
+        # --env-values is relative to the chart; also accept a path from the working directory
+        # (chart/values-test.yaml) instead of handing helm chart/chart/values-test.yaml.
+        if not os.path.exists(a.env_values):
+            print(f"helmreview: --env-values {a.env_values}: not found in {a.chart} or the working directory", file=sys.stderr)
+            return 2
+        a.env_values = os.path.relpath(os.path.abspath(a.env_values), chart_dir)
     if chart_dir:
         name, base_vals = review_chart(chart_dir, rep, a.values_glob)
         if name:

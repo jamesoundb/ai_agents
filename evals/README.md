@@ -88,8 +88,8 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-direct-lookup` | yes, 3 runs | 12/12 |
 | `agent-terraform-review` | yes, 3 runs | 15/15 |
 | `agent-build-triage` | yes, 3 runs | 21/21 |
-| `agent-helm-oversized` | **no** | 1 clean run passed 5/5; the other 8 attempts were cut off or contaminated |
-| `agent-k8s-rightsize` | **no** | every attempt cut off or contaminated |
+| `agent-helm-oversized` | yes, 3 runs (2026-10-13) | 15/15; 50-55 tools, 338-761s, 264-323k tokens (agy 1.3.3). Earlier attempts were cut off or contaminated; one on 2026-10-13 left the workspace looking for a Git repository and read its own graders (flagged, not scored). Every run still renders by hand what `helmreview.py` already rendered. |
+| `agent-k8s-rightsize` | yes, 3 runs (2026-10-13) | 18/18; 20-30 tools, 193-534s, 75-179k tokens (agy 1.3.3). One run cited `synth.py` output (synthetic discovery data) as concurrency evidence; no grader catches that. |
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
 | `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. |
@@ -287,11 +287,9 @@ from documentation, not from a run.
 Be clear about what that does and does not put at risk:
 
 - **Most case files are proven**, because `run_agy.py` reads the same
-  `prompt.md` / `graders/` / `case.yaml` and runs them green. Ten of the twelve have run
-  green; the exceptions are `agent-helm-oversized` and `agent-k8s-rightsize`, whose graders
-  have never been evaluated on a completed, uncontaminated run (see Measurement status).
-  Their fixtures *are* proven — every rule id they assert on came from a real run of the
-  skill's script — but their prompts and graders have not faced a model.
+  `prompt.md` / `graders/` / `case.yaml` and runs them green. All twelve have run
+  green; `agent-helm-oversized` and `agent-k8s-rightsize` were the last, with their first
+  clean runs on 2026-10-13 (see Measurement status).
 - **`validate.py` checks against this repo's model of the schema, not the real one.** It
   catches a typo, a bad regex, a wrong field type or an unknown grader type — but if a
   field is genuinely named something else in `claude plugin eval`, validate.py will

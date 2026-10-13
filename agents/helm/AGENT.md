@@ -20,6 +20,10 @@ bump rather than by drift.
 - Never run `helm install`, `helm upgrade`, `helm uninstall`, `helm rollback`, or `kubectl
   apply` against a cluster. `helm lint`, `helm template`, `helm show`, `helm dependency build`
   and `helm diff` (when available) are the working set. Changes go into Git for ArgoCD/Flux.
+- Work only from the working directory and what the skills print. Never search outside it (`find /`,
+  `/tmp`, home directories, running processes) or read the skills' scripts to learn more. When the
+  working directory is not a Git repository, delivering the fix means handing it over: the changed
+  files and the commit to make in the GitOps repository; do not look for that repository elsewhere.
 - Never put secrets in values files or inline GitOps values; reference Secrets managed outside
   Git (external-secrets, sealed-secrets, Secret Manager).
 

@@ -94,5 +94,22 @@ step "guardrails.py generates namespace guardrails" "$PY" "$S/k8s-guardrails/scr
 step "guardrails wrote LimitRange and ResourceQuota" \
   test -s "$WORK/guardrails/teamcity-agents-limitrange.yaml" -a -s "$WORK/guardrails/teamcity-agents-resourcequota.yaml"
 
+echo "== k8s-rightsize (eval fixture manifests) =="
+# A directory argument expands to its YAML files, like k8s-manifest-review.
+cp -r "$REPO/evals/fixtures/k8s-builds/manifests" "$WORK/rs"
+step "rightsize.py takes a directory" sh -c "'$S/k8s-rightsize/scripts/run.sh' '$WORK/rs' --lifecycle > '$WORK/rs.out' \
+  && grep -q 'integration-tests-job.yaml' '$WORK/rs.out' && grep -q 'preview-env.yaml' '$WORK/rs.out'"
+
+echo "== helm-chart-review (eval fixture chart; needs helm) =="
+# --env-values given from the working directory (chart/values-test.yaml) must reach helm lint and
+# helm template as the same file; the review gate itself fails on this fixture, so only the tools count.
+if command -v helm >/dev/null 2>&1; then
+  step "helmreview.py --env-values from the working directory" sh -c "cd '$REPO/evals/fixtures/helm-api' \
+    && { '$PY' '$S/helm-chart-review/scripts/helmreview.py' chart gitops --env-values chart/values-test.yaml --json > '$WORK/hr.json'; true; } \
+    && '$PY' -c 'import json, sys; t = [x for x in json.load(open(sys.argv[1]))[\"tools\"] if x[\"tool\"].startswith(\"helm \")]; print(t); sys.exit(0 if len(t) == 3 and all(x[\"ok\"] for x in t) else 1)' '$WORK/hr.json'"
+else
+  echo "  skip helmreview.py --env-values (helm not installed)"
+fi
+
 if [ "$fail" -ne 0 ]; then echo "smoke test FAILED"; exit 1; fi
 echo "smoke test passed"

@@ -45,7 +45,8 @@ scripts/run.sh teamcity-agents.yaml --report report.json --tiers build-tiers.jso
 ../k8s-manifest-review/scripts/run.sh teamcity-agents.yaml --build                                          # must pass
 ```
 
-Options: `--headroom 1.25` (multiplier on p95), `--cpu-limit-factor 2` (cpu limit = request x
+Pass files or directories (a directory stands for its `*.yaml`/`*.yml`, Helm `templates/` and
+`charts/` left out). Options: `--headroom 1.25` (multiplier on p95), `--cpu-limit-factor 2` (cpu limit = request x
 factor; memory limit always equals the request), `--policy k8s-review.json` (tier label,
 annotation, TTL values), `--json`.
 

@@ -23,6 +23,9 @@ practice alone.
   Read-only commands only (`get`, `describe`, `logs`, `top`, `gcloud ... describe/list`,
   `kubectl apply --dry-run`). Changes go into manifests, Helm values or Terraform for the developer or
   GitOps to apply; operational steps (restart, cordon, delete) are named for an operator to run.
+- Work only from the working directory, the cluster and what the skills print. Never search outside
+  the working directory (`find /`, `/tmp`, home directories, running processes) or read the skills'
+  scripts to learn more.
 - Check `kubectl config current-context` before the first cluster call and pass `--context`; never
   guess between a production and a test cluster.
 - Never store credentials or tokens in files under version control (`gke-cost-discovery.env` is

@@ -25,7 +25,8 @@ Layers reviewed (rule prefixes): `HC` chart structure, `HV` values, `HG` GitOps
 (ArgoCD `Application`, Flux `HelmRelease`), `HL` helm lint, `HR-*` findings from
 `k8s-manifest-review` on the rendered output (medium and above). Catalogue: `reference/rules.md`.
 
-Rendering: `helm template` for the base values and again with `--env-values`; an environment
+Rendering: `helm template` for the base values and again with `--env-values` (relative to the chart
+or the working directory); an environment
 whose name looks like test/pr/preview/dev is reviewed as a build/test workload (tiers, TTL,
 spot placement). If subcharts are not fetched, the parent chart is rendered alone and the
 report says so; run `helm dependency build` for a complete render.
