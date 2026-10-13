@@ -29,6 +29,12 @@
 #                    project) updates that project instead; --harness narrows it.
 #   --uninstall      remove what an install with the same options added
 #   --force          overwrite (or remove) paths this installer did not create
+#   --no-setup       skip the engines' one-time set-up. By default the installed skills that need
+#                    Python packages run `scripts/run.sh --setup`: the shared venv in
+#                    ~/.cache/astgraph (uv when it is on PATH, else venv + pip) and the tree-sitter
+#                    grammars, so sandboxed sessions (no writes outside the project, no network)
+#                    only read them. Needs network once; a failure is reported, not fatal.
+#                    INSTALL_NO_SETUP=1 in the environment does the same (CI).
 #   -h, --help       show this help
 #
 # Harness layouts (project scope | user scope):
@@ -60,7 +66,7 @@ SKILLS_SRC="$REPO/skills"
 AGENTS_SRC="$REPO/agents"
 RENDER="$REPO/tools/render.py"
 
-HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0; UPDATE=0; SCOPE_SET=0; TARGET_SET=0
+HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0; UPDATE=0; SCOPE_SET=0; TARGET_SET=0; NO_SETUP="${INSTALL_NO_SETUP:-0}"
 
 # Print the comment header (line 2 up to the first line that is not a comment) as the help text.
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
@@ -77,6 +83,7 @@ while [ $# -gt 0 ]; do
     --agents-as-skills) AGENT_SKILLS=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --force) FORCE=1; shift ;;
+    --no-setup) NO_SETUP=1; shift ;;
     --agents) ONLY_AGENTS="$2"; shift 2 ;;
     --skills) ONLY_SKILLS="$2"; shift 2 ;;
     -h|--help) usage ;;
@@ -87,7 +94,7 @@ if [ "$UPDATE" = 1 ]; then
   # Everything else is read back from what is installed; an option here would contradict it.
   if [ "$UNINSTALL" = 1 ] || [ "$PLUGIN" = 1 ] || [ "$MODE" = copy ] || [ "$AGENT_SKILLS" = 1 ] \
      || [ -n "$ONLY_AGENTS" ] || [ -n "$ONLY_SKILLS" ]; then
-    echo "--update takes only --harness, --scope, --target and --force; the rest is read from what is installed" >&2; exit 1
+    echo "--update takes only --harness, --scope, --target, --force and --no-setup; the rest is read from what is installed" >&2; exit 1
   fi
   [ -n "$HARNESSES" ] || HARNESSES="all"
   # a global update unless a project was named
@@ -588,6 +595,25 @@ run_harnesses() {
   return 0   # the last branch may end on a false test (e.g. [ "$SCOPE" = project ]); that is not a failure
 }
 
+setup_engines() {  # setup_engines <skills>: each skill's one-time engine set-up (venv, grammars)
+  # Runs here, outside any sandbox, so a sandboxed session later finds everything in ~/.cache and
+  # needs neither write access there nor the network. A skill needs it when it has requirements.txt.
+  local s out
+  [ $UNINSTALL = 0 ] || return 0
+  if [ "$NO_SETUP" = 1 ]; then log "skip   engine set-up (--no-setup); later: <skills dir>/<skill>/scripts/run.sh --setup"; return 0; fi
+  for s in $1; do
+    [ -f "$SKILLS_SRC/$s/scripts/requirements.txt" ] && [ -x "$SKILLS_SRC/$s/scripts/run.sh" ] || continue
+    if out="$("$SKILLS_SRC/$s/scripts/run.sh" --setup 2>&1)"; then
+      log "setup  $s: $(printf '%s\n' "$out" | tail -n 1 | sed 's/^[a-z0-9]*: //')"
+    else
+      log "warn   $s: engine set-up failed (network?); the skill sets itself up on first use, or run:"
+      log "       \"$SKILLS_SRC/$s/scripts/run.sh\" --setup"
+      printf '%s\n' "$out" | tail -n 3 | sed 's/^/         /'
+    fi
+  done
+  return 0
+}
+
 # ---------------------------------------------------------------------------------------------
 # --update: find what this clone installed and re-run each install with the same options. Like
 # ownership, this is read from the files (links into this clone, our markers); nothing is stored.
@@ -693,7 +719,7 @@ missing_from() {  # missing_from <installed> <available>: names in available but
 
 if [ "$UPDATE" = 1 ]; then
   echo "update: scope=$SCOPE$( [ "$SCOPE" = project ] && echo " target=$TARGET") from $REPO"
-  FOUND=""
+  FOUND=""; SETUP_SKILLS=""
   for h in ${HARNESSES//,/ }; do for kind in plugin loose; do
     detect_install "$h" "$kind"
     if [ -n "$D_OTHER" ] && [ -z "$D_SKILLS" ]; then
@@ -734,6 +760,7 @@ if [ "$UPDATE" = 1 ]; then
   for h in $FOUND; do
     use_detected "$h"
     run_harnesses
+    for s in $SKILLS; do case " $SETUP_SKILLS " in *" $s "*) ;; *) SETUP_SKILLS="$SETUP_SKILLS $s" ;; esac; done
     [ "$PLUGIN" = 1 ] || prune_stale "${h%%:*}"   # plugins are rebuilt whole; loose installs need pruning
     extra_a="$(missing_from "$AGENTS" "$ALL_AGENTS")"
     extra_s="$(missing_from "$SKILLS" "$(missing_from install-agents "$ALL_SKILLS")")"
@@ -743,6 +770,7 @@ if [ "$UPDATE" = 1 ]; then
     fi
   done
   [ "$SCOPE" = project ] && update_agents_md
+  setup_engines "$SETUP_SKILLS"
   echo "done (update: ${FOUND# })"
   exit 0
 fi
@@ -755,4 +783,5 @@ run_harnesses
 if [ "$SCOPE" = project ]; then
   if [ $UNINSTALL = 1 ]; then remove_agents_md_block; else update_agents_md; fi
 fi
+setup_engines "$SKILLS"
 [ $UNINSTALL = 1 ] && echo "done (uninstall)" || echo "done. Add '.ast-graph/' to the target's .gitignore; the graph is a build artifact."

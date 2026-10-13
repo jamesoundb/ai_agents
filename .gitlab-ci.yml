@@ -106,6 +106,13 @@ smoke:
   script:
     - tools/ci/smoke.sh                      # every skill script runs on fixtures / synthetic data
 
+engine-setup:
+  stage: test
+  script:
+    # run.sh --setup from an empty cache (venv, grammars), offline use when user namespaces exist,
+    # uv when installed, the one-line message without write access, install.sh running the set-up
+    - tools/ci/setup_check.sh
+
 # ---------------------------------------------------------------- release (tags only)
 
 release-notes:

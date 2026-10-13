@@ -23,7 +23,8 @@ evals/<case>/                   behavioural tests for the agents and skills: pro
 evals/fixtures/                 inputs the cases run against (Python service, Terraform root, build
                                 manifests, Helm chart + ArgoCD Application, TeamCity build JSON/log)
 tools/ci/                       the CI checks as plain scripts (run locally or in the pipeline):
-                                check_repo.py, install_check.sh, smoke.sh, release_notes.sh
+                                check_repo.py, install_check.sh, smoke.sh, setup_check.sh,
+                                release_notes.sh
 .gitlab-ci.yml                  GitLab pipeline: MR checks, and a GitLab Release per vX.Y.Z tag
 .gitlab/merge_request_templates/Default.md   MR checklist
 install.sh                      installs into a harness: symlink (default) or --copy, project or
@@ -230,6 +231,19 @@ templates rather than adding vendor-neutral fallbacks.
   Python that has them or creates `~/.cache/astgraph/venv` on first use from `python3` (or
   `ASTGRAPH_PYTHON`), after checking that interpreter is 3.10+ (exit 2 with a message
   otherwise). Override with `ASTGRAPH_PYTHON=/path/to/python` or `ASTGRAPH_VENV=/path/to/venv`.
+- Engine set-up for sandboxes: the four venv wrappers (code-graph, terraform-review,
+  k8s-manifest-review, k8s-rightsize) take `run.sh --setup`: create/extend the shared venv, then
+  download the grammars that skill parses (tree-sitter-language-pack >= 1.x fetches each grammar
+  from github.com on first parse into `$XDG_CACHE_HOME`/`~/.cache/tree-sitter-language-pack/v<pack>/`;
+  code-graph downloads every `EXT_LANG` language). `install.sh` (and `--update`) runs it for every
+  installed skill with `scripts/requirements.txt`; `--no-setup` / `INSTALL_NO_SETUP=1` skip it;
+  a failure is a `warn` line, not fatal. With `uv` on PATH the venv is made with
+  `uv venv --seed` (pip kept so a pip-only wrapper can extend it) and `uv pip install`; without
+  a usable python3, uv finds or downloads a 3.10+ interpreter. When the venv cannot be created
+  (sandbox: `~/.cache` read-only, no PyPI), the wrapper prints one line naming `run.sh --setup`
+  and exits 2. Verified in Claude Code's sandbox: after set-up a build reads only. Claude's
+  settings `env` block does not pass `XDG_CACHE_HOME` into sandboxed commands (a shell-exported
+  one does), so do not move the grammar cache through settings. `tools/ci/setup_check.sh`.
 - Languages: C, C++/CUDA, Python, JavaScript, TypeScript/TSX, Go, Java, Kotlin, Rust, HCL (Terraform), YAML
   (Kubernetes manifests, Kustomization, Helm values). Coverage and limits:
   `skills/code-graph/reference/languages.md`. Schema:

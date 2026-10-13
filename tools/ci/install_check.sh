@@ -16,6 +16,10 @@ check() {  # check "description" test-args...
   if "$@"; then echo "  ok   $desc"; else echo "  FAIL $desc"; fail=1; fi
 }
 count() { find "$1" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' '; }
+# The engines' set-up (venv, grammar downloads) is covered by setup_check.sh; every install here
+# would otherwise repeat it in a fresh HOME.
+export INSTALL_NO_SETUP=1
+
 run_install() {  # run_install LOG args...: a failing install.sh prints its output and stops the check
   local log="$1"; shift
   if ! "$@" > "$log" 2>&1; then

@@ -209,6 +209,9 @@ The four code skills install together; `code-skeleton`, `blast-radius` and `bug-
 in `../code-graph/scripts/run.sh` (the two triage skills use `../cluster-graph/scripts/run.sh` the same
 way). The engine needs Python 3.10+; `run.sh` creates a private venv
 with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
+`install.sh` does that set-up at install time (`run.sh --setup`: the venv, with uv when it is on
+PATH, and every tree-sitter grammar), so sandboxed sessions, which cannot write `~/.cache` or reach
+the network in Claude Code, only read it. `--no-setup` skips it.
 
 ### Install only what you use
 
@@ -309,6 +312,7 @@ python3 evals/validate.py               # eval cases are structurally valid (the
 tools/ci/install_check.sh               # project + user scope installs into temp dirs, then uninstall
 skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
+tools/ci/setup_check.sh                 # engine set-up from an empty cache, offline use, uv, no-write message
 ```
 
 The pipeline also runs lint: syntax errors, undefined names and shell errors block the MR; the

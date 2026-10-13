@@ -83,7 +83,9 @@ tell the developer; add `--force` only if they confirm those files came from an 
 
 Installing only creates files. Before telling the developer it works, prove the engine runs on
 *this* machine — it needs Python 3.10+ and a tree-sitter wheel for this OS and CPU, and the first
-call builds a venv under `~/.cache/astgraph` (~30s, needs network).
+call builds a venv under `~/.cache/astgraph` (~30s, needs network). `install.sh` already ran that
+set-up (`setup  <skill>: ready` lines; `warn` when it could not reach the network) unless it was
+given `--no-setup`.
 
 ```bash
 uname -sm; bash --version | head -1; python3 -V     # record these; they go in the report

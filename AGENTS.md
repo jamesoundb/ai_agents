@@ -28,7 +28,7 @@ invoke the agents. If skills are unavailable in your harness, run
   `.github/troubleshooting/` (git-ignored).
 - Every change goes through a merge request whose pipeline (`.gitlab-ci.yml`) must pass. Run the
   same checks locally first: `python3 tools/ci/check_repo.py`, `tools/ci/install_check.sh`,
-  `tools/ci/smoke.sh` (see README "Contributing").
+  `tools/ci/smoke.sh`, `tools/ci/setup_check.sh` (see README "Contributing").
 
 <!-- BEGIN managed by install.sh (agents repo); edits inside this block are overwritten -->
 ## AI agents and skills installed in this repository
