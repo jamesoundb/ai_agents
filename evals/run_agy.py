@@ -22,6 +22,7 @@ import fnmatch
 import glob as globmod
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -119,6 +120,8 @@ def isolated_home(base, fresh=False):
                     if sub in ("skills", "agents") and os.path.isdir(s):
                         shutil.copytree(s, d, symlinks=False,
                                         ignore=shutil.ignore_patterns("__pycache__", ".git", "tests"))
+                        if sub == "agents":
+                            repoint_agent_skills(d, os.path.join(src, "skills"), os.path.join(dst, "skills"))
                     elif sub == "projects" and os.path.isdir(s):
                         # Antigravity records every project root it has seen here, this checkout
                         # among them ("file:///home/james/ai_agents"). Copying the skills cut the
@@ -153,14 +156,54 @@ def isolated_home(base, fresh=False):
     return home
 
 
-def repo_leaks(tools):
-    """Tool calls that reached this checkout -- i.e. the case files and the answer key.
+def repoint_agent_skills(agents_dir, real_skills, iso_skills):
+    """Point the copied agent files' `skills:` paths at the isolated copy of the skills.
+
+    A user-scope Antigravity agent names its skills by absolute path (`- /home/<u>/.gemini/config/
+    skills/cluster-graph`), and agy loads them from there whatever HOME is. Copied verbatim, every
+    agent case ran on the real installed skills -- symlinks into the user's clone, `tests/`
+    included -- not on the copy made above. First seen in agent-k8s-troubleshoot (2026-10-12):
+    all three runs read `cluster-graph/tests/faults.yaml`, the source of that case's manifests.
+    """
+    for dp, _, fn in os.walk(agents_dir):
+        for f in fn:
+            p = os.path.join(dp, f)
+            text = open(p, encoding="utf-8").read()
+            if real_skills + os.sep in text:
+                with open(p, "w", encoding="utf-8") as fh:
+                    fh.write(text.replace(real_skills + os.sep, iso_skills + os.sep))
+
+
+def leak_roots():
+    """This checkout, the real installed skills, and every checkout those skills symlink into."""
+    roots = {REPO}
+    homes = {os.path.expanduser("~"), pwd.getpwuid(os.getuid()).pw_dir}   # differ when HOME is overridden
+    for skills in (os.path.join(h, ".gemini", "config", "skills") for h in homes):
+        if not os.path.isdir(skills):
+            continue
+        roots.add(skills)
+        for s in os.listdir(skills):
+            target = os.path.realpath(os.path.join(skills, s))
+            if target != os.path.join(skills, s):
+                roots.add(os.path.dirname(os.path.dirname(target)))   # <clone>/skills/<s> -> <clone>
+    return roots
+
+
+def repo_leaks(tools, ws=None):
+    """Tool calls that reached a checkout of this repo -- i.e. the case files and the answer key.
 
     A run that read its own graders cannot be scored: green proves nothing (it may have been
     written to the assertions) and red proves nothing either. Such a run is reported as an
-    error, which keeps it out of the pass count instead of quietly inflating it.
+    error, which keeps it out of the pass count instead of quietly inflating it. The user's
+    install clone counts too: its skills' `tests/` hold the fixtures several cases are built from.
+    So does another run's workspace (`--keep-temp` leaves them in the temp dir): one run diffed its
+    manifests against the previous run's edited copy.
     """
-    return [f"{n} {a}" for n, a in tools if REPO + os.sep in a]
+    roots = leak_roots()
+    others = re.compile(re.escape(os.path.join(tempfile.gettempdir(), "agyeval-")) + r"[\w-]+")
+    return [f"{n} {a}" for n, a in tools
+            if any(r + os.sep in a for r in roots)
+            or any(m != ws and "norepo" not in m for m in others.findall(a))]
 
 
 def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
@@ -238,7 +281,7 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
         out["error"] = (f"no final message after {out['elapsed']:.0f}s of a {timeout}s turn "
                         f"({len(out['tools'])} tool calls): the turn was cut off, so assertions "
                         f"on last_message cannot be graded. Raise the case's timeout_seconds.")
-    leaks = repo_leaks(out["tools"])
+    leaks = repo_leaks(out["tools"], ws)
     if out.get("error") is None and leaks:
         out["error"] = (f"run reached the repo checkout ({len(leaks)} call(s), first: "
                         f"{leaks[0][:120]!r}) -- it can read its own graders, so this run is "

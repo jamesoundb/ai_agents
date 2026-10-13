@@ -28,7 +28,9 @@ the working directory. Read-only by construction: it only runs `get`, `api-resou
 
 1. **Pick the context explicitly.** The snapshot is per context (`~/.cache/kubegraph/<context>.db`).
    Check `kubectl config current-context`; pass `--context NAME` on every call when it is not the
-   cluster the developer means. Never guess between production and test contexts: ask.
+   cluster the developer means. Never guess between production and test contexts: ask. A saved
+   snapshot (a `--save` directory with `meta.json`, no cluster access): `snapshot --from DIR` once,
+   then pass the `--context` its output names to every query; it is never refreshed.
 2. **Ask the question in one call.** The first query takes the snapshot (1-5 s on a small cluster, longer
    on a large one); later queries reuse it and re-snapshot by themselves when it is older than 5 minutes
    (`--max-age`), or at once with `--refresh` (after someone applied a fix).

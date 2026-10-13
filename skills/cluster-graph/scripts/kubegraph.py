@@ -149,7 +149,10 @@ def clean_err(err):
 def current_context():
     rc, out, err = kubectl(None, ["config", "current-context"], timeout=15)
     if rc != 0 or not out.strip():
-        raise SystemExit(f"kubegraph: no current kubectl context ({err.strip()}); pass --context")
+        # name the saved snapshots: an offline one (`snapshot --from`) is queried by its own context
+        saved = sorted(f[:-3] for f in os.listdir(DB_DIR) if f.endswith(".db")) if os.path.isdir(DB_DIR) else []
+        hint = f" (snapshots here: {', '.join(saved)})" if saved else ""
+        raise SystemExit(f"kubegraph: no current kubectl context ({err.strip()}); pass --context{hint}")
     return out.strip()
 
 
@@ -1294,6 +1297,8 @@ def cmd_snapshot(args, quiet=False):
     print(f"snapshot {ctx} ({server or 'server ?'}): {len(b.objs)} objects, {kinds} kinds, "
           f"{counts.get('fail', 0)} fail, {counts.get('warn', 0)} warn, {len(b.events)} event groups "
           f"in {time.time() - t0:.1f}s -> {path}")
+    if args.from_dir and not args.db:
+        print(f"  query it with --context {ctx} (offline: never refreshed)")
     for e in errors[:10]:
         print(f"  not collected: {e}")
     if len(errors) > 10:

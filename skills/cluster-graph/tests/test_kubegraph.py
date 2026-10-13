@@ -406,5 +406,35 @@ class Units(unittest.TestCase):
         self.assertEqual(kg.generic_health({"spec": {}})[0], "-")
 
 
+class OfflineContext(unittest.TestCase):
+    """A saved snapshot is queried by the context it was taken from, which is not a kubeconfig context
+    here. Agents given only `cluster-snapshot/` read the engine source to find it (eval 2026-10-12)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="kubegraph-offline-")
+        self.saved = kg.DB_DIR, os.environ.get("KUBECONFIG")
+        kg.DB_DIR = self.tmp
+        os.environ["KUBECONFIG"] = os.path.join(self.tmp, "no-kubeconfig")   # no current context
+
+    def tearDown(self):
+        kg.DB_DIR = self.saved[0]
+        if self.saved[1] is None:
+            os.environ.pop("KUBECONFIG", None)
+        else:
+            os.environ["KUBECONFIG"] = self.saved[1]
+        shutil.rmtree(self.tmp)
+
+    def test_snapshot_from_names_the_context_to_query(self):
+        rc, out = run("snapshot", "--from", FIXTURE)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("query it with --context agents-test", out)
+
+    def test_no_context_lists_saved_snapshots(self):
+        run("snapshot", "--from", FIXTURE)
+        rc, _ = run("health", "-n", "kg-faults")
+        self.assertIn("pass --context", str(rc))
+        self.assertIn("agents-test", str(rc))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

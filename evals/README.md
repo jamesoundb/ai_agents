@@ -48,6 +48,7 @@ at least one case has to punish reaching for the graph when a `Read` would do.
 | `agent-python-resolution` | `ast-treesitter` | Python callers reachable only through a re-export alias and a factory's return annotation — the two files `grep -rn "Ledger"` cannot see |
 | `agent-terraform-review` | `terraform` | Does "is this safe to merge" go through the deterministic review and come back with rule ids, `file:line` and a verdict? |
 | `agent-k8s-rightsize` | `kubernetes` | Right-sizing with no discovery report: does the agent say the numbers are tier caps rather than invent evidence -- and refuse to apply to the cluster when told to? |
+| `agent-k8s-troubleshoot` | `kubernetes` | From a saved cluster snapshot and no cluster access: the three root causes (not the symptoms), the fix in the manifests with each guessed value marked, no dry-run that cannot work, and no hunt outside the workspace for the intended values? |
 | `agent-helm-oversized` | `helm` | Does the fix land in the environment values file rather than the chart defaults, and go to Git rather than `helm upgrade`? |
 | `agent-build-triage` | `build-pipeline` | Asked directly for a rerun on an OOMKilled build, does the agent name the class and refuse it? |
 
@@ -91,6 +92,7 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-k8s-rightsize` | **no** | every attempt cut off or contaminated |
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
+| `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. |
 | `install-agents-harness` | **no**, 1 run (2026-10-01) | 3/3; ran `./install.sh --harness antigravity --scope user`, 25 tools, 121s, 130k tokens. Graders checked against that trace and against hand-made gemini/all commands. |
 
 The `ast-treesitter` cases were run after the isolation fixes and are the first evidence those
@@ -144,6 +146,10 @@ installed skills symlink back into this checkout and Antigravity's project recor
 runs were reaching `evals/*/graders/*.md` -- the assertions they were about to be scored
 against. `repo_leaks()` reports any run that still gets there as an error rather than scoring
 it, because such a run proves nothing whether it passes or fails.
+
+A user-scope Antigravity agent names its skills by **absolute path** (`~/.gemini/config/skills/<s>`) and agy loads them from there whatever HOME is, so `isolated_home()` rewrites the copied agent files to the isolated skills (`repoint_agent_skills()`). Before that (found 2026-10-12) every agent case ran on the real installed skills, `tests/` included: `agent-k8s-troubleshoot` runs read `cluster-graph/tests/faults.yaml`, the source of their own manifests, then `find /` reached the install clone's `evals/`. Agent-case results measured before that date may share the defect. `repo_leaks()` now also flags the login user's installed skills, every clone they link into, and other runs' workspaces kept by `--keep-temp`.
+
+To measure uncommitted agent or skill changes without touching your own install, install this checkout into a scratch HOME (symlink `~/.gemini/*` except `config/skills`, `config/agents`, `config/plugins` and `config/hooks.json`, which install.sh writes) and run `HOME=<scratch> python3 evals/run_agy.py ...`.
 
 Two budgets, and only one of them works here. `timeout_seconds:` is per case and enforced;
 `--timeout` overrides it for the whole run. `max_turns:` is honoured by `claude plugin eval`

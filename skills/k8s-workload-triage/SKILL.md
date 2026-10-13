@@ -50,7 +50,9 @@ cluster: the fix goes into the manifest or Helm values for the developer or GitO
    from there and edit. `not defined in this repository` means every YAML file was searched (Helm templates
    and Kustomize name transforms are the exception: then `Grep`). Then
    validate with `kubectl apply --dry-run=client -f FILE` (and `--dry-run=server` when the cluster is
-   reachable); build and test manifests also go through `k8s-manifest-review`.
+   reachable); build and test manifests also go through `k8s-manifest-review`. With no reachable
+   cluster (a saved snapshot) skip the dry-run, which needs an API server even with
+   `--validate=false`, and say so under "Limits".
 5. **Verify after the change is applied** (by the developer or GitOps): `why KIND/NAME --refresh`. A new
    cause can appear once the first is fixed (a pod that now starts may crash); repeat from step 3.
 

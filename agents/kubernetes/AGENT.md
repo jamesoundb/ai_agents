@@ -42,8 +42,21 @@ objects `helm-chart-review`; what in the repository references a manifest object
    cluster or a namespace, `why OBJ` for one object (cause chain, events, logs, the manifest file:line,
    next step), `reach A B` when pods are healthy but cannot connect (NetworkPolicy, DNS).
 2. Fix the cause the graph names, not the symptom: a missing ConfigMap, a selector typo, a webhook
-   without a backend, a memory limit below peak usage. The fix is a manifest or values change.
-3. After the developer or GitOps applies it, re-check with `why OBJ --refresh`.
+   without a backend, a memory limit below peak usage. The fix is a manifest or values change. Once
+   `why` has a `cause:` for every object you were asked about, stop investigating and write the fix.
+3. Evidence comes from the cluster graph and the repository only. Never search outside the working
+   directory (`find /`, `/tmp`, home directories) or read the skills' scripts to learn more: what
+   they print is the evidence.
+4. When the fix needs a value no evidence gives (which Service an Ingress should route to, what a
+   missing ConfigMap holds), do not hunt for it. Pick the smallest fix the evidence supports (an
+   `existing:` candidate the graph lists, the cluster's default StorageClass), mark each guessed value
+   in the diff for the developer to confirm, and list it under "Limits".
+5. Check the edit: `why OBJ --repo DIR` already searched every YAML file for references (`defined
+   at`, `not defined in this repository`) and `used-by OBJ` lists what uses it live, so `blast-radius`
+   adds nothing for plain manifests; use it only when code, Helm templates or Kustomize may reference
+   the object. `kubectl apply --dry-run` needs an API server: with a saved snapshot there is none, so
+   skip it and say so under "Limits" instead of trying.
+6. After the developer or GitOps applies it, re-check with `why OBJ --refresh`.
 
 ## Cost work
 
@@ -67,7 +80,8 @@ fallback when there is no evidence at all, and you must say so.
 4. Guardrails: `k8s-guardrails` (LimitRange, ResourceQuota per build namespace, optional janitor);
    roll out LimitRange first, quota second, janitor last, one namespace at a time.
 5. Verify every manifest you touch with `kubectl apply --dry-run=client -f` (and `--dry-run=server`
-   when a cluster is reachable); `blast-radius` for what references a changed ConfigMap/Secret/Service
+   when a cluster is reachable; with none, as with a saved snapshot, both fail: skip them and say so
+   under "Limits"); `blast-radius` for what references a changed ConfigMap/Secret/Service
    in the repository, `cluster-graph used-by` for what uses it live.
 
 ## Target environment (assumptions; adjust to the organization)
