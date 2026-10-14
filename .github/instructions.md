@@ -62,18 +62,28 @@ both, and each is refreshed):
 - which skills are symlinks into this clone or copies marked with its path, and whether they
   are links or copies;
 - which agent files carry the marker;
-- whether `<skills>/<agent>/SKILL.md` exists (`--agents-as-skills`).
+- whether `<skills>/<agent>/SKILL.md` exists (`--agents-as-skills`);
+- which tool a shared skills folder belongs to (`installed_for`). Codex, Gemini CLI and
+  Antigravity can share one (`~/.agents/skills` for Codex and Gemini CLI, `.agents/skills` for
+  Codex and Antigravity, or `~/.gemini/config/skills` linked to `~/.agents/skills`) with identical
+  files, so their loose installs list their tool in `<skills>/.ai-agents-harnesses`
+  (`record_harness`; unlisted on uninstall, deleted when empty). Installs from before 2026-10-14
+  have no record: a tool is dropped only when another tool on the same physical folder left its
+  trace (`harness_trace`: Gemini's hook in `~/.gemini/settings.json` or the `GEMINI.md` import,
+  `~/.codex`, marked agent files) and it left none; the update then writes the record.
 
 Per-harness folder paths live in one place, `loose_layout()` and `agent_file()`, shared with
 install/uninstall. Every detected install is pre-flighted before any is written. Loose installs
-are then pruned (`prune_stale`) of our files whose agent or skill no longer exists in the repo;
-plugins are rebuilt whole anyway. An install that holds every agent in the repo counts as full:
+are then pruned (`prune_stale`) of our files whose agent or skill no longer exists in the repo,
+except the harness's own plugin folder (Claude's sits in `~/.claude/skills/ai-agents`); plugins
+are rebuilt whole anyway. An install that holds every agent in the repo counts as full:
 its skill list becomes every skill, so new skills arrive with `--update`. Narrowed installs keep
 their lists. New agents are only reported, because a full install missing a new agent cannot be
 told apart from one narrowed with `--agents`.
-Installs linked into another clone are skipped with the path. An agent file without the marker
-is kept and named. `--update --force` takes over exactly those files (`TAKEOVER_FILES`); the
-plain `--force` is cleared during an update, so skill paths keep the normal guard.
+Installs linked into another clone are skipped with the path; in an install that mixes links into
+both clones, the other clone's skills are named and left out of the refresh (`D_OTHER_SKILLS`).
+An agent file without the marker is kept and named. `--update --force` takes over exactly those
+files (`TAKEOVER_FILES`); the plain `--force` is cleared during an update, so skill paths keep the normal guard.
 
 ## Harness mapping (what install.sh emits)
 | harness | project scope | user scope | agent representation |
@@ -234,8 +244,11 @@ templates rather than adding vendor-neutral fallbacks.
 - Engine set-up for sandboxes: the four venv wrappers (code-graph, terraform-review,
   k8s-manifest-review, k8s-rightsize) take `run.sh --setup`: create/extend the shared venv, then
   download the grammars that skill parses (tree-sitter-language-pack >= 1.x fetches each grammar
-  from github.com on first parse into `$XDG_CACHE_HOME`/`~/.cache/tree-sitter-language-pack/v<pack>/`;
-  code-graph downloads every `EXT_LANG` language). `install.sh` (and `--update`) runs it for every
+  from github.com on first parse into `$XDG_CACHE_HOME`/`~/.cache/tree-sitter-language-pack/v<pack>/`,
+  `~/Library/Caches/tree-sitter-language-pack/v<pack>/` on macOS;
+  code-graph downloads every `EXT_LANG` language). Set-up proves each grammar with `get_language()`,
+  not `downloaded_languages()`: packs before 1.21 have a `download()` that fetches nothing (upstream
+  #201) and an existing venv is never upgraded. `install.sh` (and `--update`) runs it for every
   installed skill with `scripts/requirements.txt`; `--no-setup` / `INSTALL_NO_SETUP=1` skip it;
   a failure is a `warn` line, not fatal. With `uv` on PATH the venv is made with
   `uv venv --seed` (pip kept so a pip-only wrapper can extend it) and `uv pip install`; without

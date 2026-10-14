@@ -8,7 +8,7 @@ Gemini CLI, Google Antigravity (CLI and IDE) and GitHub Copilot. Skills use the
 ```
 agents/<name>/AGENT.md     canonical agent: neutral frontmatter + system prompt
 agents/<name>/README.md    what it is for, limits, adoption notes
-skills/<name>/SKILL.md     skill (standard format) with scripts/ and reference/ beside it
+skills/<name>/SKILL.md     skill (standard format), with scripts/, reference/, templates/ beside it as needed
 tools/render.py            renders AGENT.md -> Claude / Copilot / Antigravity / agent-as-skill
 install.sh                 installs into a harness (symlink or copy), maintains AGENTS.md
 AGENTS.md, CLAUDE.md, GEMINI.md   repo instructions (CLAUDE.md/GEMINI.md just import AGENTS.md)
@@ -36,30 +36,8 @@ into the clone, so keep `~/ai_agents` where it is.
 Check it: `agy agents` lists `ast-treesitter`, `build-pipeline`, `helm`, `kubernetes` and
 `terraform`, and `/skills` inside a session lists the skills.
 
-### Updating
-
-```bash
-cd ~/ai_agents && git pull && ./install.sh --update
-```
-
-Skills are symlinks into the clone, so the pull alone updates them. Agents are rendered copies
-and need the installer re-run. `--update` does that for every install this clone made in your
-home directory. It finds each one from the files themselves, so you do not have to remember how
-you installed. Each install keeps its own settings: tool, plugin or regular layout, symlink or
-`--copy`, a narrowed `--agents`/`--skills` list, and `--agents-as-skills`. It also removes our
-files for agents and skills deleted upstream. A full install (it has every agent in the repo)
-also gets skills that are new in the repo. An install narrowed with `--agents`/`--skills` keeps
-its lists, and new skills are only named. A new agent is always only named, because it looks the
-same as one you left out. Add it by re-running your install command.
-
-- A project install: `./install.sh --update --target /path/to/project`.
-- Only some tools: `--harness antigravity,claude`.
-- `keep ... no installer marker`: an agent file from an install older than the ownership marker
-  (or your own file of the same name) is left alone. If it is ours, `--update --force` takes over
-  exactly those files and nothing else.
-- `skip ...: installed from another clone`: those links point into a different checkout. Run
-  `--update` from that clone, or uninstall there and install from here.
-- New sessions pick up the change: restart the CLI, or reload the IDE window.
+To update later: `cd ~/ai_agents && git pull && ./install.sh --update`, from a regular terminal.
+See [Updating](#updating) for what it does and how to read its output.
 
 Prefer to let your AI tool do it? Open your harness in `~/ai_agents` and ask it to **install the
 agents globally (user scope)**, or invoke the `install-agents` skill (`/install-agents`,
@@ -81,8 +59,9 @@ the whole team gets them from that repo, run the installer from that project:
 ```bash
 cd /path/to/your/project
 ~/ai_agents/install.sh --harness antigravity    # or: claude | codex | gemini | copilot | all
-echo '.ast-graph/' >> .gitignore                # graph artifact of the code-graph skill
 ```
+
+The code-graph skill's graph directory `.ast-graph/` ignores itself, so it needs no `.gitignore` entry.
 
 Other options: `--copy` to copy instead of symlink (Windows, CI images), `--target DIR` to install
 somewhere other than the current directory (the directory must already exist), `--plugin` to
@@ -172,6 +151,103 @@ original command with `--uninstall` added. Antigravity, Claude Code and Gemini C
 verified with each tool's own validator and listing commands. Copilot and Codex were built from
 their published formats and have not been run.
 
+## Updating
+
+After a pull, run the installer once in update mode. Run it from a **regular terminal**, not from
+inside a sandboxed agent session (see [Sandboxes](#sandboxes-and-the-engine-set-up)):
+
+```bash
+cd ~/ai_agents                 # the clone you installed from
+git pull
+./install.sh --update
+```
+
+Then start a new session: restart the CLI, or reload the IDE window.
+
+### What `--update` does
+
+- **Finds every install this clone made** at user scope, from the files themselves (links into
+  this clone, the installer's marker), so you do not have to remember how you installed. Codex,
+  Gemini CLI and Antigravity can share a skills folder, so their installs also list the tool in
+  `.ai-agents-harnesses` in that folder, and only the tools you installed are updated.
+- **Refreshes each one with its original settings:** tool, plugin or regular layout, symlink or
+  `--copy`, a narrowed `--agents`/`--skills` list, and `--agents-as-skills`. Agents are rendered
+  copies, so they always need this step. Symlinked skills already changed with the pull;
+  `--copy` installs get fresh copies.
+- **Removes our files for agents and skills deleted upstream.**
+- **Adds new skills to a full install** (one that has every agent in the repo). An install
+  narrowed with `--agents`/`--skills` keeps its lists, and new skills are only named in a
+  `note   in the repo but not in this install` line. A new agent is always only named, because it
+  looks the same as one you left out; add it by re-running your install command. When a pull adds
+  an agent, the install no longer has every agent, so new skills are only named that time too.
+- **Adds the session-start hook** to installs that include code-graph and do not have it yet.
+- **Runs the engine set-up** (`run.sh --setup`) for every installed skill that has one:
+  code-graph, terraform-review, k8s-manifest-review and k8s-rightsize. It creates or extends the
+  shared Python venv in `~/.cache/astgraph/venv` and downloads the tree-sitter grammars these
+  skills parse (`~/Library/Caches/tree-sitter-language-pack/` on macOS,
+  `~/.cache/tree-sitter-language-pack/` on Linux). This needs the network (PyPI and github.com)
+  and write access to those folders.
+
+Variants (`--update` takes only these options; the rest is read from what is installed):
+
+| you want | command |
+|---|---|
+| update a project install | `./install.sh --update --target /path/to/project` |
+| update only some tools | `./install.sh --update --harness antigravity,claude` |
+| skip the engine set-up | `./install.sh --update --no-setup` (or `INSTALL_NO_SETUP=1`) |
+| take over agent files reported as `keep` | `./install.sh --update --force` |
+
+Without `--harness` every tool is updated; without `--scope` it is user scope, or project scope
+when `--target` is given. A project update also rewrites the managed block in its `AGENTS.md`.
+
+### Reading the output
+
+| line | meaning |
+|---|---|
+| `[claude] scope=user ...` | start of one install being refreshed; `skill`/`agent`/`hook` lines follow |
+| `removed <path> (no longer in the repo)` | our file for an agent or skill deleted upstream |
+| `note   in the repo but not in this install: ...` | agents or skills you can add by re-running your install command |
+| `skip   <tool> ...: installed from another clone` | those links point into a different checkout: run `--update` from that clone, or uninstall there and install from here |
+| `skip   <tool> ...: <skills> linked into another clone` | the rest of the install is from this clone; those skills are left pointing at the other checkout |
+| `keep   <file>: no installer marker` | an agent file from an install older than the ownership marker, or your own file of that name, left alone; if it is ours, `--update --force` takes over exactly those files |
+| `setup  <skill>: ready: ...` | that skill's engine is set up; sandboxed sessions only read it |
+| `warn   <skill>: engine set-up failed ...` | see below; the install itself still succeeded |
+| `done (update: claude:loose ...)` | the installs that were refreshed (`loose` = regular layout, `plugin` = plugin bundle) |
+| `update: nothing installed from this clone ...` | no install from this clone at that scope: install first, or pass `--target` for a project install |
+
+### Sandboxes and the engine set-up
+
+Claude Code (`sandbox.enabled`), Gemini CLI (`tools.sandbox`) and Antigravity can run an agent's
+commands in a sandbox that cannot write `~/.cache` or reach the network. Keep those settings as
+they are: the sandbox applies to agent sessions, not to `install.sh` run from your terminal. The
+set-up done by `install.sh` is what lets sandboxed sessions work, because afterwards they only
+read the venv and the grammars. If you ask an agent to run the install (the `install-agents`
+skill) inside a sandboxed session, the install succeeds but the set-up reports `warn`: run
+`./install.sh --update` from a terminal afterwards.
+
+A failed set-up looks like this:
+
+```
+  warn   code-graph: engine set-up failed (network?); the skill sets itself up on first use, or run:
+         "/Users/you/ai_agents/skills/code-graph/scripts/run.sh" --setup
+         astgraph: grammars not downloaded: tsx
+         astgraph: cannot set up /Users/you/.cache/astgraph/venv here (no write access or no network: a sandboxed session?).
+         astgraph: run once outside the sandbox: "/Users/you/ai_agents/skills/code-graph/scripts/run.sh" --setup (install.sh runs it)
+```
+
+The last two lines are a generic hint printed for any set-up failure; the first `astgraph:` line is
+the actual cause. To fix it:
+
+1. Run the printed `run.sh --setup` command from a terminal to retry that one skill and see its
+   full output.
+2. `grammars not downloaded: ...`: the grammar download from github.com failed, usually a proxy
+   or firewall; allow `github.com` and `release-assets.githubusercontent.com`. Clones from before
+   2026-10-14 also failed this way when the venv held tree-sitter-language-pack older than 1.21,
+   whose download step silently does nothing. Pull, then run `./install.sh --update` again, or
+   upgrade the pack: `~/.cache/astgraph/venv/bin/python -m pip install -U tree-sitter-language-pack`.
+3. A broken venv: delete `~/.cache/astgraph/venv` and run `./install.sh --update` again; it is
+   recreated (all four skills share it).
+
 ## Agents
 
 | agent | purpose |
@@ -195,23 +271,26 @@ their published formats and have not been run.
 | [terraform-plan-review](skills/terraform-plan-review/SKILL.md) | Risk-ranked review of `terraform show -json` plans (data loss, exposure, IAM, drift); CI gate |
 | [terraform-module-scaffold](skills/terraform-module-scaffold/SKILL.md) | Generate compliant modules and environment roots from editable templates |
 | [gke-cost-discovery](skills/gke-cost-discovery/SKILL.md) | Read-only GKE waste discovery: unused vs unallocated, over-requested workloads with recommended requests, stale test envs, scale-down blockers, autoscaler reasons, TeamCity demand, proposed build tiers; works on synthetic data until credentials exist |
-| [cluster-graph](skills/cluster-graph/SKILL.md) | Read-only snapshot of a live cluster (every resource type, CRDs included) linked into a graph with per-object health; `health`, `why`, `show`, `used-by`, `tree`, `find`, `events`, `crds`, `overview` |
+| [cluster-graph](skills/cluster-graph/SKILL.md) | Read-only snapshot of a live cluster (every resource type, CRDs included) linked into a graph with per-object health; `snapshot`, then `health`, `why`, `show`, `used-by`, `tree`, `find`, `events`, `crds`, `waste`, `reach`, `overview` |
 | [k8s-cluster-triage](skills/k8s-cluster-triage/SKILL.md) | Cluster-wide health sweep on the cluster graph: shared causes first (nodes, webhooks, APIServices, system namespaces, capacity), ranked findings with evidence |
 | [k8s-workload-triage](skills/k8s-workload-triage/SKILL.md) | One failing workload, Job, Service or custom resource: cause chain, logs, fix as a manifest change, verification |
-| [k8s-rightsize](skills/k8s-rightsize/SKILL.md) | Rewrite build/test manifests' requests and limits from the discovery report's p95 (tier cap without usage), add lifecycle fields; diff with evidence |
+| [k8s-rightsize](skills/k8s-rightsize/SKILL.md) | Rewrite build/test manifests' requests and limits from the discovery report (CPU p95, memory peak; tier cap without usage), add lifecycle fields; diff with evidence |
 | [k8s-manifest-review](skills/k8s-manifest-review/SKILL.md) | Efficiency/hygiene rules for build and test manifests against the tiers (requests, limits, TTLs, replicas, spot placement, images, PVCs, privileged); CI gate |
 | [k8s-guardrails](skills/k8s-guardrails/SKILL.md) | LimitRange, ResourceQuota and optional janitor CronJob per build namespace from `build-tiers.json` |
 | [helm-chart-review](skills/helm-chart-review/SKILL.md) | Chart, values layering and ArgoCD/Flux object review; helm lint; rendered manifests through k8s-manifest-review |
 | [teamcity-config-review](skills/teamcity-config-review/SKILL.md) | TeamCity Kotlin DSL/XML settings rules; embedded pod templates reviewed against tiers |
 | [teamcity-build-triage](skills/teamcity-build-triage/SKILL.md) | Failure classification with evidence from the REST API or saved logs; recent-failures histogram |
 
-The four code skills install together; `code-skeleton`, `blast-radius` and `bug-fix` use the engine
-in `../code-graph/scripts/run.sh` (the two triage skills use `../cluster-graph/scripts/run.sh` the same
-way). The engine needs Python 3.10+; `run.sh` creates a private venv
-with `tree-sitter` on first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`). No Node.js.
-`install.sh` does that set-up at install time (`run.sh --setup`: the venv, with uv when it is on
-PATH, and every tree-sitter grammar), so sandboxed sessions, which cannot write `~/.cache` or reach
-the network in Claude Code, only read it. `--no-setup` skips it.
+`code-skeleton`, `blast-radius` and `bug-fix` use the engine in `../code-graph/scripts/run.sh`, so
+install them together with `code-graph` (a full install, or the command below, does); the installer
+does not add it for you. The two triage skills use `../cluster-graph/scripts/run.sh` the same way.
+Both engines need Python 3.10+ and no Node.js. cluster-graph uses only the standard library
+(`KUBEGRAPH_PYTHON` picks the interpreter). code-graph creates a private venv with `tree-sitter` on
+first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`), which terraform-review,
+k8s-manifest-review and k8s-rightsize extend. `install.sh` does that set-up at install and update
+time (`run.sh --setup`: the venv, with uv when it is on PATH, and the grammars of every language
+the engine parses), so sandboxed sessions, which cannot write `~/.cache` or reach the network, only
+read it. `--no-setup` skips it; see [Sandboxes](#sandboxes-and-the-engine-set-up).
 
 ### Install only what you use
 
@@ -242,7 +321,7 @@ waits for it. What gets built depends on where the session starts:
 | anything else (no repository, `$HOME`, `/`) | nothing |
 
 `.ast-graph/` ignores itself, so it never shows up in `git status`. Repositories cloned after the
-session started are built on first use.
+session started have no graph yet; the agent builds one when it first needs it.
 
 Where the hook is installed (our entry only; `--uninstall` removes it):
 
@@ -260,7 +339,8 @@ existing installs. Turn it off without uninstalling with `ASTGRAPH_AUTOBUILD=0`.
 
 Everything merged to `main` has passed the merge request pipeline (see Contributing). Known-good
 points are tagged `vMAJOR.MINOR.PATCH`, and each tag gets a GitLab Release listing what changed
-and which agents and skills it touches.
+and which agents and skills it touches. No release has been tagged yet; until the first one, pin to
+a commit instead of a tag.
 
 **A change broke something for everyone:** revert it on `main` (in GitLab, open the merged MR and
 click **Revert**, or `git revert <commit>` in a new MR). Developers pick up the fix with the normal
@@ -270,7 +350,7 @@ would not get the rollback.
 **You need a working version right now:** pin your own install to the last good release:
 
 ```bash
-cd ~/ai_agents && git fetch --tags && git checkout v1.2.0   # the release you want
+cd ~/ai_agents && git fetch --tags && git checkout v1.2.0   # example: the release (or commit) you want
 ./install.sh --update
 ```
 
@@ -293,10 +373,13 @@ for fixes.
    detail in the body.
 2. Agent: create `agents/<name>/AGENT.md` with frontmatter `name`, `description`,
    `tools: [shell, read, glob, grep, edit, write, web, search]` (neutral names), `skills: [...]`,
-   `readonly: true|false` (Antigravity: sandboxed vs auto command execution), `model`. Body is
+   `preload: [...]` (a subset of `skills`: the skills injected into a Claude Code subagent's context;
+   the others are loaded on demand through the `Skill` tool; without it all are injected),
+   `readonly: true|false` (Antigravity: sandboxed vs
+   auto command execution; agent-as-skill renders get a read-only instruction), `model`. Body is
    the system prompt. Add a `README.md` beside it. Neutral tool names map per harness in
    `tools/render.py` (`TOOL_MAP`); Antigravity warns that unknown tool names can hang a subagent,
-   so only documented names are emitted.
+   so `tools/ci/check_repo.py` rejects any name that is not one of the neutral ones.
 3. Run `./install.sh --harness antigravity` in this repo (any harness regenerates the table) and
    commit the updated `AGENTS.md` table, then run
    the checks below.
@@ -311,6 +394,7 @@ python3 tools/ci/check_repo.py          # frontmatter, agent->skill references, 
 python3 evals/validate.py               # eval cases are structurally valid (the pipeline runs this too)
 tools/ci/install_check.sh               # project + user scope installs into temp dirs, then uninstall
 skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
+python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
 tools/ci/setup_check.sh                 # engine set-up from an empty cache, offline use, uv, no-write message
 ```
