@@ -67,7 +67,9 @@ fi
 
 if [ "$SETUP" = 1 ]; then
   # Grammars of every language EXT_LANG maps to; download() skips the ones already present.
-  # Older packs bundle their grammars in the wheel and have no download().
+  # Older packs bundle their grammars in the wheel and have no download(). Packs before 1.21 have
+  # a download() that fetches nothing (upstream #201) and an existing venv is never upgraded, so
+  # each grammar is then loaded: get_language() fetches a missing one in every release.
   "$PY" -B -c '
 import sys
 sys.path.insert(0, sys.argv[1])
@@ -76,9 +78,14 @@ import tree_sitter_language_pack as t
 langs = sorted(set(EXT_LANG.values()))
 if hasattr(t, "download"):
     t.download(langs)
-    missing = sorted(set(langs) - set(t.downloaded_languages()))
-    if missing:
-        sys.exit("astgraph: grammars not downloaded: " + " ".join(missing))
+missing = []
+for lang in langs:
+    try:
+        t.get_language(lang)
+    except Exception:
+        missing.append(lang)
+if missing:
+    sys.exit("astgraph: grammars not downloaded: " + " ".join(missing))
 print("astgraph: ready: %s, grammars: %s" % (sys.executable, " ".join(langs)), file=sys.stderr)
 ' "$HERE" || cannot_setup
   exit 0

@@ -12,7 +12,9 @@
 #   4. uv on PATH: the venv is made by uv, still has pip (k8s-rightsize extends it), set-up passes
 #   5. no write access to the cache: one line naming `--setup`, exit 2, no traceback
 #   6. install.sh runs the set-up, and --no-setup skips it
-# Needs network for cases 1, 3, 4 (PyPI and the grammar downloads). Case 2 needs `unshare -rn`
+#   7. a venv holding a language pack whose download() fetches nothing (< 1.21, upstream #201): each
+#      grammar skill's --setup still leaves its grammars in an empty cache
+# Needs network for cases 1, 3, 4, 7 (PyPI and the grammar downloads). Case 2 needs `unshare -rn`
 # (user namespaces) and case 4 needs uv; each is skipped with a note when missing.
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -106,6 +108,22 @@ else bad "install.sh did not run the code-graph set-up"; fi
 if "$REPO/install.sh" --harness claude --target "$WORK/target" --skills code-graph --no-setup > "$WORK/out" 2>&1 \
    && ! grep -q '^  setup  ' "$WORK/out" && grep -q -- '--no-setup' "$WORK/out"; then ok "--no-setup skips it"
 else bad "--no-setup"; fi
+
+echo "== 7. language pack with a no-op download() (1.20.0) =="
+# An existing venv is never upgraded, so one made before 1.21 keeps this pack; --setup must not trust download().
+OLDPACK="$WORK/cache/oldpack/venv"
+if python3 -m venv "$OLDPACK" > "$WORK/out" 2>&1 \
+   && "$OLDPACK/bin/pip" install --quiet tree-sitter tree-sitter-language-pack==1.20.0 >> "$WORK/out" 2>&1; then
+  for case in "code-graph:$want" "terraform-review:hcl" "k8s-manifest-review:yaml"; do
+    s="${case%%:*}"; need="${case#*:}"
+    # an empty grammar cache per skill, so one skill's set-up cannot fetch another's grammars
+    if XDG_CACHE_HOME="$WORK/cache-$s" ASTGRAPH_VENV="$OLDPACK" PATH="$NOUV_PATH" "$S/$s/scripts/run.sh" --setup > "$WORK/out" 2>&1; then
+      have=" $(XDG_CACHE_HOME="$WORK/cache-$s" grammars)"
+      missing=""; for l in $need; do case "$have " in *" $l "*) ;; *) missing="$missing $l" ;; esac; done
+      if [ -z "$missing" ]; then ok "$s: grammars in the cache: $need"; else echo "  FAIL $s: grammars missing:$missing"; fail=1; fi
+    else bad "$s --setup with language pack 1.20.0"; fi
+  done
+else bad "could not make a venv with tree-sitter-language-pack 1.20.0"; fi
 
 [ "$fail" = 0 ] && echo "setup check passed" || echo "setup check FAILED"
 exit "$fail"

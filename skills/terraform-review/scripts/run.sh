@@ -47,12 +47,16 @@ if [ -z "$PY" ]; then
 fi
 
 if [ "$SETUP" = 1 ]; then
-  # the hcl grammar now (normally fetched on first parse); older packs bundle it and have no download()
+  # the hcl grammar now (normally fetched on first parse); older packs bundle it and have no download().
+  # Packs before 1.21 have a download() that fetches nothing (upstream #201): get_language() fetches it.
   "$PY" -B -c '
 import sys, tree_sitter_language_pack as t
 if hasattr(t, "download"):
     t.download(["hcl"])
-    sys.exit(0 if "hcl" in t.downloaded_languages() else 1)
+try:
+    t.get_language("hcl")
+except Exception:
+    sys.exit(1)
 ' || cannot_setup
   echo "tfreview: ready: $PY, grammar: hcl" >&2
   exit 0

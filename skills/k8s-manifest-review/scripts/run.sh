@@ -47,12 +47,16 @@ if [ -z "$PY" ]; then
 fi
 
 if [ "$SETUP" = 1 ]; then
-  # the yaml grammar now (normally fetched on first parse); older packs bundle it and have no download()
+  # the yaml grammar now (normally fetched on first parse); older packs bundle it and have no download().
+  # Packs before 1.21 have a download() that fetches nothing (upstream #201): get_language() fetches it.
   "$PY" -B -c '
 import sys, tree_sitter_language_pack as t
 if hasattr(t, "download"):
     t.download(["yaml"])
-    sys.exit(0 if "yaml" in t.downloaded_languages() else 1)
+try:
+    t.get_language("yaml")
+except Exception:
+    sys.exit(1)
 ' || cannot_setup
   echo "k8sreview: ready: $PY, grammar: yaml" >&2
   exit 0
