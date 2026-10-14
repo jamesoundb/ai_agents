@@ -162,7 +162,8 @@ HOME="$DH" run_install "$WORK/as-skills.log" "$REPO/install.sh" --harness antigr
 agent_skills() { for a in "$REPO"/agents/*/; do [ -f "$1/$(basename "$a")/SKILL.md" ] && echo x; done | wc -l | tr -d ' '; }
 check "agents installed as skills = $N_AGENTS"      test "$(agent_skills "$DH/.agents/skills")" -eq "$N_AGENTS"
 check "native agents still installed = $N_AGENTS"  test "$(count "$DH/.gemini/config/agents")" -eq "$N_AGENTS"
-check "skills + agent skills + theirs in the folder" test "$(count "$DH/.agents/skills")" -eq $((N_SKILLS_NO_BOOT + N_AGENTS + 2))
+check "skills + agent skills + theirs + tool record" test "$(count "$DH/.agents/skills")" -eq $((N_SKILLS_NO_BOOT + N_AGENTS + 3))
+check "the tool record names antigravity"          test "$(cat "$DH/.agents/skills/.ai-agents-harnesses")" = antigravity
 check "their skill directory is untouched"         grep -qx MINE "$DH/.agents/skills/my-own-skill/SKILL.md"
 check "their symlink is untouched"                 test "$(readlink "$DH/.agents/skills/linked-skill")" = "$DH/elsewhere/linked-skill"
 check "HOME/.gemini/config/skills is still their link" test -L "$DH/.gemini/config/skills"
@@ -313,6 +314,64 @@ HOME="$GU" run_install "$WORK/g4.log" "$REPO/install.sh" --update
 check "update finds an old-location gemini install" grep -q '^\[gemini\]' "$WORK/g4.log"
 check "update moves it to ~/.agents/skills"       test -L "$GU/.agents/skills/code-graph" -a ! -e "$GU/.gemini/skills/code-graph"
 check "update keeps their skill in ~/.gemini/skills" grep -qx THEIRS "$GU/.gemini/skills/their-skill/SKILL.md"
+
+echo "== --update: tools sharing a skills folder, plugin beside loose, links from two clones =="
+done_line() { grep '^done (update:' "$1"; }
+# User scope: Codex and Gemini CLI both use ~/.agents/skills; only the tool that was installed is updated.
+SC="$WORK/share-codex"; mkdir -p "$SC"
+HOME="$SC" run_install "$WORK/s1.log" "$REPO/install.sh" --harness codex --scope user
+HOME="$SC" run_install "$WORK/s2.log" "$REPO/install.sh" --update
+check "codex only: update refreshes codex alone"     test "$(done_line "$WORK/s2.log")" = "done (update: codex:loose)"
+check "codex only: no gemini hook written"           test ! -e "$SC/.gemini/settings.json"
+SG="$WORK/share-gemini"; mkdir -p "$SG"
+HOME="$SG" run_install "$WORK/s3.log" "$REPO/install.sh" --harness gemini --scope user
+HOME="$SG" run_install "$WORK/s4.log" "$REPO/install.sh" --update
+check "gemini only: update refreshes gemini alone"   test "$(done_line "$WORK/s4.log")" = "done (update: gemini:loose)"
+SB="$WORK/share-both"; mkdir -p "$SB"
+HOME="$SB" run_install "$WORK/s5.log" "$REPO/install.sh" --harness codex,gemini --scope user
+HOME="$SB" run_install "$WORK/s6.log" "$REPO/install.sh" --update
+check "codex + gemini: update refreshes both"        test "$(done_line "$WORK/s6.log")" = "done (update: codex:loose gemini:loose)"
+# Installs made before the installer recorded the tool: told apart by what each tool leaves behind.
+SLC="$WORK/share-legacy-codex"; mkdir -p "$SLC/.codex"
+HOME="$SLC" run_install "$WORK/s7.log" "$REPO/install.sh" --harness codex --scope user
+rm -f "$SLC/.agents/skills/.ai-agents-harnesses"
+HOME="$SLC" run_install "$WORK/s8.log" "$REPO/install.sh" --update
+check "older codex install: codex alone"             test "$(done_line "$WORK/s8.log")" = "done (update: codex:loose)"
+SLG="$WORK/share-legacy-gemini"; mkdir -p "$SLG"
+HOME="$SLG" run_install "$WORK/s9.log" "$REPO/install.sh" --harness gemini --scope user
+rm -f "$SLG/.agents/skills/.ai-agents-harnesses"
+HOME="$SLG" run_install "$WORK/s10.log" "$REPO/install.sh" --update
+check "older gemini install: gemini alone"           test "$(done_line "$WORK/s10.log")" = "done (update: gemini:loose)"
+# Project scope: Codex and Antigravity both use .agents/skills.
+for c in "codex:codex:loose" "antigravity:antigravity:loose" "codex,antigravity:codex:loose antigravity:loose"; do
+  hs="${c%%:*}"; want="${c#*:}"; P="$WORK/share-proj-${hs/,/-}"; mkdir -p "$P"
+  run_install "$WORK/sp1.log" "$REPO/install.sh" --harness "$hs" --target "$P"
+  run_install "$WORK/sp2.log" "$REPO/install.sh" --update --target "$P"
+  check "project $hs: update refreshes $want"        test "$(done_line "$WORK/sp2.log")" = "done (update: $want)"
+done
+P="$WORK/share-proj-legacy"; mkdir -p "$P"
+run_install "$WORK/sp3.log" "$REPO/install.sh" --harness codex --target "$P"
+rm -f "$P/.agents/skills/.ai-agents-harnesses"
+run_install "$WORK/sp4.log" "$REPO/install.sh" --update --target "$P"
+check "older project codex install: codex alone"     test "$(done_line "$WORK/sp4.log")" = "done (update: codex:loose)"
+# Claude's plugin folder sits inside its loose skills folder: updating the loose install keeps it.
+CP="$WORK/claude-plugin-loose"; mkdir -p "$CP"
+HOME="$CP" run_install "$WORK/c1.log" "$REPO/install.sh" --harness claude --scope user
+HOME="$CP" run_install "$WORK/c2.log" "$REPO/install.sh" --harness claude --scope user --plugin
+HOME="$CP" run_install "$WORK/c3.log" "$REPO/install.sh" --update
+check "claude plugin + loose: plugin kept"           test -f "$CP/.claude/skills/ai-agents/.claude-plugin/plugin.json"
+check "claude plugin + loose: both refreshed"        test "$(done_line "$WORK/c3.log")" = "done (update: claude:plugin claude:loose)"
+CPO="$WORK/claude-plugin-only"; mkdir -p "$CPO"
+HOME="$CPO" run_install "$WORK/c4.log" "$REPO/install.sh" --harness claude --scope user --plugin
+HOME="$CPO" run_install "$WORK/c5.log" "$REPO/install.sh" --update
+check "claude plugin only: refreshed, still there"   test "$(done_line "$WORK/c5.log")" = "done (update: claude:plugin)" -a -f "$CPO/.claude/skills/ai-agents/.claude-plugin/plugin.json"
+# One install holding links from this clone and from another: the other clone's are named and left alone.
+MX="$WORK/mixed-clones"; mkdir -p "$MX"
+HOME="$MX" run_install "$WORK/m1.log" "$REPO/install.sh" --harness claude --scope user
+rm "$MX/.claude/skills/code-graph"; ln -s "$OR/skills/code-graph" "$MX/.claude/skills/code-graph"
+HOME="$MX" run_install "$WORK/m2.log" "$REPO/install.sh" --update
+check "mixed clones: other clone's link named"       grep -q "skip   claude (loose): code-graph linked into another clone ($OR)" "$WORK/m2.log"
+check "mixed clones: that link left alone"           test "$(readlink "$MX/.claude/skills/code-graph")" = "$OR/skills/code-graph"
 
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 

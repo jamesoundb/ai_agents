@@ -133,6 +133,10 @@ log() { printf '  %s\n' "$*"; }
 # before markers existed, when its content is exactly what we render now). --force overrides.
 MARKER="<!-- installed by ai_agents install.sh; edit the repo and re-run the installer instead -->"
 MARKER_FILE=".installed-by-ai-agents"
+# Codex, Gemini CLI and Antigravity can share one skills folder (Codex and Gemini CLI at user scope,
+# Codex and Antigravity in a project, or a folder linked to another) and write identical files
+# there, so a loose install of theirs also lists its tool in this file for --update.
+HARNESS_RECORD=".ai-agents-harnesses"
 
 marked_dir() {  # a copied skill directory we wrote
   [ -d "$1" ] && [ -f "$1/$MARKER_FILE" ]
@@ -459,6 +463,51 @@ agent_file() {  # agent_file <harness> <agent>: where a loose install keeps that
   esac
 }
 
+record_harness() {  # record_harness add|remove <harness>: list or unlist the tool in $SK (after loose_layout)
+  local f="$SK/$HARNESS_RECORD"
+  case "$2" in codex|gemini|antigravity) ;; *) return 0 ;; esac
+  [ "$DRY" = 0 ] || return 0
+  if [ "$1" = add ]; then
+    [ -d "$SK" ] || return 0
+    grep -qx "$2" "$f" 2>/dev/null || echo "$2" >> "$f"
+  elif [ -f "$f" ]; then
+    grep -vx "$2" "$f" > "$f.tmp" || true
+    if [ -s "$f.tmp" ]; then mv "$f.tmp" "$f"; else rm -f "$f.tmp" "$f"; fi
+  fi
+}
+
+harness_trace() {  # harness_trace <harness>: a file only that tool's install writes, for installs made
+  # before the record existed. Calls loose_layout; the caller restores SK/AG/PREFIX.
+  local f
+  loose_layout "$1"
+  case "$1" in
+    gemini)
+      if [ "$SCOPE" = user ]; then grep -qs "code-graph/scripts/autobuild.sh" "$HOME/.gemini/settings.json"
+      else grep -qsx "@AGENTS.md" "$TARGET/GEMINI.md"; fi ;;
+    codex)
+      [ "$SCOPE" = user ] && { [ -d "$HOME/.codex" ]; return; }
+      for f in "$SK"/*/SKILL.md; do marked_file "$f" && return 0; done; return 1 ;;   # agent personas
+    *) for f in "$AG"/* "$AG"/*/agent.md; do marked_file "$f" && return 0; done; return 1 ;;
+  esac
+}
+
+installed_for() {  # installed_for <harness>: the loose install found in $SK belongs to that tool
+  local sk="$SK" ag="$AG" prefix="$PREFIX" here o mine=1 other=0
+  if [ -f "$sk/$HARNESS_RECORD" ]; then grep -qx "$1" "$sk/$HARNESS_RECORD"; return; fi
+  # No record (an older install): another tool using the same folder that left its trace, while
+  # this one left none, means the files are that tool's. Without any trace, keep it.
+  here="$(cd "$sk" 2>/dev/null && pwd -P)"
+  harness_trace "$1" || mine=0
+  for o in claude codex gemini antigravity copilot; do
+    [ "$o" = "$1" ] && continue
+    loose_layout "$o"
+    [ "$(cd "$SK" 2>/dev/null && pwd -P)" = "$here" ] || continue
+    harness_trace "$o" && other=1
+  done
+  SK="$sk"; AG="$ag"; PREFIX="$prefix"
+  [ "$mine" = 1 ] || [ "$other" = 0 ]
+}
+
 GEMINI_LEGACY_SK="$HOME/.gemini/skills"   # Gemini CLI user installs before they moved to ~/.agents/skills
 
 remove_gemini_legacy() {  # remove our own entries from the old Gemini location; anything else stays
@@ -519,6 +568,7 @@ run_harnesses() {
       fi
       continue
     fi
+    if [ $UNINSTALL = 1 ]; then loose_layout "$h"; record_harness remove "$h"; fi
     case "$h" in
       claude)
         loose_layout claude
@@ -591,6 +641,7 @@ run_harnesses() {
         fi ;;
       *) echo "unknown harness: $h" >&2; exit 1 ;;
     esac
+    if [ $UNINSTALL = 0 ]; then loose_layout "$h"; record_harness add "$h"; fi
   done
   return 0   # the last branch may end on a false test (e.g. [ "$SCOPE" = project ]); that is not a failure
 }
@@ -630,7 +681,7 @@ detect_install() {  # detect_install <harness> <plugin|loose>: sets D_PLUGIN D_M
   # The two kinds are detected separately: a harness can have both (a plugin added next to a
   # regular install), and each must be refreshed.
   local h="$1" kind="$2" s a f
-  D_PLUGIN=0; D_MODE="link"; D_AGENTS=""; D_SKILLS=""; D_AS=0; D_OTHER=""; D_UNMARKED=""
+  D_PLUGIN=0; D_MODE="link"; D_AGENTS=""; D_SKILLS=""; D_AS=0; D_OTHER=""; D_OTHER_SKILLS=""; D_UNMARKED=""
   if [ "$kind" = plugin ]; then
     { [ "$h" = gemini ] && [ "$SCOPE" = project ]; } && return 0
     plugin_layout "$h"
@@ -662,6 +713,7 @@ detect_install() {  # detect_install <harness> <plugin|loose>: sets D_PLUGIN D_M
       D_SKILLS="$D_SKILLS $s"; [ -L "$SK/$s" ] || D_MODE=copy
     elif [ -L "$SK/$s" ] && [ -f "$(resolve_link "$SK/$s")/../../install.sh" ]; then
       D_OTHER="$(cd "$(resolve_link "$SK/$s")/../.." && pwd)"   # linked into another clone
+      D_OTHER_SKILLS="$D_OTHER_SKILLS $s"
     fi
   done
   for a in $ALL_AGENTS; do
@@ -677,14 +729,20 @@ detect_install() {  # detect_install <harness> <plugin|loose>: sets D_PLUGIN D_M
   done
   # agents alone do not prove the install came from this clone (rendered files name no clone)
   [ -n "$D_SKILLS" ] || D_AGENTS=""
+  # a tool sharing this folder with another: found only when the install is that tool's
+  if [ -n "$D_SKILLS" ] && ! installed_for "$h"; then
+    D_SKILLS=""; D_AGENTS=""; D_AS=0; D_OTHER=""; D_OTHER_SKILLS=""; D_UNMARKED=""
+  fi
   return 0
 }
 
 prune_stale() {  # prune_stale <harness>: remove our loose files for agents/skills deleted upstream
-  local h="$1" e n
+  local h="$1" e n pd
+  plugin_layout "$h"; pd="$PD"   # Claude keeps its plugin folder inside the loose skills folder
   loose_layout "$h"
   for e in "$SK"/* "$SK"/.[!.]*; do
     { [ -e "$e" ] || [ -L "$e" ]; } || continue
+    [ "$e" = "$pd" ] && continue
     n="$(basename "$e")"
     case " $ALL_SKILLS $ALL_AGENTS " in *" $n "*) continue ;; esac
     # a link or marked copy this clone installed, or an agent we rendered as a skill
@@ -727,6 +785,7 @@ if [ "$UPDATE" = 1 ]; then
       continue
     fi
     [ -n "$D_SKILLS$D_AGENTS" ] || continue
+    [ -n "$D_OTHER_SKILLS" ] && log "skip   $h ($kind):$D_OTHER_SKILLS linked into another clone ($D_OTHER); left alone"
     for f in $D_UNMARKED; do
       log "keep   $f: no installer marker (an install older than the marker, or your own file);"
       log "       not updated. If it is ours, add --force to take it over"
@@ -741,7 +800,7 @@ if [ "$UPDATE" = 1 ]; then
     fi
     FOUND="$FOUND $h:$kind"
     # bash 3.2 has no associative arrays: one variable set per install (harness + kind)
-    eval "U_${h}_${kind}_PLUGIN=\$D_PLUGIN U_${h}_${kind}_MODE=\$D_MODE U_${h}_${kind}_AGENTS=\$D_AGENTS U_${h}_${kind}_SKILLS=\$D_SKILLS U_${h}_${kind}_AS=\$D_AS"
+    eval "U_${h}_${kind}_PLUGIN=\$D_PLUGIN U_${h}_${kind}_MODE=\$D_MODE U_${h}_${kind}_AGENTS=\$D_AGENTS U_${h}_${kind}_SKILLS=\$D_SKILLS U_${h}_${kind}_AS=\$D_AS U_${h}_${kind}_OTHER=\$D_OTHER_SKILLS"
   done; done
   # During --update, --force only takes over the unmarked agent files detection named
   # (TAKEOVER_FILES); every other path keeps the normal guard, so a developer's own same-named
@@ -751,8 +810,10 @@ if [ "$UPDATE" = 1 ]; then
   use_detected() {  # load the stored detection for install <harness>:<kind> into run_harnesses' variables
     local u="${1%%:*}_${1#*:}"
     eval "PLUGIN=\$U_${u}_PLUGIN MODE=\$U_${u}_MODE AGENTS=\$U_${u}_AGENTS AGENT_SKILLS=\$U_${u}_AS"
-    eval "SKILLS=\$U_${u}_SKILLS"
+    eval "SKILLS=\$U_${u}_SKILLS OTHER_SKILLS=\$U_${u}_OTHER"
     SKILLS="$(with_declared_skills "$AGENTS" "$SKILLS")"
+    # links into another clone stay as they are, even where a full install would add the skill
+    [ -z "$OTHER_SKILLS" ] || SKILLS="$(missing_from "$OTHER_SKILLS" "$SKILLS")"
     HARNESSES="${1%%:*}"
   }
   # Pre-flight every install first, so a clash in one cannot leave the others half-updated.
