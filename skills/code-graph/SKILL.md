@@ -67,6 +67,8 @@ a skill folder: permission rules match the literal command.
   cards cap each section (`--limit N`, `--all`) and fold usage from test files into one count line.
 - An override note on `callers`/`trace-deps` means callers of the base method reach this one by
   dynamic dispatch; `symbol` lists `Overrides` / `Overridden by` (`--all` for the full list).
+  `callers` of a Java/Kotlin base method also lists, per override, the calls a subtype receiver binds
+  to it (`calls bound to overrides`): together with the direct rows, every call of that contract.
 - Quote graph output (file:line, edge type, confidence) as evidence in your answer.
 - A missing symbol: check `query stats` (file count, languages); the file may be excluded by default
   (`build`, `dist`, `vendor` ... use `--keep-dir`) or in an unsupported language.

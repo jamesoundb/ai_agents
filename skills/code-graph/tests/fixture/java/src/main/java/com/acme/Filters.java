@@ -27,3 +27,20 @@ public class Filters {
         apply(counter);
     }
 }
+
+// A receiver that is an array element (`parts[i].apply(f)`, JTS's `geometries[i].apply(filter)`) is of the
+// array's element type, so the argument picks the overload as on any typed receiver.
+class FilterGroup {
+    protected Filters[] parts;
+
+    public void each(PointFilter f) {
+        for (int i = 0; i < parts.length; i++) {
+            parts[i].apply(f);
+        }
+    }
+
+    public void first(PartFilter f) {
+        Filters[] local = parts;
+        local[0].apply(f);
+    }
+}

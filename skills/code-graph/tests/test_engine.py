@@ -644,6 +644,24 @@ def test_overload_queries(root):
                          ("Filters.apply@19", "Filters.java:27  [typed: argument CountFilter fits PointFilter]")):
         why = q("callers", target).stdout
         check(want in why, f"callers say which type picked the overload ({want}): {why.strip().splitlines()}")
+    # an indexed receiver (`parts[i].apply(f)`, `b.ops[0].meets(x)`) is typed by the array's / list's element
+    for fn, want in (("FilterGroup.each", "Filters.apply  L38 -> java/src/main/java/com/acme/Filters.java:19  [typed]"),
+                     ("FilterGroup.first", "Filters.apply  L44 -> java/src/main/java/com/acme/Filters.java:22  [typed]"),
+                     ("firstName", "Op.meets  L33 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:12  [typed]"),
+                     ("firstFlag", "Op.meets  L37 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:14  [typed]")):
+        el = q("callees", fn).stdout
+        check(want in el, f"an array/list element receiver is typed by its element type ({fn}): {el.strip().splitlines()[1:]}")
+    # callers of a base method also list the calls that a subtype receiver binds to an override
+    ov = q("callers", "Shape.area").stdout
+    check("calls bound to overrides (subtype receivers):" in ov and "Square.area  (java/src/main/java/com/acme/Square.java:6)" in ov
+          and "<- Areas.squareArea  java/src/main/java/com/acme/Areas.java:13  [typed]" in ov,
+          f"callers of a base method list the calls landing on its overrides: {ov.strip().splitlines()}")
+    # a receiver of an external type still reaches a repo extension on that type
+    for fn, want in (("spread", "millis  L43 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:41"),
+                     ("one", "millis  L45 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:41"),
+                     ("later", "millis  L51 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:41")):   # `val n = d.next()`
+        ext = q("callees", fn).stdout
+        check(want in ext, f"kotlin: an extension on an external type is the target ({fn}): {ext.strip().splitlines()[1:]}")
     disp = q("path", "Areas.total", "Square.area")
     check(disp.returncode == 0 and "Shape.area --dispatch (override)--> Square.area" in disp.stdout,
           f"path follows a call through an interface to the overriding method: {disp.stdout.strip().splitlines()}")

@@ -26,3 +26,27 @@ fun condition(c: Cond): Boolean =
     }
 
 fun flagged(o: Op<Boolean>): Boolean = o.meets(Schema.FLAG)
+
+// An indexed receiver is an element of the list or array, type arguments kept (`ops[0]` of `List<Op<String>>`)
+class Batch(val ops: List<Op<String>>, val flags: Array<Op<Boolean>>)
+
+fun firstName(b: Batch): Boolean = b.ops[0].meets(Schema.NAME)
+
+fun firstFlag(b: Batch): Boolean {
+    val fs: Array<Op<Boolean>> = b.flags
+    return fs[0].meets(Schema.FLAG)
+}
+
+// A repo extension on an external type is still the target (`stamps[0].millis()`, `d.millis()`)
+fun java.time.LocalDateTime.millis(): Long = 0L
+
+fun spread(stamps: List<java.time.LocalDateTime>): Long = stamps[1].millis() - stamps[0].millis()
+
+fun one(d: java.time.LocalDateTime): Long = d.millis()
+
+fun java.time.LocalDateTime.next(): java.time.LocalDateTime = this
+
+fun later(d: java.time.LocalDateTime): Long {
+    val n = d.next()
+    return n.millis()
+}

@@ -373,10 +373,18 @@ class Ctx:
             chain = [seg.split("(")[0].strip("*&!? ") for seg in split_chain(hint)]
             root = chain[0]
             root_type = self.lookup(root)
+            targs = self.lookup("<>" + root) if self.lang == "kotlin" and root_type else None
+            if not root_type and is_indexed(root) and self.lang in ("java", "kotlin"):   # Python's `list[X]` is declared as `list[]`
+                # `local[0].apply(f)`: the element type of a declared array (`Filters[]`) or list (`List<Op<String>>`)
+                base = root.split("[", 1)[0].strip()
+                decl = (self.lookup("<>" + base) if self.lang == "kotlin" else None) or self.lookup(base)
+                elem = index_element(decl) if decl and not decl.startswith("<") else None
+                if elem:
+                    root_type = strip_type_decor(elem)
+                    targs = elem if self.lang == "kotlin" and "<" in elem else None
             if root_type:
                 ref["hint_type"] = root_type
                 ref["chain"] = chain[1:]
-                targs = self.lookup("<>" + root) if self.lang == "kotlin" else None
                 if targs:
                     ref["hint_targs"] = targs
         ref.update(extra)
@@ -3001,6 +3009,23 @@ def element_type(t):
     return inner.rstrip("?").split("<")[0].strip()
 
 
+def index_element(t):
+    """Declared type text -> the type of one indexed element, type arguments kept: `Geometry[]` -> `Geometry`,
+    `List<Op<String>>` / `Array<out X>` -> `Op<String>` / `X`; None for maps and non-indexable types."""
+    t = (t or "").strip().rstrip("?").strip()
+    if t.endswith("[]"):
+        return t[:-2].strip() or None
+    m = re.match(r"^(?:kotlin\.collections\.|kotlin\.|java\.util\.)?(?:Mutable)?(?:List|Array|ArrayList)<(.+)>$", t)
+    if not m or len(split_top(m.group(1))) != 1:
+        return None
+    return re.sub(r"^(?:out|in)\s+", "", m.group(1).strip()).rstrip("?").strip() or None
+
+
+def is_indexed(seg):
+    """`parts[i]` / `ops[0]`: a receiver segment that reads one element of an array or list."""
+    return seg.endswith("]") and "[" in seg and not seg.startswith("[")
+
+
 KOTLIN_SYNTHETIC_MEMBERS = {"copy", "valueOf", "values", "entries", "ordinal", "name", "hashCode", "equals", "toString", "compareTo"}
 KT_RECEIVER_LAMBDAS = {"apply", "run"}
 KT_IT_LAMBDAS = {"also", "let", "takeIf", "takeUnless"}
@@ -5613,6 +5638,23 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     return None
                 tn, raw = nxt, (rt, ())
                 continue
+            if is_indexed(seg):
+                # `geometries[i]` / `ops[0]`: one element of an array or list field, typed by its declared element type
+                found = field_owner(tn, seg.split("[", 1)[0].strip())
+                if found is None:
+                    return None
+                owner, fname = found[0], seg.split("[", 1)[0].strip()
+                decl = next((field_types_raw[oid][fname] for oid in owner_ids(owner) if fname in field_types_raw.get(oid, {})), None)
+                elem = index_element(decl) if decl and not decl.startswith("<") else None
+                if not elem:
+                    return None
+                kind, nxt = resolve_type_ref(elem, owner["file"])
+                if kind == "ext":
+                    return ""
+                if nxt is None:
+                    return None
+                tn, raw = nxt, (elem, tuple(generic_bounds(owner)))
+                continue
             found = field_owner(tn, seg)
             if found is None:
                 nested = [c for c in candidates(seg, TYPE_LIKE_KINDS) if c.get("parent") == tn["id"]]
@@ -5786,6 +5828,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
             chain[0] = chain[0][4:].strip()   # `new Foo(...).bar()`: the receiver is a Foo
             flags[0] = False
         first = chain[0]
+        first_f = first.split("[", 1)[0].strip() if is_indexed(first) else first   # `geometries[i]`: the field itself
         ext = ns_ext.get(rel, ())
         repo = ns_repo.get(rel, {})
 
@@ -5838,9 +5881,9 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         if lang == "kotlin" and first and not flags[0]:
             # inside `fun RuleSet.visitFile()`, a bare `rules` is `this.rules` on the extension receiver
             rn = ext_receiver_node(r, rel)
-            if rn is not None and field_owner(rn, first) is not None:
+            if rn is not None and field_owner(rn, first_f) is not None:
                 return from_node(rn, chain, flags)
-        if cont is not None and any(first in field_types.get(oid, {}) for oid in owner_ids(cont)):
+        if cont is not None and any(first_f in field_types.get(oid, {}) for oid in owner_ids(cont)):
             return from_node(cont, chain, flags)
         if first and not first[0].isupper() and not flags[0]:
             # `currentDialect.functionProvider.f()`: a top-level typed variable declared in this file, in
@@ -5861,7 +5904,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 if pn["id"] in seen_anc:
                     continue
                 seen_anc.add(pn["id"])
-                if any(first in field_types.get(oid, {}) for oid in owner_ids(pn)):
+                if any(first_f in field_types.get(oid, {}) for oid in owner_ids(pn)):
                     anc = pn
                     break
                 frontier.extend(_parents(pn["id"]))
@@ -6044,6 +6087,20 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                             return [], None, "builtin"
         mode, payload = receiver_mode(r, rel, lang, cont)
         if mode == "external":
+            if lang == "kotlin" and r.get("hint_type") and not r.get("chain"):
+                # `d.millis()` / `stamps[0].millis()` with `d: LocalDateTime` and a repo `fun LocalDateTime.millis()`:
+                # the extension, not a library member
+                ht = r["hint_type"]
+                if ht.startswith("<"):
+                    ht = arg_type_text(ht)   # `val d = c.descriptor()`: the type the call returns
+                tb = base_type_name(ht) if ht else None
+                exts = [c for c in candidates(name, {"function", "method"}) if lang_of(c["file"]) == "kotlin"
+                        and c["extra"].get("receiver_type") and base_type_name(c["extra"]["receiver_type"]) == tb] if tb else []
+                targets, conf = pick(exts, rel)
+                # visible only from its own file, or as a top-level function of the same package or an import
+                if targets and (conf == "same_file" or (conf in ("package", "import")
+                                                        and all(t.get("parent") == t["file"] for t in targets))):
+                    return targets, conf, "typed"
             return [], None, "external"
         if lang == "kotlin" and mode in ("unknown", "typed") and name in KOTLIN_STDLIB_MEMBERS:
             # `x.apply { }`, `list.forEach { }`, `s.isEmpty()`: stdlib unless the receiver's own type defines it
@@ -7295,6 +7352,44 @@ def with_owner_if_constructor(g, n):
     return [n["id"]]
 
 
+OVERRIDE_ROWS = 15   # calls bound to overrides printed under `callers` of a base method
+
+
+def override_landings(g, n, no_tests):
+    """[(override, [direct call edges])] for a Java/Kotlin method: calls on a subtype receiver bind to an override
+    of n, not to n (`shell.apply(f)` on a LinearRing -> LineString.apply), yet they call n's contract. JVM members
+    only: overrides_of's descendant walk is unbounded on C++ hub classes (OpKernel)."""
+    if n["kind"] != "method" or os.path.splitext(n["file"] or "")[1] not in (".kt", ".kts", ".java"):
+        return []
+    out = []
+    for o in overrides_of(g, n)[1]:
+        es = [e for e in g.inc.get(o["id"], []) if e["type"] == "calls" and e["confidence"] != "ambiguous"
+              and not (no_tests and is_test_file((g.nodes.get(e["src"]) or {}).get("file") or ""))]
+        if es:
+            out.append((o, sorted(es, key=lambda e: ((g.nodes.get(e["src"]) or {}).get("file") or "", e.get("line") or 0))))
+    return out
+
+
+def print_override_landings(g, landings):
+    """The calls bound to overrides, grouped by override, after the direct callers (OVERRIDE_ROWS at most)."""
+    if not landings:
+        return
+    print("  calls bound to overrides (subtype receivers):")
+    shown = 0
+    for o, es in landings:
+        if shown >= OVERRIDE_ROWS:
+            break
+        print(f"    {o['qname']}  ({o['file']}:{o['line']})")
+        for e in es[:OVERRIDE_ROWS - shown]:
+            src = g.nodes[e["src"]]
+            kind = e["confidence"] + (": " + e["why"] if e.get("why") else "")
+            print(f"      <- {src['qname']}  {src['file']}:{e.get('line') or src['line']}  [{kind}]")
+            shown += 1
+    total = sum(len(es) for _, es in landings)
+    if total > shown:
+        print(f"    + {total - shown} more: `query callers` on each override lists them")
+
+
 def q_callers(g, args, direction="in"):
     n = ensure_one(g, args.name)
     targets = with_owner_if_constructor(g, n) if direction == "in" else [n["id"]]
@@ -7316,9 +7411,11 @@ def q_callers(g, args, direction="in"):
                     hidden += 1
     else:
         hidden = g.store.count_ambiguous_into(set(targets)) if direction == "in" else g.store.count_ambiguous_from(set(targets))
+    landings = override_landings(g, n, no_tests) if direction == "in" else []
     if args.json:
         print(json.dumps({"root": n["id"], "levels": seen, "hops": [(a, e, b, l) for a, e, b, l in hops],
-                          "note": dispatch_note(g, n) if direction == "in" else None, "ambiguous_hidden": hidden}))
+                          "note": dispatch_note(g, n) if direction == "in" else None, "ambiguous_hidden": hidden,
+                          "via_overrides": [{"override": o["id"], "edges": es} for o, es in landings]}))
         return
     label = "callers of" if direction == "in" else "callees of"
     print(f"{label} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}" + ("  (no tests)" if no_tests else ""))
@@ -7328,7 +7425,8 @@ def q_callers(g, args, direction="in"):
     hidden_note = (f"  + {hidden} ambiguous edge(s) not shown (receiver type unknown, name matches): add --include-ambiguous"
                    if hidden else None)
     if not hops:
-        print("  none found (no resolved edges)")
+        print("  none found (no resolved edges)" if not landings else "  no direct calls")
+        print_override_landings(g, landings)
         if hidden_note:
             print(hidden_note)
         return
@@ -7354,6 +7452,7 @@ def q_callers(g, args, direction="in"):
                 kind += ": " + e["why"]   # the type facts that picked this overload: what a caller check greps for
             head = f"{arrow}" if (lvl == 1 and a == n["id"]) else f"{this['qname']} {arrow}"
             print(f"  {'  ' * (lvl - 1)}{head} {other['qname']}  {loc}  [{kind}]")
+        print_override_landings(g, landings)
         if hidden_note:
             print(hidden_note)
         return
@@ -7399,6 +7498,9 @@ def q_callers(g, args, direction="in"):
             print(f"    {cnt:4d}  hop {lvl}  {other['qname']}  (defined at {other['file']}:{other['line']})")
         print("  Relationship mix: " + ", ".join(f"{t}/{c}={v}" for (t, c), v in sorted(mix.items(), key=lambda kv: -kv[1])))
     print(f"  Files: {len(per_file)} (hop 1: {len(direct)}); symbols: {len(per_sym)}; rows: {len(hops)}; test files: {len(tests)}")
+    if landings:
+        print(f"  + {sum(len(es) for _, es in landings)} call(s) bound to {len(landings)} override(s) (subtype receivers): "
+              f"`query callers` on each override lists them")
     if hidden_note:
         print(hidden_note)
 

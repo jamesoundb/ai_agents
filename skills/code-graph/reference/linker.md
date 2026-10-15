@@ -68,6 +68,11 @@ The linker is receiver-aware and import-aware:
   references (`String::uppercase`, `Media.Status::name`) are function values, an identifier naming an
   `object` is of that object's type; in every language a chained-call argument (`a.b().c()`) is typed by
   its last call, not its first.
+  An indexed receiver (Java/Kotlin `parts[i].f()`, `b.ops[0].f()`) is of the element type of the declared
+  array (`Filters[]`) or list (`List<Op<String>>`, `Array<X>`), type arguments kept; a map or an untyped
+  local stays unknown. A Kotlin receiver of an external type (`d: LocalDateTime`, or a local initialised from
+  a call returning one) still reaches a repo extension on that type visible from the call: same file, or a
+  top-level one in the same package or an imported file.
   Extensions on one generic type are chosen by the receiver's type arguments, read from the declared type
   of the receiver's last property, call or parameter (`cond.op.f(x)` with `val op: Op<String>`): one whose
   concrete argument cannot take them is dropped (`Op<String>.f` on an `Op<Boolean>`), and on a tie the

@@ -7,4 +7,9 @@ public final class Areas {
     static double total(Shape s) {
         return s.area();
     }
+
+    // a Square receiver binds the call to Square.area, which overrides Shape.area: callers of Shape.area list it
+    static double squareArea(Square q) {
+        return q.area();
+    }
 }
