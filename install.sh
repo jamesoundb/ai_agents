@@ -8,6 +8,7 @@
 #   ./install.sh --harness antigravity --uninstall
 #   ./install.sh --harness antigravity,claude --scope user --plugin   # as one plugin per harness
 #   git pull && ./install.sh --update                 # refresh every install this clone made
+#   ./install.sh --status                             # what is installed, from which clone
 #
 # Options:
 #   --harness LIST   claude, codex, gemini, antigravity, copilot (comma list) or all
@@ -27,6 +28,9 @@
 #                    (harness, plugin or loose, copy or symlink, agent/skill lists,
 #                    --agents-as-skills). User scope by default; --target DIR (or --scope
 #                    project) updates that project instead; --harness narrows it.
+#   --status         list what is installed (from any clone) and the clone each install points
+#                    at, then the command that updates it. Writes nothing. User scope by default;
+#                    --target DIR (or --scope project) shows that project; --harness narrows it.
 #   --uninstall      remove what an install with the same options added
 #   --force          overwrite (or remove) paths this installer did not create
 #   --no-setup       skip the engines' one-time set-up. By default the installed skills that need
@@ -66,7 +70,7 @@ SKILLS_SRC="$REPO/skills"
 AGENTS_SRC="$REPO/agents"
 RENDER="$REPO/tools/render.py"
 
-HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0; UPDATE=0; SCOPE_SET=0; TARGET_SET=0; NO_SETUP="${INSTALL_NO_SETUP:-0}"
+HARNESSES=""; SCOPE="project"; TARGET="$PWD"; MODE="link"; UNINSTALL=0; ONLY_AGENTS=""; ONLY_SKILLS=""; FORCE=0; PLUGIN=0; ALL=0; AGENT_SKILLS=0; UPDATE=0; STATUS=0; SCOPE_SET=0; TARGET_SET=0; NO_SETUP="${INSTALL_NO_SETUP:-0}"
 
 # Print the comment header (line 2 up to the first line that is not a comment) as the help text.
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit "${1:-0}"; }
@@ -78,6 +82,7 @@ while [ $# -gt 0 ]; do
     --target) [ -d "$2" ] || { echo "--target: directory not found: $2 (create it first)" >&2; exit 1; }
               TARGET="$(cd "$2" && pwd)"; TARGET_SET=1; shift 2 ;;
     --update) UPDATE=1; shift ;;
+    --status) STATUS=1; shift ;;
     --copy) MODE="copy"; shift ;;
     --plugin) PLUGIN=1; shift ;;
     --agents-as-skills) AGENT_SKILLS=1; shift ;;
@@ -98,6 +103,14 @@ if [ "$UPDATE" = 1 ]; then
   fi
   [ -n "$HARNESSES" ] || HARNESSES="all"
   # a global update unless a project was named
+  [ "$SCOPE_SET" = 1 ] || { [ "$TARGET_SET" = 1 ] && SCOPE=project || SCOPE=user; }
+fi
+if [ "$STATUS" = 1 ]; then
+  if [ "$UPDATE" = 1 ] || [ "$UNINSTALL" = 1 ] || [ "$PLUGIN" = 1 ] || [ "$MODE" = copy ] || [ "$AGENT_SKILLS" = 1 ] \
+     || [ -n "$ONLY_AGENTS" ] || [ -n "$ONLY_SKILLS" ] || [ "$FORCE" = 1 ]; then
+    echo "--status takes only --harness, --scope and --target" >&2; exit 1
+  fi
+  [ -n "$HARNESSES" ] || HARNESSES="all"
   [ "$SCOPE_SET" = 1 ] || { [ "$TARGET_SET" = 1 ] && SCOPE=project || SCOPE=user; }
 fi
 [ -n "$HARNESSES" ] || { echo "--harness is required (claude, codex, gemini, antigravity, copilot, all)" >&2; exit 1; }
@@ -775,6 +788,56 @@ missing_from() {  # missing_from <installed> <available>: names in available but
   printf '%s\n' "${out# }"
 }
 
+tilde() { case "$1" in "$HOME"/*) printf '~%s\n' "${1#"$HOME"}" ;; *) printf '%s\n' "$1" ;; esac; }
+update_cmd() {  # update_cmd <clone>: the command that updates this scope's installs from that clone
+  printf 'cd %s && git pull && ./install.sh --update%s\n' "$(tilde "$1")" "$( [ "$SCOPE" = project ] && echo " --target $TARGET")"
+}
+
+STATUS_CLONES=""   # every clone --status saw, one per line
+status_line() {  # status_line <harness> <plugin|loose>: print where that install lives and its clone(s)
+  # Unlike detect_install it reads installs from any clone: a link resolves into its clone, and a
+  # copy or plugin carries its clone's path in the marker file.
+  local h="$1" kind="$2" dir clones="" mode=links s e c d list=""
+  if [ "$kind" = plugin ]; then
+    { [ "$h" = gemini ] && [ "$SCOPE" = project ]; } && return 0
+    plugin_layout "$h"; marked_dir "$PD" || return 0
+    dir="$PD"; clones="$(cat "$PD/$MARKER_FILE")"
+    for s in $ALL_SKILLS; do [ -e "$PD/skills/$s" ] && [ ! -L "$PD/skills/$s" ] && mode=copies; done
+  else
+    loose_layout "$h"
+    for d in "$SK" "$( [ "$h" = gemini ] && [ "$SCOPE" = user ] && echo "$GEMINI_LEGACY_SK")"; do
+      [ -n "$d" ] && [ -d "$d" ] || continue
+      for s in $ALL_SKILLS; do
+        e="$d/$s"
+        if [ -L "$e" ]; then
+          c="$(resolve_link "$e")"; [ -f "$c/../../install.sh" ] || continue; c="$(cd "$c/../.." && pwd)"
+        elif marked_dir "$e"; then c="$(cat "$e/$MARKER_FILE")"; mode=copies
+        else continue; fi
+        printf '%s\n' "$clones" | grep -qxF "$c" || clones="${clones:+$clones
+}$c"
+      done
+      [ -z "$clones" ] || { SK="$d"; break; }
+    done
+    [ -n "$clones" ] || return 0
+    installed_for "$h" || return 0   # a folder shared with another tool, installed for that one
+    dir="$SK"
+  fi
+  while IFS= read -r c; do
+    list="${list:+$list, }$(tilde "$c")"; [ "$c" != "$REPO" ] || list="$list (this clone)"
+    printf '%s\n' "$STATUS_CLONES" | grep -qxF "$c" || STATUS_CLONES="${STATUS_CLONES:+$STATUS_CLONES
+}$c"
+  done <<< "$clones"
+  printf '  %s (%s, %s): %s -> %s\n' "$h" "$( [ "$kind" = plugin ] && echo plugin || echo regular)" "$mode" "$(tilde "$dir")" "$list"
+}
+
+if [ "$STATUS" = 1 ]; then
+  echo "status: scope=$SCOPE$( [ "$SCOPE" = project ] && echo " target=$TARGET")"
+  for h in ${HARNESSES//,/ }; do for kind in plugin loose; do status_line "$h" "$kind"; done; done
+  [ -n "$STATUS_CLONES" ] || { echo "status: nothing installed at scope=$SCOPE (from any clone)"; exit 0; }
+  while IFS= read -r c; do echo "update: $(update_cmd "$c")"; done <<< "$STATUS_CLONES"
+  exit 0
+fi
+
 if [ "$UPDATE" = 1 ]; then
   echo "update: scope=$SCOPE$( [ "$SCOPE" = project ] && echo " target=$TARGET") from $REPO"
   FOUND=""; SETUP_SKILLS=""
@@ -845,4 +908,5 @@ if [ "$SCOPE" = project ]; then
   if [ $UNINSTALL = 1 ]; then remove_agents_md_block; else update_agents_md; fi
 fi
 setup_engines "$SKILLS"
-[ $UNINSTALL = 1 ] && echo "done (uninstall)" || echo "done. Add '.ast-graph/' to the target's .gitignore; the graph is a build artifact."
+if [ $UNINSTALL = 1 ]; then echo "done (uninstall)"
+else echo "done"; echo "update later: $(update_cmd "$REPO")"; fi

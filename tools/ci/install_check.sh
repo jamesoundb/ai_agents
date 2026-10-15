@@ -373,6 +373,34 @@ HOME="$MX" run_install "$WORK/m2.log" "$REPO/install.sh" --update
 check "mixed clones: other clone's link named"       grep -q "skip   claude (loose): code-graph linked into another clone ($OR)" "$WORK/m2.log"
 check "mixed clones: that link left alone"           test "$(readlink "$MX/.claude/skills/code-graph")" = "$OR/skills/code-graph"
 
+echo "== --status: what is installed, from which clone =="
+snapshot() { find "$1" -printf '%p %s %T@\n' | sort; }
+before="$(snapshot "$UH")"
+HOME="$UH" run_install "$WORK/st1.log" "$UR/install.sh" --status
+check "status: regular install, links, its clone"    grep -qxF "  claude (regular, links): ~/.claude/skills -> $UR (this clone)" "$WORK/st1.log"
+check "status: a --copy install"                     grep -qxF "  copilot (regular, copies): ~/.copilot/skills -> $UR (this clone)" "$WORK/st1.log"
+check "status: a plugin"                             grep -qF "  gemini (plugin, " "$WORK/st1.log"
+check "status: antigravity in a linked folder"       grep -qxF "  antigravity (regular, links): ~/.gemini/config/skills -> $UR (this clone)" "$WORK/st1.log"
+check "status: shared folder not shown as codex"     test -z "$(grep '^  codex' "$WORK/st1.log")"
+check "status: names the update command"             grep -qxF "update: cd $UR && git pull && ./install.sh --update" "$WORK/st1.log"
+check "status: writes nothing"                       test "$(snapshot "$UH")" = "$before"
+# Run from any clone: installs from another clone are shown with that clone and its update command.
+HOME="$MX" run_install "$WORK/st2.log" "$OR/install.sh" --status
+check "status from another clone: both clones named" grep -qxF "  claude (regular, links): ~/.claude/skills -> $REPO, $OR (this clone)" "$WORK/st2.log"
+check "status: update command per clone"             grep -qxF "update: cd $REPO && git pull && ./install.sh --update" "$WORK/st2.log"
+run_install "$WORK/st3.log" "$UR/install.sh" --status --target "$UP"
+check "status of a project install"                  grep -qxF "  claude (regular, links): $UP/.claude/skills -> $UR (this clone)" "$WORK/st3.log"
+check "status: project update command"               grep -qxF "update: cd $UR && git pull && ./install.sh --update --target $UP" "$WORK/st3.log"
+HOME="$WORK/upd-none" run_install "$WORK/st4.log" "$UR/install.sh" --status
+check "status: nothing installed says so"            grep -q 'nothing installed at scope=user' "$WORK/st4.log"
+# shellcheck disable=SC2016  # single quotes are intended: $0 expands inside bash -c
+check "--status rejects install options"             bash -c '! "$0" --status --copy >/dev/null 2>&1' "$UR/install.sh"
+# The install itself ends with the command to update it later.
+check "install names its update command"             grep -qxF "update later: cd $REPO && git pull && ./install.sh --update" "$WORK/m1.log"
+# that install ran with the real HOME: a clone inside it is shown as ~/...
+case "$REPO" in "$HOME"/*) REPO_SHOWN="~${REPO#"$HOME"}" ;; *) REPO_SHOWN="$REPO" ;; esac
+check "project install names its update command"     grep -qxF "update later: cd $REPO_SHOWN && git pull && ./install.sh --update --target $P" "$WORK/sp3.log"
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then

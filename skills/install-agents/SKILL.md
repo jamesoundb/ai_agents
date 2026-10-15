@@ -61,6 +61,10 @@ finds every install this clone made in the home directory and re-runs each with 
 options. Add `--target DIR` for a project install. If it prints `keep ... no installer marker`,
 tell the developer; add `--force` only if they confirm those files came from an older install.
 
+To see **what is installed and from which clone** (installs from any clone, with the command that
+updates each), run `scripts/install.sh --status`; it writes nothing. Add `--target DIR` for a
+project.
+
 ## 3. Verify (mandatory)
 
 - List what was created and confirm each path exists (the installer prints every path it wrote):
@@ -73,11 +77,11 @@ tell the developer; add `--force` only if they confirm those files came from an 
   `claude plugin list` (shows `ai-agents@skills-dir`), `gemini extensions list`. For Copilot
   and Codex, pass on the `next` line the installer printed: the `chat.pluginLocations` setting,
   or installing from `/plugins`. Do not edit the developer's settings yourself.
-- Project scope only: confirm `AGENTS.md` in the target contains the managed block, and if the
-  target is a git repository confirm `.ast-graph/` is in its `.gitignore`; add the line if the
-  developer agrees (the code-graph skill writes its graph there).
-- User scope: remind the developer to keep the `~/ai_agents` clone where it is (skills are
-  symlinks into it) and that updating is `cd ~/ai_agents && git pull` plus re-running the install.
+- Project scope only: confirm `AGENTS.md` in the target contains the managed block. Nothing goes
+  into `.gitignore`: the code-graph skill's `.ast-graph/` folder ignores itself.
+- Remind the developer to keep the clone where it is (skills are symlinks into it), and pass on
+  the installer's last line, `update later: cd <clone> && git pull && ./install.sh --update`:
+  that is how they update, from a regular terminal. `./install.sh --status` shows it again later.
 
 ## 4. Test that the engine actually runs here (mandatory on a new machine)
 
@@ -85,7 +89,8 @@ Installing only creates files. Before telling the developer it works, prove the 
 *this* machine — it needs Python 3.10+ and a tree-sitter wheel for this OS and CPU, and the first
 call builds a venv under `~/.cache/astgraph` (~30s, needs network). `install.sh` already ran that
 set-up (`setup  <skill>: ready` lines; `warn` when it could not reach the network) unless it was
-given `--no-setup`.
+given `--no-setup`. A sandboxed session (no network, no writes outside the project) gets `warn`:
+tell the developer to run the `update later:` command from a regular terminal once.
 
 ```bash
 uname -sm; bash --version | head -1; python3 -V     # record these; they go in the report

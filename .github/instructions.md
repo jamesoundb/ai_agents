@@ -85,6 +85,12 @@ both clones, the other clone's skills are named and left out of the refresh (`D_
 An agent file without the marker is kept and named. `--update --force` takes over exactly those
 files (`TAKEOVER_FILES`); the plain `--force` is cleared during an update, so skill paths keep the normal guard.
 
+`--status` (read-only; `--harness`, `--scope`, `--target` only) prints one line per install with
+the clone(s) it points at, then `update: cd <clone> && git pull && ./install.sh --update` per clone.
+Unlike `detect_install` it reads installs from any clone (`status_line`: a link resolves into its
+clone, a copy or plugin carries the clone's path in its marker file) and uses `installed_for` for
+shared folders. A normal install ends with the same command (`update later: ...`, `update_cmd`).
+
 ## Harness mapping (what install.sh emits)
 | harness | project scope | user scope | agent representation |
 |---|---|---|---|

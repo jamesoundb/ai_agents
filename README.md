@@ -36,8 +36,9 @@ into the clone, so keep `~/ai_agents` where it is.
 Check it: `agy agents` lists `ast-treesitter`, `build-pipeline`, `helm`, `kubernetes` and
 `terraform`, and `/skills` inside a session lists the skills.
 
-To update later: `cd ~/ai_agents && git pull && ./install.sh --update`, from a regular terminal.
-See [Updating](#updating) for what it does and how to read its output.
+The installer's last line is the command that updates this install later, for example
+`update later: cd ~/ai_agents && git pull && ./install.sh --update`. Run it from a regular
+terminal; see [Updating](#updating) for what it does and how to read its output.
 
 Prefer to let your AI tool do it? Open your harness in `~/ai_agents` and ask it to **install the
 agents globally (user scope)**, or invoke the `install-agents` skill (`/install-agents`,
@@ -164,6 +165,34 @@ git pull
 
 Then start a new session: restart the CLI, or reload the IDE window.
 
+### Which clone did I install from?
+
+Run `./install.sh --status` in any clone of this repo. It writes nothing; it lists every install
+(from any clone), the clone each one points at, and the command that updates it:
+
+```
+status: scope=user
+  claude (regular, links): ~/.claude/skills -> ~/ai_agents (this clone)
+  antigravity (regular, links): ~/.gemini/config/skills -> ~/ai_agents (this clone)
+update: cd ~/ai_agents && git pull && ./install.sh --update
+```
+
+Add `--target /path/to/project` for a project install. The folder you ran the installer from
+does not matter for a user install, and a project install lives in that project.
+
+No clone at hand? An installed skill points at it. `ls -l` on the `code-graph` skill shows an
+arrow to `<clone>/skills/code-graph`:
+
+| tool | command |
+|---|---|
+| Claude Code | `ls -l ~/.claude/skills/code-graph` |
+| Antigravity | `ls -l ~/.gemini/config/skills/code-graph` |
+| Codex, Gemini CLI | `ls -l ~/.agents/skills/code-graph` |
+| GitHub Copilot | `ls -l ~/.copilot/skills/code-graph` |
+
+A `--copy` install or a plugin has no arrow; its `.installed-by-ai-agents` file holds the clone's
+path (`cat ~/.claude/skills/code-graph/.installed-by-ai-agents`).
+
 ### What `--update` does
 
 - **Finds every install this clone made** at user scope, from the files themselves (links into
@@ -192,6 +221,7 @@ Variants (`--update` takes only these options; the rest is read from what is ins
 
 | you want | command |
 |---|---|
+| see what is installed and from which clone | `./install.sh --status` |
 | update a project install | `./install.sh --update --target /path/to/project` |
 | update only some tools | `./install.sh --update --harness antigravity,claude` |
 | skip the engine set-up | `./install.sh --update --no-setup` (or `INSTALL_NO_SETUP=1`) |
