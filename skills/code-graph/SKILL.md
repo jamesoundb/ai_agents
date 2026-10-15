@@ -61,6 +61,8 @@ a skill folder: permission rules match the literal command.
   `ambiguous` means the receiver's type is unknown and only the name matched. `callers` and
   `trace-deps` hide ambiguous edges and **say how many** they hid; add `--include-ambiguous` when
   that number matters (e.g. `self.query.setup_joins(...)` style calls). `source` lists them marked `?`.
+- A `callers` row on an overload names the type that picked it (`[typed: receiver c.op: Op<String>]`,
+  `[typed: argument VertexFilter fits CoordinateFilter]`): that is the check a grep would make.
 - Large results degrade to a summary by themselves (`--summary`, `--files-only`, `--max-rows N`);
   cards cap each section (`--limit N`, `--all`) and fold usage from test files into one count line.
 - An override note on `callers`/`trace-deps` means callers of the base method reach this one by

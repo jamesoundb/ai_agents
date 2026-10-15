@@ -100,7 +100,9 @@ by argument count, then by argument types where they are known (declared paramet
 varargs, typed locals, literals, `this.`/`self.` fields, and calls typed from their return
 type); when several same-arity overloads remain undecided, the call is recorded as `ambiguous`
 across that overload set rather than guessed, so `--include-ambiguous` shows the candidates and
-the trace note counts them.
+the trace note counts them. When a receiver's or an argument's type picked the overload, a `callers`
+row names it: `[typed: receiver cond.op: Op<String>]`, `[typed: argument VertexFilter fits
+CoordinateFilter]` (only the argument positions where the overloads differ).
 Terraform addresses use their native form (`aws_instance.app`, `module.vpc`, `var.region`,
 `output.vpc_id`, `local.tags`, `data.aws_ami.app`); `moved`/`import` blocks are `moved.<to>` /
 `import.<to>` and appear as dependents of the address they target. Kubernetes objects are

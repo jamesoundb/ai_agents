@@ -5105,10 +5105,14 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         """Among same-named callables, keep those whose parameter count admits the call's argument count,
         then those whose parameter types are compatible with the known argument types; a Kotlin extension
         must take the receiver's type arguments, and the closer receiver match wins a tie."""
+        n_in = len(cands)
         if _cur.get("recv_args") and len(cands) > 1:
             cands = [c for c in cands if recv_rank(c) is not None] or cands
+        recv_cut, arg_cut = len(cands) < n_in, False   # did the receiver's / the arguments' types decide?
         argc = _cur["argc"]
         if argc is None or len(cands) <= 1 or not any(c["kind"] in ("function", "method", "constructor") for c in cands):
+            if recv_cut and len(cands) == 1:
+                note_why(cands[0], True, None, None)
             return cands   # not an overload choice (types, packages): argument state does not apply
         ok = []
         for c in cands:
@@ -5145,13 +5149,40 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     scored.append((total, c))
             if scored:
                 best = max(t for t, _ in scored)
+                rivals = ok
                 ok = [c for t, c in scored if t == best]
+                arg_cut = len(ok) < len(rivals)
         if len(ok) > 1 and _cur.get("recv_args"):
             best = max(recv_rank(c) or 0 for c in ok)
+            n_ok = len(ok)
             ok = [c for c in ok if (recv_rank(c) or 0) == best]
+            recv_cut = recv_cut or len(ok) < n_ok
         if len(ok) > 1 and all(c["qname"] == ok[0]["qname"] and c["file"] == ok[0]["file"] for c in ok):
             _cur["overload_undecided"] = True   # same-arity overloads the arguments cannot separate
+        if len(ok) == 1 and (recv_cut or arg_cut):
+            note_why(ok[0], recv_cut, at if arg_cut else None, rivals if arg_cut else None)
         return ok
+
+    def note_why(c, recv_cut, at, rivals):
+        """Leave the type facts that picked overload c in _cur["why"] as (id, text): `receiver c.op: Op<String>`,
+        `argument CountFilter fits PointFilter`. Callers print them, so the choice need not be grepped to be trusted.
+        Only argument positions where the rival overloads' parameter types differ are named."""
+        parts = []
+        if recv_cut and _cur.get("recv_text"):
+            parts.append("receiver " + _cur["recv_text"])
+        ps = params_of(c) if at else None
+        if ps:
+            def ptypes(x):
+                xps = params_of(x) if x["kind"] in ("function", "method", "constructor") else None
+                lang = lang_of(x["file"]) if x.get("file") in files else None
+                return arg_params(xps, len(at), lang) if xps else [None] * len(at)
+            mine, other = ptypes(c), [ptypes(x) for x in rivals if x is not c]
+            facts = [a if compat_score(pt, a) == 4 else f"{a} fits {pt}"
+                     for i, (a, pt) in enumerate(zip(at, mine, strict=True))
+                     if a and pt and any(norm_type(o[i] or "") != norm_type(pt) for o in other)]
+            if facts:
+                parts.append(("argument " if len(facts) == 1 else "arguments ") + ", ".join(facts))
+        _cur["why"] = (c["id"], "; ".join(parts)) if parts else None
 
     def lang_of(rel):
         return files[rel]["file_node"]["extra"].get("language")
@@ -5552,6 +5583,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         return None
 
     _chain_raw = [None]   # declared type text of the last follow_chain's final step, type arguments kept
+    _last_why = [None]    # the type facts that picked the last resolve_call's overload (`receiver c.op: Op<String>`)
 
     def follow_chain(tn, chain, flags=None):
         """Walk `a.b.c` / `a.b().c` through field types and method return types from container node tn
@@ -5765,6 +5797,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 raw = _chain_raw[0] if rest else (root_raw, ())
                 args = type_args(raw[0], raw[1]) if raw and raw[0] else None
                 _cur["recv_args"] = (r["name"], args) if args and any(a != "*" for a in args) else None
+                # `c.op: Op<String>`: what callers show when these type arguments pick the overload
+                _cur["recv_text"] = f"{hint[:60]}: {raw[0]}" if _cur["recv_args"] else None
             return ("typed", t) if t else ("unknown", None)
 
         if first and re.match(r"^(?:[bBrRfFuU]{0,2}[\"'`]|[\[{]|\d)", first):
@@ -5883,15 +5917,20 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         """Resolve one call ref -> (targets, confidence, mode); mode 'external'/'builtin' mean no edge.
         When several same-arity overloads remain undecided, they are all returned as `ambiguous`."""
         saved = dict(_cur)   # re-entrant: typing an argument or receiver may resolve nested calls
-        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src"), "recv_args": None})
+        _cur.update({"argc": r.get("argc"), "arg_types": r.get("arg_types"), "arg_bind": r.get("arg_bind"), "rel": rel, "cont": cont, "overload_undecided": False, "src": r.get("src"), "recv_args": None,
+                     "recv_text": None, "why": None})
         try:
             targets, conf, mode = _resolve_call(r, rel, lang, cont)
+            # the type facts that picked this target, if an overload choice did (written after any nested call)
+            why = _cur.get("why")
+            _last_why[0] = why[1] if why and len(targets) == 1 and targets[0]["id"] == why[0] and conf != "ambiguous" else None
             if targets and _cur.get("overload_undecided") and conf in ("typed", "same_file", "package", "import"):
                 _dn(r["name"])
                 group = [c for c in by_name.get(r["name"], []) if c["qname"] == targets[0]["qname"] and c["file"] == targets[0]["file"]
                          and c["kind"] == targets[0]["kind"] and c["id"] not in overload_stub]
                 group = by_arity(group)
                 if len(group) > 1:
+                    _last_why[0] = None
                     return group[:5], "ambiguous", mode
             return targets, conf, mode
         finally:
@@ -6126,6 +6165,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                     continue
                 name = r["name"]
                 targets, conf, mode = resolve_call(r, rel, lang, container_of(r["src"]))
+                why = _last_why[0]
                 if (not targets or mode == "external") and lang == "python":
                     # Cross-language bridge: a Python call that resolves to nothing in Python may be
                     # a pybind11 export from a C++ extension module. Only taken when exactly one
@@ -6142,7 +6182,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 elif mode == "builtin":
                     calls_out.append([])
                 else:
-                    calls_out.append([[t["id"], conf] for t in targets])
+                    calls_out.append([[t["id"], conf] + ([why] if why else []) for t in targets])
             dep = _dep[0]
         finally:
             _dep[0] = None
@@ -6187,8 +6227,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                 if ent is None:
                     unresolved += 1
                 else:
-                    for dst, conf in ent:
-                        add_edge(r["src"], dst, "calls", r["line"], conf, name=r["name"])
+                    for dst, conf, *why in ent:   # [id, confidence(, the type facts that picked this overload)]
+                        add_edge(r["src"], dst, "calls", r["line"], conf, name=r["name"], **({"why": why[0]} if why else {}))
             elif k == "registers_op":
                 # REGISTER_KERNEL_BUILDER(Name("MatMul")..., MatMulOp<...>): the kernel class
                 # implements the registered op. Both sides are C++, but the op name is what the
@@ -6275,7 +6315,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   file TEXT, line INTEGER, end_line INTEGER, signature TEXT,
   annotations TEXT, parent TEXT, extra TEXT);
 CREATE TABLE IF NOT EXISTS edges (
-  src TEXT, dst TEXT, type TEXT, line INTEGER, confidence TEXT, name TEXT);
+  src TEXT, dst TEXT, type TEXT, line INTEGER, confidence TEXT, name TEXT, why TEXT);
 CREATE TABLE IF NOT EXISTS parsed (path TEXT PRIMARY KEY, blob TEXT);
 """
 INDEXES = """
@@ -6306,10 +6346,13 @@ def _row_to_edge(r):
     e = {"src": r[0], "dst": r[1], "type": r[2], "line": r[3], "confidence": r[4]}
     if r[5] is not None:
         e["name"] = r[5]
+    if r[6] is not None:
+        e["why"] = r[6]
     return e
 
 
-_EDGE_SELECT = "SELECT src,dst,type,line,confidence,name FROM edges"
+_EDGE_SELECT = "SELECT src,dst,type,line,confidence,name,why FROM edges"
+_EDGE_SELECT_V8 = "SELECT src,dst,type,line,confidence,name,NULL FROM edges"   # a graph from before the `why` column
 
 
 def replace_with_retry(src, dst, attempts=10, delay=0.15):
@@ -6353,8 +6396,8 @@ def write_store(path, graph, files):
                   json.dumps(n.get("annotations") or []), n.get("parent"),
                   json.dumps(n.get("extra") or {})) for n in graph["nodes"]])
             con.executemany(
-                "INSERT INTO edges VALUES (?,?,?,?,?,?)",
-                [(e["src"], e["dst"], e["type"], e.get("line"), e.get("confidence"), e.get("name"))
+                "INSERT INTO edges VALUES (?,?,?,?,?,?,?)",
+                [(e["src"], e["dst"], e["type"], e.get("line"), e.get("confidence"), e.get("name"), e.get("why"))
                  for e in graph["edges"]])
             con.executemany("INSERT OR REPLACE INTO parsed VALUES (?,?)",
                             [(rel, json.dumps(info, separators=(",", ":")))
@@ -6421,7 +6464,7 @@ class AdjView:
 
     def get(self, key, default=None):
         if key not in self._c:
-            rows = self.s.con.execute(f"{_EDGE_SELECT} WHERE {self.col}=?", (key,)).fetchall()
+            rows = self.s.con.execute(f"{self.s.edge_select} WHERE {self.col}=?", (key,)).fetchall()
             self._c[key] = [_row_to_edge(r) for r in rows]
         return self._c[key] or (default if default is not None else [])
 
@@ -6458,6 +6501,8 @@ class Store:
         self.con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         self.con.execute("PRAGMA query_only=ON")
         self._meta, self._parsed = {}, None
+        cols = {r[1] for r in self.con.execute("PRAGMA table_info(edges)")}
+        self.edge_select = _EDGE_SELECT if "why" in cols else _EDGE_SELECT_V8
 
     def meta(self, key):
         if key not in self._meta:
@@ -6470,7 +6515,7 @@ class Store:
             yield _row_to_node(r)
 
     def iter_edges(self, where="", params=()):
-        for r in self.con.execute(_EDGE_SELECT + (" " + where if where else ""), params):
+        for r in self.con.execute(self.edge_select + (" " + where if where else ""), params):
             yield _row_to_edge(r)
 
     def by_name(self, lowered):
@@ -7305,6 +7350,8 @@ def q_callers(g, args, direction="in"):
             else:
                 loc = f"L{e.get('line') or '?'} -> {other['file']}:{other['line']}"      # call-site line -> definition
             kind = e["confidence"] if e["type"] == "calls" else f"{e['type']}, {e['confidence']}"
+            if e.get("why") and direction == "in":
+                kind += ": " + e["why"]   # the type facts that picked this overload: what a caller check greps for
             head = f"{arrow}" if (lvl == 1 and a == n["id"]) else f"{this['qname']} {arrow}"
             print(f"  {'  ' * (lvl - 1)}{head} {other['qname']}  {loc}  [{kind}]")
         if hidden_note:

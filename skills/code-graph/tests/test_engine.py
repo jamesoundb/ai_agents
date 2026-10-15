@@ -637,6 +637,13 @@ def test_overload_queries(root):
     for line, want in (("L24", "Ops.kt:12  [typed]"), ("L25", "Ops.kt:14  [typed]"), ("L28", "Ops.kt:14  [typed]")):
         check(f"meets  {line} -> kotlin/src/main/kotlin/com/acme/text/{want}" in ops,
               f"kotlin: the receiver's type argument picks the extension overload ({line} -> {want}): {ops.strip().splitlines()}")
+    # callers name the type fact that picked the overload, so it need not be grepped to be trusted
+    for target, want in (("Op.meets@12", "Ops.kt:24  [typed: receiver c.op: Op<String>]"),
+                         ("Op.meets@14", "Ops.kt:25  [typed: receiver c.op: Op<Boolean>]"),
+                         ("Op.meets@14", "Ops.kt:28  [typed: receiver o: Op<Boolean>]"),
+                         ("Filters.apply@19", "Filters.java:27  [typed: argument CountFilter fits PointFilter]")):
+        why = q("callers", target).stdout
+        check(want in why, f"callers say which type picked the overload ({want}): {why.strip().splitlines()}")
     disp = q("path", "Areas.total", "Square.area")
     check(disp.returncode == 0 and "Shape.area --dispatch (override)--> Square.area" in disp.stdout,
           f"path follows a call through an interface to the overriding method: {disp.stdout.strip().splitlines()}")
