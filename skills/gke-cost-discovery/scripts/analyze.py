@@ -192,14 +192,15 @@ def analyze(d, build_ns, headroom, pricing, idle_hours):
                 s["completed"] += 1
                 snap["lingering"].append(f"{ns}/{name} ({phase})")
                 continue
-            s["req_cpu"] += rc; s["req_mem"] += rm_
+            if node:  # only a scheduled pod reserves node capacity (and is billed); an unschedulable one holds none
+                s["req_cpu"] += rc; s["req_mem"] += rm_
             system = ns in ("kube-system", "gke-managed-system", "gmp-system", "gke-gmp-system", "config-management-system")
             if missing and not system:  # static/system pods are managed by GKE; only user workloads are actionable
                 s["no_requests"] += 1
                 snap["no_requests"].append(f"{ns}/{name}")
             if rc and lc and lc / rc >= 4 and not system:
                 snap["ratio_issues"].append(f"{ns}/{name}: cpu limit {lc:g} is {lc / rc:.0f}x request {rc:g}")
-            if node in node_info and phase == "Running":
+            if node in node_info:  # Pending on a node (image pull, container creating) still holds its requests
                 node_info[node]["req_cpu"] += rc; node_info[node]["req_mem"] += rm_; node_info[node]["pods"] += 1
             ann = p["metadata"].get("annotations", {})
             if ann.get("cluster-autoscaler.kubernetes.io/safe-to-evict") == "false":

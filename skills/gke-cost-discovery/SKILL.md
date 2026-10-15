@@ -47,10 +47,10 @@ scripts/synth.py /tmp/discovery-demo && scripts/analyze.py /tmp/discovery-demo
    time per build configuration, and which configurations touch Kubernetes. Peak concurrency
    sizes the build pool maximum; the minimum should usually be zero.
 5. **Namespaces by cost**: every namespace ranked by monthly cost (list-price estimate from
-   requests, or actual dollars when `billing.csv` from the GKE cost-allocation export is present;
-   see `reference/metrics.md`), with share, requests now, p95 utilization, unused cost, and the
-   mitigation levers that apply to that namespace (right-size the top workload, LimitRange
-   defaults, kube-janitor TTL rule, ttlSecondsAfterFinished, spot pool, quota).
+   scheduled pods' requests, or actual dollars when `billing.csv` from the GKE cost-allocation
+   export is present; see `reference/metrics.md`), with share, requests now, p95 utilization,
+   unused cost, and the mitigation levers that apply to that namespace (right-size the top
+   workload, LimitRange defaults, kube-janitor TTL rule, ttlSecondsAfterFinished, spot pool, quota).
 
 ## Procedure for the agent
 

@@ -92,13 +92,13 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-direct-lookup` | yes, 3 runs | 12/12 |
 | `agent-terraform-review` | yes, 3 runs | 15/15 |
 | `agent-build-triage` | yes, 3 runs | 21/21 |
-| `agent-helm-oversized` | yes, 3 runs (2026-10-13) | 15/15; 22-27 tools, 118-160s, 90-120k tokens (agy 1.3.3). Earlier attempts were cut off or contaminated; one on 2026-10-13 left the workspace looking for a Git repository and read its own graders (flagged, not scored). Before the agent stopped re-rendering what `helmreview.py` had rendered: 50-55 tools, 264-323k tokens. |
+| `agent-helm-oversized` | yes, 3 runs (2026-10-13) | 15/15; 22-27 tools, 118-160s, 90-120k tokens (agy 1.3.3). Earlier attempts were cut off or contaminated; one on 2026-10-13 left the workspace looking for a Git repository and read its own graders (flagged, not scored). Before the agent stopped re-rendering what `helmreview.py` had rendered: 50-55 tools, 264-323k tokens. Re-run 2026-10-15 on agy 1.3.4 after the stuck-release section was added: 15/15, 29-36 tools, 92-123k tokens; the same case with the previous `AGENT.md` on agy 1.3.4 gave 27-36 tools, 85-93k tokens, so the section did not cause the rise. |
 | `agent-k8s-rightsize` | yes, 3 runs (2026-10-13) | 21/21; 28-33 tools, 215-247s, 110-174k tokens (agy 1.3.3). Grader 7 added after an earlier run cited `synth.py` output (synthetic discovery data) as concurrency evidence and still passed. |
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
 | `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. |
 | `agent-k8s-reach` | yes, 3 runs (2026-10-15) | 18/18; 12 tools each, 173-351s, 43-55k tokens (agy 1.3.4). |
-| `agent-k8s-waste` | yes, 3 runs (2026-10-15) | 18/18; 22-43 tools, 372-629s, 82-225k tokens (agy 1.3.4). Every run calls `waste` twice: the first output truncates the idle-requests list (`--max-rows`). |
+| `agent-k8s-waste` | yes, 3 runs (2026-10-15) | 18/18; 22-43 tools, 372-629s, 82-225k tokens (agy 1.3.4). Every run called `waste` twice: the first output cut the idle-requests list at the default 10 rows (25 since). |
 | `agent-k8s-node-down` | yes, 3 runs (2026-10-15) | 18/18; 11-19 tools, 120-164s, 42-64k tokens (agy 1.3.4). |
 | `agent-helm-stuck-releases` | yes, 3 runs (2026-10-15) | 21/21; 18 tools each, 145-338s, 41-84k tokens (agy 1.3.4). Grader 7 added after the first three runs (all 6/6) also edited the chart to fix unrelated review findings: 25-29 tools, 60-94k tokens. |
 | `install-agents-harness` | **no**, 1 run (2026-10-01) | 3/3; ran `./install.sh --harness antigravity --scope user`, 25 tools, 121s, 130k tokens. Graders checked against that trace and against hand-made gemini/all commands. |

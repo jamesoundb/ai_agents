@@ -104,7 +104,7 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
   (`--env-ns`, default `*preview*,*review*,*test*,pr-*,*-pr-*,*ephemeral*,*sandbox*`) older than
   `--min-age` hours (4) without `janitor/ttl`/`janitor/expires` on them or their namespace; scale-down
   blockers (safe-to-evict=false, bare pods, local storage, PDBs allowing 0 disruptions); nodes under 40%
-  requested.
+  requested. Caps at 25 rows per section (`--max-rows`).
 - `reach A B [--port N] [--protocol P]`: NetworkPolicy evaluation for traffic from A (pod, workload) to B
   (pod, workload or Service; a Service's targetPort, named ports resolved, is the default port): egress
   policies selecting A, ingress policies selecting B, each with the rule that allows it or the rules that

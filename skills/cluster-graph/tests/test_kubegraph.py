@@ -255,6 +255,11 @@ class Fixture(unittest.TestCase):
         self.assertIn("safe-to-evict=false", out)
         self.assertIn("PodDisruptionBudget/kg-preview-123/pinned  allows 0 disruptions", out)
 
+    def test_waste_itemizes_a_small_cluster_in_one_call(self):
+        # the fixture holds 12 idle-request rows; a cut list sent every eval run back for --max-rows
+        out = self.q("waste", "--min-age", "0")
+        self.assertNotIn("more (--max-rows N)", out)
+
     def test_reach(self):
         out = self.q("reach", "deploy/frontend", "svc/api", "-n", "kg-net")
         self.assertIn("port: Service port 80 -> targetPort http = 8080", out)       # named targetPort resolved

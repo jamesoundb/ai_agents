@@ -2709,7 +2709,7 @@ def main(argv=None):
     if a.cmd == "snapshot":
         cmd_snapshot(a)
         return 0
-    defaults = {"health": CAP_GROUPS, "find": CAP_FIND, "events": 30, "tree": 30, "used-by": 25, "overview": 30, "waste": 10}
+    defaults = {"health": CAP_GROUPS, "find": CAP_FIND, "events": 30, "tree": 30, "used-by": 25, "overview": 30, "waste": 25}
     a.max_rows = a.max_rows or (10 ** 6 if a.all else defaults.get(a.cmd, CAP_GROUPS))
     a.cap = 10 ** 6 if a.all else CAP_LIST
     a.events = 10 ** 6 if a.all else CAP_EVENTS
