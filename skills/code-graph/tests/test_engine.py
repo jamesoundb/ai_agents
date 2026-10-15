@@ -651,6 +651,11 @@ def test_overload_queries(root):
                      ("firstFlag", "Op.meets  L37 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:14  [typed]")):
         el = q("callees", fn).stdout
         check(want in el, f"an array/list element receiver is typed by its element type ({fn}): {el.strip().splitlines()[1:]}")
+    # a `this` argument is of the enclosing class, so it picks the overload its interfaces fit
+    for fn, want in (("SelfFilter.run", "Filters.apply  L55 -> java/src/main/java/com/acme/Filters.java:19  [typed]"),
+                     ("Drain.go", "Pipe.feed  L66 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:60  [typed]")):
+        me = q("callees", fn).stdout
+        check(want in me, f"a `this` argument is typed as the enclosing class ({fn}): {me.strip().splitlines()[1:]}")
     # callers of a base method also list the calls that a subtype receiver binds to an override
     ov = q("callers", "Shape.area").stdout
     check("calls bound to overrides (subtype receivers):" in ov and "Square.area  (java/src/main/java/com/acme/Square.java:6)" in ov

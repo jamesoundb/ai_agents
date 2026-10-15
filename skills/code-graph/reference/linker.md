@@ -68,6 +68,8 @@ The linker is receiver-aware and import-aware:
   references (`String::uppercase`, `Media.Status::name`) are function values, an identifier naming an
   `object` is of that object's type; in every language a chained-call argument (`a.b().c()`) is typed by
   its last call, not its first.
+  A `this` argument (Java/Kotlin `g.apply(this)`) is of the enclosing class, or of a Kotlin extension's
+  receiver type; inside a Java anonymous class, a Kotlin object literal or a Kotlin lambda it stays untyped.
   An indexed receiver (Java/Kotlin `parts[i].f()`, `b.ops[0].f()`) is of the element type of the declared
   array (`Filters[]`) or list (`List<Op<String>>`, `Array<X>`), type arguments kept; a map or an untyped
   local stays unknown. A Kotlin receiver of an external type (`d: LocalDateTime`, or a local initialised from

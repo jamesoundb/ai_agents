@@ -44,3 +44,14 @@ class FilterGroup {
         local[0].apply(f);
     }
 }
+
+// `fs.apply(this)`: `this` is of the enclosing class, which implements PointFilter (JTS's
+// AffineTransformation `g.apply(this)`), so the PointFilter overload is the target.
+class SelfFilter implements PointFilter {
+    public void filter(int x) {
+    }
+
+    public void run(Filters fs) {
+        fs.apply(this);
+    }
+}

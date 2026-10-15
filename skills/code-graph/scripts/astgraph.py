@@ -393,6 +393,24 @@ class Ctx:
         self.refs.append(ref)
         return ref
 
+    def this_type(self, tsnode):
+        """`g.apply(this)`: the enclosing class, or a Kotlin extension's receiver type. None inside a Java anonymous
+        class, a Kotlin object literal or a Kotlin lambda (which may have a receiver), where `this` is something else."""
+        p = tsnode.parent
+        while p is not None and p.type not in ("class_declaration", "enum_declaration", "record_declaration",
+                                               "object_declaration", "companion_object", "source_file", "program"):
+            if p.type in ("object_creation_expression", "object_literal") and any(k.type == "class_body" for k in p.named_children):
+                return None
+            if self.lang == "kotlin" and p.type in ("lambda_literal", "annotated_lambda", "anonymous_function"):
+                return None
+            p = p.parent
+        for node in reversed(self.stack):
+            if self.lang == "kotlin" and node["kind"] in ("function", "method") and node["extra"].get("receiver_type"):
+                return node["extra"]["receiver_type"]
+            if node["kind"] in CONTAINER_KINDS:
+                return node["name"]
+        return None
+
     def chained_callee(self, c, ctext):
         """The outermost callee of a call argument that is a chain (`a.b().c()` -> `a.b().c`), whose text
         before the first `(` names the wrong call; None when the argument is a single call."""
@@ -422,6 +440,8 @@ class Ctx:
                         ctext = self.text(c)
                         if c.type in ("identifier", "simple_identifier"):   # Kotlin names a plain identifier simple_identifier
                             t = self.lookup(ctext) or ("<field>" + ctext)   # not in scope: maybe a field via implicit this
+                        elif c.type in ("this", "this_expression") and ctext == "this" and self.lang in ("java", "kotlin"):
+                            t = self.this_type(c)
                         elif c.type in LITERAL_TYPES.get(self.lang, {}):
                             t = LITERAL_TYPES[self.lang][c.type]
                         elif c.type in ("callable_reference", "lambda_literal", "annotated_lambda") \

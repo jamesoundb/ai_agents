@@ -50,3 +50,18 @@ fun later(d: java.time.LocalDateTime): Long {
     val n = d.next()
     return n.millis()
 }
+
+// `p.feed(this)`: `this` is the enclosing class, a Sink
+interface Sink
+
+interface Tap
+
+class Pipe {
+    fun feed(s: Sink): Int = 1
+
+    fun feed(t: Tap): Int = 2
+}
+
+class Drain(val p: Pipe) : Sink {
+    fun go(): Int = p.feed(this)
+}
