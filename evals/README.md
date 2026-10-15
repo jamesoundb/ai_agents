@@ -88,8 +88,8 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-direct-lookup` | yes, 3 runs | 12/12 |
 | `agent-terraform-review` | yes, 3 runs | 15/15 |
 | `agent-build-triage` | yes, 3 runs | 21/21 |
-| `agent-helm-oversized` | yes, 3 runs (2026-10-13) | 15/15; 50-55 tools, 338-761s, 264-323k tokens (agy 1.3.3). Earlier attempts were cut off or contaminated; one on 2026-10-13 left the workspace looking for a Git repository and read its own graders (flagged, not scored). Every run still renders by hand what `helmreview.py` already rendered. |
-| `agent-k8s-rightsize` | yes, 3 runs (2026-10-13) | 18/18; 20-30 tools, 193-534s, 75-179k tokens (agy 1.3.3). One run cited `synth.py` output (synthetic discovery data) as concurrency evidence; no grader catches that. |
+| `agent-helm-oversized` | yes, 3 runs (2026-10-13) | 15/15; 22-27 tools, 118-160s, 90-120k tokens (agy 1.3.3). Earlier attempts were cut off or contaminated; one on 2026-10-13 left the workspace looking for a Git repository and read its own graders (flagged, not scored). Before the agent stopped re-rendering what `helmreview.py` had rendered: 50-55 tools, 264-323k tokens. |
+| `agent-k8s-rightsize` | yes, 3 runs (2026-10-13) | 21/21; 28-33 tools, 215-247s, 110-174k tokens (agy 1.3.3). Grader 7 added after an earlier run cited `synth.py` output (synthetic discovery data) as concurrency evidence and still passed. |
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
 | `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. |

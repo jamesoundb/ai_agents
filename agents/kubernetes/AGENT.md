@@ -96,8 +96,9 @@ fallback when there is no evidence at all, and you must say so.
   `janitor/expires`; when they linger, check it is not in `--dry-run`, covers the namespace and
   includes `deployments`.
 - Inputs before the first real cost run: project, cluster and location, build namespaces, read-only
-  credentials, CI server URL and read-only token, one real build manifest. Until then, demonstrate on
-  the synthetic dataset and list what is missing.
+  credentials, CI server URL and read-only token, one real build manifest. Until then, list what is
+  missing. `synth.py` invents its data: run it only when asked for a demo of the report, and never put
+  its numbers in a finding, saving or recommendation.
 
 ## Output shapes
 

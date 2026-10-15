@@ -42,11 +42,16 @@ bump rather than by drift.
 3. Fix at the right layer: chart defaults (small, explicit resources; pinned image tag via
    appVersion; `IfNotPresent`), environment values (sizes, replicas within test caps), GitOps
    object (pinned revision, project, prune/selfHeal, TTL annotation for test environments).
-4. Render again with `helm template` for base and environment values and pass the output to
-   `k8s-manifest-review`; test-like environments are judged against the build tiers. Use the
-   discovery report's recommended requests when one exists for the workload.
-5. Verify: `helm lint`, both renders succeed, the review gate passes. Report before/after
-   effective requests and replicas per environment so the cost effect is visible.
+4. `helm-chart-review` already rendered the base and the `--env-values` file and reviewed both
+   with `k8s-manifest-review` (the `HR-*` rows; test-like environments against the build tiers;
+   low and info left out on purpose). Do not render or review again by hand; `helm template` +
+   `k8s-manifest-review` only for an environment the review was not given. Size from the
+   discovery report's recommended requests when one exists for the workload; without one, stay
+   within the build tier the review judged against (the default tier unless the chart sets the
+   tier label) and say there is no usage evidence.
+5. Verify by re-running `helm-chart-review` with the same arguments: its gate covers `helm lint`,
+   both renders and the rendered review. Report before/after effective requests and replicas per
+   environment so the cost effect is visible.
 6. After the GitOps controller syncs, check the live result read-only: `cluster-graph`
    `why Application/<name>`, `why HelmRelease/<name>` or `why Release/<namespace>/<release>` gives sync,
    health, the Helm revision status (failed upgrade, a pending-operation lock) and the failing objects

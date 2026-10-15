@@ -27,7 +27,7 @@ scripts/collect.sh ./discovery/latest
 # 3. analyze
 scripts/analyze.py ./discovery/latest [--build-namespaces a,b] [--headroom 1.25] [--idle-hours 4] \
                    [--tiers-out build-tiers.json] [--json]
-# demo / test without any access
+# demo of the report on invented data: only when asked for a demo, never evidence about a cluster
 scripts/synth.py /tmp/discovery-demo && scripts/analyze.py /tmp/discovery-demo
 ```
 
