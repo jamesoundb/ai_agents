@@ -95,6 +95,7 @@ engine-tests:
     - skills/code-graph/tests/run_tests.sh   # code-graph regression suite (9-language fixture)
     - python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case (minikube fixture)
     - python3 skills/gke-cost-discovery/tests/test_analyze.py   # gke-cost-discovery: which pods count as reserved capacity
+    - python3 skills/helm-chart-review/tests/test_helmreview.py   # helm-chart-review: HV004 secrets vs Secret references
 
 install-check:
   stage: test

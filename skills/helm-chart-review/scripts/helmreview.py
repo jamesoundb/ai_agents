@@ -40,6 +40,8 @@ DEFAULT_POLICY = {
     "severity_overrides": {},
 }
 SECRET_KEY_RE = re.compile(r"(password|secret|token|api[_-]?key|private[_-]?key|credential)", re.I)
+# keys that name a Secret (or a key inside one) rather than hold a value: the reference HV004 asks for
+SECRET_REF_KEY_RE = re.compile(r"^existing|(secret|credentials?)[_-]?(name|ref)$", re.I)
 K8S_REVIEW = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "k8s-manifest-review", "scripts", "k8sreview.py")
 
 
@@ -68,7 +70,8 @@ def walk_secrets(obj, path, out):
     if isinstance(obj, dict):
         for k, v in obj.items():
             p = f"{path}.{k}" if path else str(k)
-            if isinstance(v, str) and v and SECRET_KEY_RE.search(str(k)) and not v.startswith(("${", "<", "vault:", "ref+")):
+            if isinstance(v, str) and v and SECRET_KEY_RE.search(str(k)) and not SECRET_REF_KEY_RE.search(str(k)) \
+                    and not v.startswith(("${", "<", "vault:", "ref+")):
                 out.append((p, v))
             walk_secrets(v, p, out)
     elif isinstance(obj, list):
@@ -77,6 +80,19 @@ def walk_secrets(obj, path, out):
 
 
 TEST_ENV_RE = re.compile(r"(^|[-_.])(test|tests|testing|pr|preview|dev|ci|sandbox|ephemeral)([-_.0-9]|$)")
+
+
+def inline_secrets(values):
+    """Paths of secret-looking values in GitOps inline values (a dict, or Argo's YAML string)."""
+    if isinstance(values, str):
+        try:
+            docs, _ = load_all(values)
+            values = docs[0] if docs else None
+        except Exception:  # noqa: BLE001 - unparseable: judge the text as before
+            return ["(unparsed values)"] if SECRET_KEY_RE.search(values) else []
+    out = []
+    walk_secrets(values, "", out)
+    return [p for p, _v in out]
 
 
 def is_test_env(name):
@@ -227,8 +243,9 @@ def review_gitops(paths, rep, chart_dir):
                                     rep.add("HG003", "medium", f, line, obj, f"parameter replicaCount={prm.get('value')} in a test namespace", f"cap at {P['max_test_replicas']}")
                             except (TypeError, ValueError):
                                 pass
-                    if helm.get("values") and SECRET_KEY_RE.search(str(helm.get("values"))):
-                        rep.add("HV004", "critical", f, line, obj, "inline helm.values contain a secret-looking key", "use a Secret/external-secrets and reference by name")
+                    found = inline_secrets(helm.get("values"))
+                    if found:
+                        rep.add("HV004", "critical", f, line, obj, f"inline helm.values contain a secret-looking value: {found[0]}", "use a Secret/external-secrets and reference by name")
                 proj = spec.get("project")
                 if proj in (None, "default") or (P["allowed_projects"] and proj not in P["allowed_projects"]):
                     rep.add("HG004", "medium", f, line, obj, f"project '{proj}' (default or not allowed)", "use a dedicated AppProject with source/destination restrictions")
@@ -254,8 +271,9 @@ def review_gitops(paths, rep, chart_dir):
                     rem = ((spec.get(phase) or {}).get("remediation") or {})
                     if rem.get("retries") == -1:
                         rep.add("HG009", "medium", f, line, obj, f"{phase}.remediation.retries -1 retries forever", "bound retries (e.g. 3) and alert on failure")
-                if spec.get("values") and SECRET_KEY_RE.search(json.dumps(spec.get("values"))):
-                    rep.add("HV004", "critical", f, line, obj, "inline values contain a secret-looking key", "valuesFrom a Secret managed outside Git")
+                found = inline_secrets(spec.get("values"))
+                if found:
+                    rep.add("HV004", "critical", f, line, obj, f"inline values contain a secret-looking value: {found[0]}", "valuesFrom a Secret managed outside Git")
                 if meta.get("namespace") in P["test_namespaces"] and not any(k in (meta.get("annotations") or {}) for k in ("janitor/ttl", "janitor/expires")):
                     rep.add("HG007", "high", f, line, obj, "test-environment HelmRelease without a TTL annotation", "annotate janitor/ttl or delete with the PR")
 

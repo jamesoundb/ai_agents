@@ -46,9 +46,11 @@ bump rather than by drift.
    with `k8s-manifest-review` (the `HR-*` rows; test-like environments against the build tiers;
    low and info left out on purpose). Do not render or review again by hand; `helm template` +
    `k8s-manifest-review` only for an environment the review was not given. Size from the
-   discovery report's recommended requests when one exists for the workload; without one, stay
-   within the build tier the review judged against (the default tier unless the chart sets the
-   tier label) and say there is no usage evidence.
+   discovery report's recommended requests when the repository has one for the workload
+   (`discovery/latest/report.json`, `build-tiers.json`); without one, stay within the build tier
+   the review judged against (the default tier unless the chart sets the tier label) and say
+   there is no usage evidence. Producing usage evidence (a discovery run, a measurement) is the
+   kubernetes agent's job, not a step here.
 5. Verify by re-running `helm-chart-review` with the same arguments: its gate covers `helm lint`,
    both renders and the rendered review. Report before/after effective requests and replicas per
    environment so the cost effect is visible.

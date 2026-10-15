@@ -13,7 +13,7 @@
 | HV001 | medium | default image tag latest |
 | HV002 | low | default pullPolicy Always |
 | HV003 | medium | no resources.requests defaults in values.yaml |
-| HV004 | critical | secret-looking value in values files, inline Application/HelmRelease values |
+| HV004 | critical | secret-looking value in values files, inline Application/HelmRelease values (a key that names a Secret -- `existing*`, `*SecretName`, `*SecretRef` -- is a reference, not a secret) |
 | HV005 | low | value not referenced by any template (dead value) |
 | HV006 | medium | replicaCount above `max_test_replicas` in a test-like values file |
 | HV007 | low | requests without memory limit in a values file |
