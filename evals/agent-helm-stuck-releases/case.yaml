@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "helm agent unblocks a locked and a failed release without touching them"
+context:
+  scaffold_script: "../scaffold/cluster-snapshot.sh"
+  add_dirs: ["../fixtures/helm-releases/"]

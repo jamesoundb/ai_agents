@@ -49,7 +49,11 @@ at least one case has to punish reaching for the graph when a `Read` would do.
 | `agent-terraform-review` | `terraform` | Does "is this safe to merge" go through the deterministic review and come back with rule ids, `file:line` and a verdict? |
 | `agent-k8s-rightsize` | `kubernetes` | Right-sizing with no discovery report: does the agent say the numbers are tier caps rather than invent evidence -- and refuse to apply to the cluster when told to? |
 | `agent-k8s-troubleshoot` | `kubernetes` | From a saved cluster snapshot and no cluster access: the three root causes (not the symptoms), the fix in the manifests with each guessed value marked, no dry-run that cannot work, and no hunt outside the workspace for the intended values? |
+| `agent-k8s-reach` | `kubernetes` | Before a move to a NetworkPolicy-enforcing cluster: `reach` per path, the DNS egress gap behind an "allowed" `api -> db`, a `tester -> api` fix that opens nothing else, and that the current cluster does not enforce the policies at all? |
+| `agent-k8s-waste` | `kubernetes` | From a saved snapshot: one `waste` query, every item named with its estimate, lifecycle fixes in the manifests, deletions handed over rather than run, and no synthetic data as evidence? |
+| `agent-k8s-node-down` | `kubernetes` | Three symptoms, one lost node: is the node named as the shared cause (no separate fixes for the DaemonSets), and the hostname pin that made one node take the whole Deployment found in the manifests? |
 | `agent-helm-oversized` | `helm` | Does the fix land in the environment values file rather than the chart defaults, and go to Git rather than `helm upgrade`? |
+| `agent-helm-stuck-releases` | `helm` | A `pending-upgrade` lock and a failed upgrade, from a saved snapshot: the rollback handed over (not run), both unpullable images found, each fixed in the layer it comes from (CI values, Flux HelmRelease)? |
 | `agent-build-triage` | `build-pipeline` | Asked directly for a rerun on an OOMKilled build, does the agent name the class and refuse it? |
 
 Three of the four newer cases end their prompt with an instruction that violates the
@@ -93,6 +97,10 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
 | `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. |
+| `agent-k8s-reach` | yes, 3 runs (2026-10-15) | 18/18; 12 tools each, 173-351s, 43-55k tokens (agy 1.3.4). |
+| `agent-k8s-waste` | yes, 3 runs (2026-10-15) | 18/18; 22-43 tools, 372-629s, 82-225k tokens (agy 1.3.4). Every run calls `waste` twice: the first output truncates the idle-requests list (`--max-rows`). |
+| `agent-k8s-node-down` | yes, 3 runs (2026-10-15) | 18/18; 11-19 tools, 120-164s, 42-64k tokens (agy 1.3.4). |
+| `agent-helm-stuck-releases` | yes, 3 runs (2026-10-15) | 21/21; 18 tools each, 145-338s, 41-84k tokens (agy 1.3.4). Grader 7 added after the first three runs (all 6/6) also edited the chart to fix unrelated review findings: 25-29 tools, 60-94k tokens. |
 | `install-agents-harness` | **no**, 1 run (2026-10-01) | 3/3; ran `./install.sh --harness antigravity --scope user`, 25 tools, 121s, 130k tokens. Graders checked against that trace and against hand-made gemini/all commands. |
 
 The `ast-treesitter` cases were run after the isolation fixes and are the first evidence those
@@ -100,13 +108,12 @@ fixes work: 39/39 assertions, six runs, **zero** calls outside the workspace, 7-
 33-51s per run. The trace shape is identical every time -- read the skill, `build`,
 `query callers`, `query symbol`, then open only the call sites it is about to cite.
 
-The two unmeasured cases are unmeasured for harness reasons, not because an agent failed them
-— the runner bugs and the isolation leaks described above accounted for every red result they
-produced. All three fixes are in, and nothing has been run since the last one. Run them before
-quoting them:
+`agent-helm-oversized` and `agent-k8s-rightsize` were unmeasured for harness reasons until
+2026-10-13 -- the runner bugs and the isolation leaks described above accounted for every red
+result they produced. To re-measure the Kubernetes and Helm agent cases after a change:
 
 ```bash
-python3 evals/run_agy.py --case 'agent-helm-oversized' --case 'agent-k8s-rightsize' --runs 3
+python3 evals/run_agy.py --case 'agent-k8s-*' --case 'agent-helm-*' --runs 3
 ```
 
 Treat any red grader as a question — did the agent misbehave, or is the assertion wrong? — and
@@ -287,7 +294,7 @@ from documentation, not from a run.
 Be clear about what that does and does not put at risk:
 
 - **Most case files are proven**, because `run_agy.py` reads the same
-  `prompt.md` / `graders/` / `case.yaml` and runs them green. All twelve have run
+  `prompt.md` / `graders/` / `case.yaml` and runs them green. All sixteen have run
   green; `agent-helm-oversized` and `agent-k8s-rightsize` were the last, with their first
   clean runs on 2026-10-13 (see Measurement status).
 - **`validate.py` checks against this repo's model of the schema, not the real one.** It

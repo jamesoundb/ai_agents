@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "kubernetes agent traces several failures to one lost node"
+context:
+  scaffold_script: "../scaffold/cluster-snapshot.sh"
+  add_dirs: ["../fixtures/k8s-node/"]

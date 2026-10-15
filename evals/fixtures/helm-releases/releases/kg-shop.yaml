@@ -1,0 +1,4 @@
+# Values for the kg-shop release; CI deploys it with
+#   helm upgrade --install kg-shop ./chart -n kg-helm -f releases/kg-shop.yaml --wait --timeout 30s
+app: kg-shop
+image: registry.invalid/team/shop:2.0

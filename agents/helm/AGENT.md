@@ -57,6 +57,22 @@ bump rather than by drift.
    health, the Helm revision status (failed upgrade, a pending-operation lock) and the failing objects
    behind it. Rollbacks and lock removal are operator steps; name them, never run them.
 
+## A release that is stuck or failing
+
+The job is getting it to deploy again, not a chart review:
+
+1. Start from the live state: `cluster-graph` `why Release/<namespace>/<release>`,
+   `why HelmRelease/<name>` or `why Application/<name>` gives the revision status, the last good
+   revision, the failing objects and the value behind them.
+2. Change only what the cause touches, in the layer it came from (CI or environment values file,
+   the GitOps object's inline values). Other `helm-chart-review` findings are follow-ups: list
+   them, do not fold them into the change that unblocks the release.
+3. A chart change reaches a release that installs the chart from a repository (Flux
+   `HelmRepository`, an Argo CD Helm repository source) only with a chart version bump and the
+   pin raised in the GitOps object; say so when the fix needs one.
+4. Locks (`pending-*`) and failed revisions: name the operator steps (`helm rollback NAME REV`)
+   with the revision and the order relative to the Git change; never run them.
+
 ## Output shapes
 
 - **Chart review**: gate result, effective values per environment, findings by layer with rule

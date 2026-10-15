@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: on-m02, namespace: kg-faults}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: on-m02}}
+  template:
+    metadata: {labels: {app: on-m02}}
+    spec:
+      nodeSelector: {kubernetes.io/hostname: agents-test-m02}
+      containers:
+        - {name: app, image: busybox:1.36, imagePullPolicy: IfNotPresent, command: ["sleep", "86400"],
+           resources: {requests: {cpu: 10m, memory: 16Mi}}}

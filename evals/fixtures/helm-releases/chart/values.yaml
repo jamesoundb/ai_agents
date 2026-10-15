@@ -1,0 +1,4 @@
+app: kg-shop
+image: busybox:1.36
+replicas: 2
+nodeSelector: {kubernetes.io/hostname: agents-test}
