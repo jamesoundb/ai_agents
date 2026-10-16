@@ -76,7 +76,9 @@ def main(argv=None):
     for w in written:
         print("wrote " + w)
     print(f"\ntiers: small {small}, medium {medium}, large {large}; quota = medium x {a.concurrent_pods} pods")
-    print("verify: kubeconform -strict " + a.out + "/*.yaml  (offline) or kubectl apply --dry-run=server -f " + a.out + " against a reachable cluster; then hand to GitOps, never apply from this skill")
+    objs = " ".join(w for w in written if not w.endswith("-kube-janitor-rule.yaml"))   # the rules entry is not an object
+    print("check: k8s-manifest-review run.sh <the namespaces' manifests> " + a.out + " --build  (ADM rules: what these reject, block or expire)")
+    print("verify: kubeconform -strict " + objs + "  (offline) or kubectl apply --dry-run=server -f on them against a reachable cluster; then hand to GitOps, never apply from this skill")
     return 0
 
 

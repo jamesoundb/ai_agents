@@ -58,9 +58,10 @@ the working directory. Read-only by construction: it only runs `get`, `api-resou
 3. **Trust the output.** `why` already followed owners, children, failing dependencies and selectors to
    the cause, fetched the failing container's last log lines, listed the existing objects a missing
    reference probably meant (`searched the cluster: no X named Y in any namespace`), named the repository
-   file:line that defines each object or that none does (it searched every YAML file of the checkout you
-   run it from, or `--repo DIR`) and printed the next read-only command. Do not re-check any of that with
-   `kubectl get -A`, `grep` or whole-file reads: before an edit, read only the lines around `defined at`.
+   file:line that defines each object or that none does (it searched every YAML file of the checkout or
+   directory you run it from, or `--repo DIR`) and printed the next read-only command. Do not re-check any
+   of that with `kubectl get -A`, `grep` or whole-file reads: before an edit, read only the lines around
+   `defined at`.
 
 ## Reading the output
 

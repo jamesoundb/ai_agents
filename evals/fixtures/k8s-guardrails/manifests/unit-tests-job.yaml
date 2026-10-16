@@ -1,0 +1,23 @@
+# Unit tests, run by TeamCity on every merge request.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: unit-tests
+  namespace: ci-builds
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: tests
+          image: europe-docker.pkg.dev/acme/ci/api-tests:1.42.0
+          command: ["./gradlew", "test"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi

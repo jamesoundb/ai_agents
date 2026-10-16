@@ -23,6 +23,16 @@
 | EFF012 | low | untagged or :latest image |
 | EFF013 | low/info | no ephemeral-storage request / emptyDir without sizeLimit |
 | EFF015 | low | more than `max_containers` containers in a build pod |
+| ADM001 | high | container (or pod) above the `max` of a LimitRange reviewed with it: rejected at admission |
+| ADM002 | high | container limit/request above the LimitRange's `maxLimitRequestRatio`: rejected at admission |
+| ADM003 | high | request above the limit the LimitRange defaults when none is set: rejected at admission |
+| ADM004 | high | PersistentVolumeClaims (and StatefulSet claim templates) beyond a reviewed ResourceQuota's `persistentvolumeclaims` |
+| ADM005 | high | Deployment/StatefulSet without `janitor/ttl`/`janitor/expires` that a reviewed kube-janitor rule deletes after its TTL |
+
+`ADM` rules run only when the reviewed paths include a LimitRange, ResourceQuota or kube-janitor rules
+file for the workload's namespace (for example `k8s-guardrails` output next to the namespace's manifests).
+YAML documents without a `kind` (values files, rules files) are not objects: not counted, not
+schema-validated.
 
 Severity is adjustable per repo with `severity_overrides`; rules can be switched off with
 `disabled_rules`. Tiers come from `build-tiers.json` (gke-cost-discovery) or inline `tiers`.

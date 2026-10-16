@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: "kubernetes agent sets namespace guardrails and says what they break"
+context:
+  scaffold_script: "../scaffold/prepare.sh"
+  add_dirs: ["../fixtures/k8s-guardrails/"]

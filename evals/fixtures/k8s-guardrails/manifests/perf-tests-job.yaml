@@ -1,0 +1,24 @@
+# Nightly load test against an in-cluster copy of the API.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: perf-tests
+  namespace: ci-builds
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 10800
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: europe-docker.pkg.dev/acme/ci/perf:3.1.0
+          command: ["k6", "run", "/scripts/nightly.js"]
+          resources:
+            requests:
+              cpu: "8"
+              memory: 32Gi
+            limits:
+              cpu: "8"
+              memory: 32Gi

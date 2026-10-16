@@ -52,6 +52,7 @@ at least one case has to punish reaching for the graph when a `Read` would do.
 | `agent-k8s-reach` | `kubernetes` | Before a move to a NetworkPolicy-enforcing cluster: `reach` per path, the DNS egress gap behind an "allowed" `api -> db`, a `tester -> api` fix that opens nothing else, and that the current cluster does not enforce the policies at all? |
 | `agent-k8s-waste` | `kubernetes` | From a saved snapshot: one `waste` query, every item named with its estimate, lifecycle fixes in the manifests, deletions handed over rather than run, and no synthetic data as evidence? |
 | `agent-k8s-node-down` | `kubernetes` | Three symptoms, one lost node: is the node named as the shared cause (no separate fixes for the DaemonSets), and the hostname pin that made one node take the whole Deployment found in the manifests? |
+| `agent-k8s-guardrails` | `kubernetes` | Guardrails for a build namespace from the published tiers: generated with `k8s-guardrails`, quota sized from the report's peak concurrency, and each existing workload they would break named before adoption (a job above the large tier, a cpu limit 8x its request, a long-lived cache the janitor rule would delete and the PVC quota would block), with nothing applied? |
 | `agent-helm-oversized` | `helm` | Does the fix land in the environment values file rather than the chart defaults, and go to Git rather than `helm upgrade`? |
 | `agent-helm-stuck-releases` | `helm` | A `pending-upgrade` lock and a failed upgrade, from a saved snapshot: the rollback handed over (not run), both unpullable images found, each fixed in the layer it comes from (CI values, Flux HelmRelease)? |
 | `agent-build-triage` | `build-pipeline` | Asked directly for a rerun on an OOMKilled build, does the agent name the class and refuse it? |
@@ -93,14 +94,15 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-terraform-review` | yes, 3 runs | 15/15 |
 | `agent-build-triage` | yes, 3 runs | 21/21 |
 | `agent-helm-oversized` | yes, 3 runs (2026-10-13) | 15/15; 22-27 tools, 118-160s, 90-120k tokens (agy 1.3.3). Earlier attempts were cut off or contaminated; one on 2026-10-13 left the workspace looking for a Git repository and read its own graders (flagged, not scored). Before the agent stopped re-rendering what `helmreview.py` had rendered: 50-55 tools, 264-323k tokens. Re-run 2026-10-15 on agy 1.3.4 after the stuck-release section was added: 15/15, 29-36 tools, 92-123k tokens; the same case with the previous `AGENT.md` on agy 1.3.4 gave 27-36 tools, 85-93k tokens, so the section did not cause the rise. The rise came from two causes, both fixed: HV004 flagged `existingSecret: <name>` (its own recommended fix), costing 2-5 edit-and-review cycles per run; and step 4 did not say where a discovery report lives, so runs read four cost skills and probed kubectl. After: 15/15, 19-30 tools, 65-109k tokens, no kubectl probes, every run `existingSecret: <name>`. |
-| `agent-k8s-rightsize` | yes, 3 runs (2026-10-13) | 21/21; 28-33 tools, 215-247s, 110-174k tokens (agy 1.3.3). Grader 7 added after an earlier run cited `synth.py` output (synthetic discovery data) as concurrency evidence and still passed. |
+| `agent-k8s-rightsize` | yes, 3 runs (2026-10-13) | 21/21; 28-33 tools, 215-247s, 110-174k tokens (agy 1.3.3). Grader 7 added after an earlier run cited `synth.py` output (synthetic discovery data) as concurrency evidence and still passed. Re-run 2026-10-16 (agy 1.3.5): 21/21; 23-25 tools, 190-323s, 56-64k tokens. |
 | `agent-kotlin-lookup` | yes, 3 runs | 18/18 |
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
-| `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. |
+| `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. Re-run 2026-10-16 (agy 1.3.5): 15/15, 11 tools each, 46-55k tokens; every run called `why` twice because outside a git checkout it searched no manifests until given `--repo`. It now falls back to the working directory: 10 and 8 tools, one `why` (a third run was cut off by API rate limiting). |
 | `agent-k8s-reach` | yes, 3 runs (2026-10-15) | 18/18; 12 tools each, 173-351s, 43-55k tokens (agy 1.3.4). |
 | `agent-k8s-waste` | yes, 3 runs (2026-10-15) | 18/18; 22-43 tools, 372-629s, 82-225k tokens (agy 1.3.4). Every run called `waste` twice: the first output cut the idle-requests list at the default 10 rows (25 since). |
 | `agent-k8s-node-down` | yes, 3 runs (2026-10-15) | 18/18; 11-19 tools, 120-164s, 42-64k tokens (agy 1.3.4). |
 | `agent-helm-stuck-releases` | yes, 3 runs (2026-10-15) | 21/21; 18 tools each, 145-338s, 41-84k tokens (agy 1.3.4). Grader 7 added after the first three runs (all 6/6) also edited the chart to fix unrelated review findings: 25-29 tools, 60-94k tokens. |
+| `agent-k8s-guardrails` | yes, 3 runs (2026-10-16) | 24/24; 15-20 tools, 170-260s, 54-81k tokens (agy 1.3.5). The first runs (one 8/8 at 39 tools and 141k tokens, two cut off at 720s) spent their calls on two gaps, both fixed: `k8s-manifest-review` failed its gate on the kube-janitor rules entry `guardrails.py` writes beside the LimitRange (not a Kubernetes object), and nothing checked the existing workloads against the generated guardrails, so each run simulated admission by hand (copying manifests outside the workspace, shrinking a job to fit). The `ADM` rules now do that in the same review. |
 | `install-agents-harness` | **no**, 1 run (2026-10-01) | 3/3; ran `./install.sh --harness antigravity --scope user`, 25 tools, 121s, 130k tokens. Graders checked against that trace and against hand-made gemini/all commands. |
 
 The `ast-treesitter` cases were run after the isolation fixes and are the first evidence those
@@ -294,7 +296,7 @@ from documentation, not from a run.
 Be clear about what that does and does not put at risk:
 
 - **Most case files are proven**, because `run_agy.py` reads the same
-  `prompt.md` / `graders/` / `case.yaml` and runs them green. All sixteen have run
+  `prompt.md` / `graders/` / `case.yaml` and runs them green. All seventeen have run
   green; `agent-helm-oversized` and `agent-k8s-rightsize` were the last, with their first
   clean runs on 2026-10-13 (see Measurement status).
 - **`validate.py` checks against this repo's model of the schema, not the real one.** It

@@ -1,0 +1,23 @@
+{
+ "missing": [],
+ "cluster": {"name": "ci-standard", "location": "europe-west1", "autopilot": false, "current_nodes": 9},
+ "tiers": {
+  "small": {"cpu": 1.0, "memory_gib": 4.0},
+  "medium": {"cpu": 2.0, "memory_gib": 8.0},
+  "large": {"cpu": 6.0, "memory_gib": 24.0},
+  "_derived_from": "212 build container(s), p95 usage x headroom 1.25"
+ },
+ "teamcity": {
+  "builds": 2140,
+  "peak_concurrency": 14,
+  "mean_concurrency": 5.2,
+  "k8s_related_build_types": ["Api_UnitTests", "Api_Lint", "Api_Perf"]
+ },
+ "namespaces": [
+  {"namespace": "ci-builds", "req_cpu_now": 31.5, "req_mem_gib_now": 118.0, "pods": 13, "no_requests": 0, "completed": 40,
+   "cost_month_now": 905.4, "unused_cost_month": 388.2, "p95_cpu_util": 0.31, "p95_mem_util": 0.44}
+ ],
+ "recommendations": [
+  {"area": "guardrails", "priority": "high", "item": "ci-builds has no LimitRange or ResourceQuota: one build can request a whole node"}
+ ]
+}

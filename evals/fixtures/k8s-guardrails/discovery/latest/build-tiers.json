@@ -1,0 +1,8 @@
+{
+ "tiers": {
+  "small": {"cpu": 1.0, "memory_gib": 4.0},
+  "medium": {"cpu": 2.0, "memory_gib": 8.0},
+  "large": {"cpu": 6.0, "memory_gib": 24.0}
+ },
+ "source": "212 build container(s), p95 usage x headroom 1.25"
+}

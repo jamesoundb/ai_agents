@@ -75,10 +75,11 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
   the deepest failing pod), `advice:` for that class, the failing container's last 20 log lines
   (`--previous` when it restarted; `--tail N`, `--no-logs`; live snapshots only) and `next:` commands.
   For a Service whose selector matches nothing it prints the closest pod label sets.
-- In a git checkout (or with `--repo DIR`), `why` and `show` print where the repository defines the
+- `why` and `show` print where the repository defines the
   object (`defined at path:line`, pods and ReplicaSets mapped to their top owner), or `not defined in this
   repository`. Plain YAML only (block or flow `metadata`, up to 3,000 files); Helm templates and Kustomize
-  name transforms are not resolved. `--no-repo` skips the scan.
+  name transforms are not resolved. The repository is `--repo DIR`, else the git checkout of the working
+  directory, else the working directory itself (never `$HOME` or `/`). `--no-repo` skips the scan.
 - For a `missing` cause, `why` lists the existing objects of that kind with the closest names (same
   namespace first, same name in another namespace flagged, the default StorageClass marked); for
   `missing key`, the keys the ConfigMap/Secret does have. Webhook configurations get one line per

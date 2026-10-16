@@ -65,6 +65,8 @@ class Report:
         self.policy = policy
         self.findings = []
         self.tools = []
+        self.objects = []         # (doc, file, line) of every object, for admission_check
+        self.janitor_rules = []   # (rule, namespace, file, line) from kube-janitor rules files
 
     def add(self, rule, sev, file, line, obj, message, fix=None):
         if rule in self.policy["disabled_rules"]:
@@ -166,7 +168,7 @@ def review_doc(doc, file, line, rep, is_build):
             rep.add("EFF005", "high", file, line, obj, "Job has no ttlSecondsAfterFinished", "ttlSecondsAfterFinished: 600 so finished pods release their requests and are garbage-collected")
         if "activeDeadlineSeconds" not in spec:
             rep.add("EFF006", "medium", file, line, obj, "Job has no activeDeadlineSeconds", "cap runtime (e.g. 2h) so a hung build cannot hold a node all night")
-        if (spec.get("backoffLimit") or 6) > 3:
+        if spec.get("backoffLimit", 6) > 3:   # 0 is no retry, not unset
             rep.add("EFF007", "low", file, line, obj, f"backoffLimit {spec.get('backoffLimit', 6)} retries a failing build", "backoffLimit: 1 for tests (a failing test does not pass on retry)")
     if kind == "CronJob":
         js = spec.get("jobTemplate", {}).get("spec", {})
@@ -196,11 +198,109 @@ def review_text(text, file, rep, is_build):
         if isinstance(doc, dict) and doc.get("kind") == "List":
             for it in doc.get("items") or []:
                 review_doc(it, file, line, rep, is_build)
+                if isinstance(it, dict) and "kind" in it:
+                    rep.objects.append((it, file, line))
                 count += 1
-        else:
+        elif isinstance(doc, dict) and "kind" in doc:   # values files, rules files, CI config: not objects
             review_doc(doc, file, line, rep, is_build)
+            rep.objects.append((doc, file, line))
             count += 1
+        elif isinstance(doc, dict) and isinstance(doc.get("rules"), list):   # a kube-janitor rules file
+            for r in doc["rules"]:
+                m = isinstance(r, dict) and r.get("ttl") and re.search(r"metadata\.namespace\s*==\s*'([^']+)'", str(r.get("jmespath", "")))
+                if m:
+                    rep.janitor_rules.append((r, m.group(1), file, line))
     return count
+
+
+def _qty(r, v):
+    return cpu(v) if r == "cpu" else mem(v)
+
+
+def _show(r, v):
+    if r == "cpu":
+        return f"{v:g}"
+    return f"{v / GIB:g}Gi" if v >= GIB else f"{v / 1024 ** 2:g}Mi"
+
+
+def _check_limit_range(lr, ps, rep, file, line, obj):
+    """What admission does to one pod spec under one LimitRange (defaults applied the way the API server and
+    the LimitRanger plugin apply them): ADM001 above max, ADM002 above maxLimitRequestRatio, ADM003 a defaulted
+    limit below the request."""
+    items = (lr.get("spec") or {}).get("limits") or []
+    ctr = next((i for i in items if i.get("type") == "Container"), {})
+    pod = next((i for i in items if i.get("type") == "Pod"), {})
+    mx, dreq, dlim, ratio = ctr.get("max") or {}, ctr.get("defaultRequest") or {}, ctr.get("default") or {}, ctr.get("maxLimitRequestRatio") or {}
+    rejected, totals = False, defaultdict(float)
+    for c in (ps.get("initContainers") or []) + (ps.get("containers") or []):
+        cname = c.get("name", "?")
+        res = c.get("resources") or {}
+        req, lim = res.get("requests") or {}, res.get("limits") or {}
+        for r in ("cpu", "memory"):
+            R, L, lim_defaulted = _qty(r, req.get(r)), _qty(r, lim.get(r)), False
+            if R is None and L is not None:
+                R = L                       # API defaulting: an unset request equals the limit
+            if R is None and dreq.get(r) is not None:
+                R = _qty(r, dreq[r])
+            if L is None and dlim.get(r) is not None:
+                L, lim_defaulted = _qty(r, dlim[r]), True
+            if L is not None and c in (ps.get("containers") or []):
+                totals[r] += L
+            if R is not None and L is not None and R > L:
+                if lim_defaulted:
+                    rep.add("ADM003", "high", file, line, obj, f"container {cname}: {r} request {_show(r, R)} > default limit {_show(r, L)} of LimitRange {(lr.get('metadata') or {}).get('name')} (no {r} limit set): rejected at admission", f"set a {r} limit" + (" equal to the request" if r == "memory" else ""))
+                    rejected = True
+                continue
+            top, what = (L, "limit") if L is not None else (R, "request")
+            if top is not None and mx.get(r) is not None and top > _qty(r, mx[r]) + 1e-9:
+                rep.add("ADM001", "high", file, line, obj, f"container {cname}: {r} {what} {_show(r, top)} > max {_show(r, _qty(r, mx[r]))} of LimitRange {(lr.get('metadata') or {}).get('name')}: rejected at admission", "fit it in the largest tier, or raise that tier in build-tiers.json if the workload needs it (evidence first)")
+                rejected = True
+            if R and L is not None and ratio.get(r) is not None and L / R > float(ratio[r]) + 1e-9:
+                rep.add("ADM002", "high", file, line, obj, f"container {cname}: {r} limit/request {L / R:.1f} > maxLimitRequestRatio {ratio[r]} of LimitRange {(lr.get('metadata') or {}).get('name')}: rejected at admission", "raise the request or lower the limit")
+                rejected = True
+    for r in ("cpu", "memory"):
+        pmax = (pod.get("max") or {}).get(r)
+        if not rejected and pmax is not None and totals[r] > _qty(r, pmax) + 1e-9:
+            rep.add("ADM001", "high", file, line, obj, f"pod: {r} limits {_show(r, totals[r])} > Pod max {_show(r, _qty(r, pmax))} of LimitRange {(lr.get('metadata') or {}).get('name')}: rejected at admission", "fit the pod in the largest tier")
+
+
+def admission_check(rep):
+    """Workloads reviewed together with a LimitRange, ResourceQuota or kube-janitor rule for their namespace (for
+    example k8s-guardrails output next to the namespace's manifests): what those reject, block or expire."""
+    guards = defaultdict(lambda: {"lr": [], "quota": [], "janitor": []})
+    for doc, _file, _line in rep.objects:
+        ns = (doc.get("metadata") or {}).get("namespace")
+        if ns and doc["kind"] in ("LimitRange", "ResourceQuota"):
+            guards[ns]["lr" if doc["kind"] == "LimitRange" else "quota"].append(doc)
+    for r, ns, _file, _line in rep.janitor_rules:
+        guards[ns]["janitor"].append(r)
+    claims = defaultdict(list)
+    for doc, file, line in rep.objects:
+        meta, kind = doc.get("metadata") or {}, doc["kind"]
+        g = guards.get(meta.get("namespace"))
+        if not g:
+            continue
+        obj = f"{kind}/{meta.get('name', '?')}"
+        ps = pod_spec_of(doc)
+        if ps is not None:
+            for lr in g["lr"]:
+                _check_limit_range(lr, ps, rep, file, line, obj)
+        if kind == "PersistentVolumeClaim":
+            claims[meta.get("namespace")].append((file, line, obj, 1))
+        elif kind == "StatefulSet" and (doc.get("spec") or {}).get("volumeClaimTemplates"):
+            claims[meta.get("namespace")].append((file, line, obj, len(doc["spec"]["volumeClaimTemplates"]) * ((doc.get("spec") or {}).get("replicas") or 1)))
+        ann = meta.get("annotations") or {}
+        if kind in ("Deployment", "StatefulSet") and "janitor/ttl" not in ann and "janitor/expires" not in ann:
+            for r in g["janitor"]:
+                if kind.lower() + "s" in (r.get("resources") or []):
+                    rep.add("ADM005", "high", file, line, obj, f"deleted {r['ttl']} after creation by kube-janitor rule {r.get('id', '?')}: it has no janitor/ttl or janitor/expires", "annotate janitor/ttl (\"forever\" if it must stay) before the rule is merged")
+    for ns, g in guards.items():
+        n = sum(c[3] for c in claims[ns])
+        for q in g["quota"]:
+            hard = ((q.get("spec") or {}).get("hard") or {}).get("persistentvolumeclaims")
+            if hard is not None and n > int(hard):
+                for file, line, obj, _k in claims[ns]:
+                    rep.add("ADM004", "high", file, line, obj, f"ResourceQuota {(q.get('metadata') or {}).get('name')} allows persistentvolumeclaims {hard} and {ns} declares {n}: its claim cannot be created or re-created under the quota", "raise the quota's persistentvolumeclaims for claims that must stay, or move the workload out of the build namespace")
 
 
 def external_tools(files, rep):
@@ -283,15 +383,21 @@ def main(argv=None):
     start_dirs = list(dict.fromkeys(os.path.dirname(os.path.abspath(f)) if f != "-" else os.getcwd() for f in files)) + [os.getcwd()]
     P = load_policy(a.policy, a.tiers, start_dirs)
     rep = Report(P)
-    objects = 0
+    objects, validate = 0, []
     for f in files:
         text = sys.stdin.read() if f == "-" else open(f, encoding="utf-8").read()
         if "{{" in text and f != "-":
             rep.add("COR000", "medium", f, 1, "-", "file contains Go template syntax (Helm); reviewing the rendered output is required", "helm template <chart> | k8sreview.py -")
             continue
-        objects += review_text(text, f, rep, a.build)
+        n = review_text(text, f, rep, a.build)
+        objects += n
+        if n or f == "-":
+            validate.append(f)
+        elif not a.no_tools:   # schema validation of a file with no kind can only fail
+            rep.tools.append({"tool": "schema validation", "file": f, "ok": None, "output": "no Kubernetes object (no kind); not validated"})
+    admission_check(rep)
     if not a.no_tools:
-        external_tools(files, rep)
+        external_tools(validate, rep)
     seen, uniq = set(), []
     for x in rep.findings:
         k = (x["rule"], x["file"], x["line"], x["message"])
@@ -317,7 +423,8 @@ def main(argv=None):
         print("\n### Tools")
         for t in rep.tools:
             st = "ok" if t["ok"] else ("skipped" if t["ok"] is None else "FAILED")
-            print(f"- {t['tool']}{(' [' + t['file'] + ']') if t.get('file') else ''}: {st}" + (f"\n```\n{t['output']}\n```" if t["ok"] is False and t["output"] else ""))
+            why = f" ({t['output']})" if t["ok"] is None and t["output"] else ""   # say why, so nobody re-checks it
+            print(f"- {t['tool']}{(' [' + t['file'] + ']') if t.get('file') else ''}: {st}{why}" + (f"\n```\n{t['output']}\n```" if t["ok"] is False and t["output"] else ""))
     print(f"\nGate (--fail-on {a.fail_on}): " + ("FAIL" if failing else "PASS"))
     return 1 if failing else 0
 

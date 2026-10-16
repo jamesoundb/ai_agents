@@ -235,6 +235,25 @@ class Fixture(unittest.TestCase):
         self.assertIn("Ingress/kg-faults/shop defined at k8s/app.yaml:", out)       # flow metadata
         self.assertNotIn("defined at", self.q("why", "deploy/crashy", "--no-repo", "--no-logs"))
 
+    def test_manifest_locations_outside_a_checkout(self):
+        # A workspace that is not a git checkout is searched as the repository, without --repo ...
+        ws = os.path.join(self.tmp, "workspace")
+        os.makedirs(os.path.join(ws, "k8s"), exist_ok=True)
+        shutil.copy(os.path.join(HERE, "faults.yaml"), os.path.join(ws, "k8s", "app.yaml"))
+        cwd, home = os.getcwd(), os.environ.get("HOME")
+        try:
+            os.chdir(ws)
+            self.assertIn("defined at k8s/app.yaml:103", self.q("why", "deploy/missing-config", "--no-logs"))
+            # ... but a home directory never is
+            os.environ["HOME"] = ws
+            self.assertNotIn("defined at", self.q("why", "deploy/missing-config", "--no-logs"))
+        finally:
+            os.chdir(cwd)
+            if home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = home
+
     def test_webhook_scope(self):
         out = self.q("show", "ValidatingWebhookConfiguration/kg-policy")
         self.assertIn("CREATE/UPDATE deployments; failurePolicy Fail; matches no namespace now", out)

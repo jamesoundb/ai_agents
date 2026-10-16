@@ -1,0 +1,58 @@
+# Shared Gradle build cache for every build in the namespace.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gradle-cache
+  namespace: ci-builds
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gradle-cache
+  namespace: ci-builds
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gradle-cache
+  template:
+    metadata:
+      labels:
+        app: gradle-cache
+    spec:
+      containers:
+        - name: cache
+          image: gradle/build-cache-node:18.1
+          ports:
+            - containerPort: 5071
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gradle-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gradle-cache
+  namespace: ci-builds
+spec:
+  selector:
+    app: gradle-cache
+  ports:
+    - port: 5071
+      targetPort: 5071

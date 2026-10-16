@@ -1504,14 +1504,18 @@ _FLOW_KEY = r"\b{}:\s*['\"]?([^,'\"{{}}\s]+)"
 
 
 def repo_root(explicit):
-    """--repo, else the git checkout the query runs in; None outside a checkout (never scan $HOME)."""
+    """--repo, else the git checkout the query runs in, else the working directory itself (a workspace that is
+    not a checkout); None for $HOME and / (never scan a home directory)."""
     if explicit:
         return os.path.abspath(explicit)
     try:
         p = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
-        return None
-    return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() else None
+        pass
+    cwd, home = os.path.realpath(os.getcwd()), os.path.realpath(os.path.expanduser("~"))
+    return None if cwd in ("/", home) else cwd
 
 
 def scan_manifests(root):

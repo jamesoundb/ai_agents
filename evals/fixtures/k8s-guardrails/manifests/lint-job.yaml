@@ -1,0 +1,23 @@
+# Static checks, run by TeamCity on every merge request.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lint
+  namespace: ci-builds
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: lint
+          image: europe-docker.pkg.dev/acme/ci/api-tests:1.42.0
+          command: ["./gradlew", "detekt", "ktlintCheck"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 1Gi

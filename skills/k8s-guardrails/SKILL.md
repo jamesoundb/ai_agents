@@ -37,13 +37,19 @@ What is generated per namespace:
 1. Take `build-tiers.json` from the discovery report (or agree tiers with the team and write the
    file by hand in the same shape). Choose `--concurrent-pods` from the report's TeamCity peak
    concurrency, with some margin.
-2. Generate, then review the output with `k8s-manifest-review` (it must pass) and validate the
-   schema with `kubeconform` when available.
-3. Explain the consequences before adoption: pods without requests now get the small tier by
-   default; pods above the large tier are rejected at admission; the quota caps total build
-   capacity per namespace; the kube-janitor rule expires unannotated test environments after
-   the TTL. Recommend rolling out LimitRange first, quota second, the janitor rule last (after a
-   `--dry-run` pass of kube-janitor), one namespace at a time.
+2. Generate, then review the output together with the namespace's manifests in one call:
+   `k8s-manifest-review` `run.sh manifests/ guardrails/ --build`. Besides its usual rules it checks every
+   workload in the namespace against the generated LimitRange, ResourceQuota and kube-janitor rule
+   (`ADM001`-`ADM005`: above `max`, above `maxLimitRequestRatio`, request above a defaulted limit, PVCs over
+   the quota, unannotated Deployments/StatefulSets the rule deletes). The rules entry is not a Kubernetes
+   object and is not schema-validated. Do not copy manifests elsewhere to simulate admission.
+3. Explain the consequences before adoption from those `ADM` rows, each object by name: what is rejected
+   at admission, what the janitor rule deletes after the TTL, which claims the quota blocks; pods without
+   requests now get the small tier by default and the quota caps total build capacity per namespace.
+   Each row is a decision for the team (raise a tier with evidence, annotate `janitor/ttl: forever`,
+   allow a claim): name it, do not shrink a workload below its measured need to make it fit.
+   Recommend rolling out LimitRange first, quota second, the janitor rule last (after a `--dry-run`
+   pass of kube-janitor), one namespace at a time.
 4. Hand the files to the GitOps repository (ArgoCD/Flux) rather than applying them. Before
    relying on the rule, check with `gke-cost-discovery` that kube-janitor is deployed, not in
    `--dry-run`, and includes the namespace and the `deployments` resource.

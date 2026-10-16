@@ -60,6 +60,9 @@ those in `build_namespaces` or carrying the tier label).
    before/after (cpu, memory) so the saving is visible.
 5. Schema validation: `kubeconform` when installed (offline), else `kubectl apply
    --dry-run=client` only if a cluster is reachable; the review says which ran.
+6. Guardrails: pass the namespace's manifests and its LimitRange / ResourceQuota / kube-janitor rules
+   file together (`run.sh manifests/ guardrails/ --build`); the `ADM` rules then list each workload
+   those would reject at admission, delete after the TTL or block (claims over the quota).
 
 ## What "good" looks like for a build Job
 

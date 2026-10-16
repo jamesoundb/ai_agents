@@ -27,6 +27,8 @@ __pycache__/
 # Secrets / local discovery data for gke-cost-discovery
 gke-cost-discovery.env
 discovery/
+# ...except the published-report fixtures of eval cases
+!evals/fixtures/*/discovery/
 
 # Local worklogs (troubleshooting notes) are not published
 .github/troubleshooting/
