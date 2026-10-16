@@ -463,7 +463,9 @@ def test_lean_queries(root):
     first = src.splitlines()[0] if src else ""
     check(re.search(r"python/app/models\.py:\d+-\d+ \(\d+ lines\)", first), f"source: header gives file and exact line range: {first}")
     check("called by (" in src and "Service.run" in src, f"source: names the callers in the same call: {src.splitlines()[1:2]}")
-    check("helper" in src and "?" in src, "source: an ambiguous caller is listed and marked ?")
+    check("called by (5, 2 ambiguous (0 shown, marked ?))" in src, f"source: ambiguous callers past the cap are counted: {src.splitlines()[1:2]}")
+    full = run("query", "--graph", gp, "source", "models.py:Repo.save", "--refs", "8")
+    check("helper" in full and "?" in full, "source --refs: an ambiguous caller is listed and marked ?")
     body = [ln for ln in src.splitlines() if re.match(r"^\s*\d+ ", ln)]
     check(body and "def save" in body[0], f"source: body lines carry their line numbers: {body[:1]}")
     cut = run("query", "--graph", gp, "source", "service.py:Service", "--max-lines", "2")
@@ -656,6 +658,15 @@ def test_overload_queries(root):
                      ("Drain.go", "Pipe.feed  L66 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:60  [typed]")):
         me = q("callees", fn).stdout
         check(want in me, f"a `this` argument is typed as the enclosing class ({fn}): {me.strip().splitlines()[1:]}")
+    # `source` stays a reading tool: overloads next to a same-named field are answered, callers are a short
+    # lead (3 + a count), and a symbol in another file is named by its file name, not the whole path
+    pr = q("source", "Probe.check").stdout
+    check("Probe.check: 2 overloads, each answered below" in pr and "is ambiguous" not in pr
+          and "called by (4): Probe.one L72, Probe.two L74, Probe.three L76 (+1: query callers Probe.check)" in pr,
+          f"source answers overloads beside a same-named field, naming 3 callers: {pr.strip().splitlines()[:4]}")
+    sq = q("source", "Areas.squareArea").stdout
+    check("calls (1): Square.area Square.java:6" in sq,
+          f"source names a symbol in another file by its file name: {sq.strip().splitlines()[:3]}")
     # callers of a base method also list the calls that a subtype receiver binds to an override
     ov = q("callers", "Shape.area").stdout
     check("calls bound to overrides (subtype receivers):" in ov and "Square.area  (java/src/main/java/com/acme/Square.java:6)" in ov

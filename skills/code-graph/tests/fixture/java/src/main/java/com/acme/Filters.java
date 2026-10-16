@@ -55,3 +55,25 @@ class SelfFilter implements PointFilter {
         fs.apply(this);
     }
 }
+
+// A field sharing its overloads' name (JTS's RelateOp.relate field next to relate(a, b)): `source Probe.check`
+// answers both overloads instead of failing as ambiguous, and names only the first callers.
+class Probe {
+    private Object check;
+
+    public boolean check(int x) {
+        return true;
+    }
+
+    public boolean check(String s) {
+        return false;
+    }
+
+    void one() { check(1); }
+
+    void two() { check(2); }
+
+    void three() { check(3); }
+
+    void four() { check(4); }
+}

@@ -148,7 +148,9 @@ an external library, a builtin, or generated/unindexed code.
   direct subtypes.
 - `source X --max-lines N` (default 60; 0 = all): a longer function is cut with the remaining range
   named, a longer class prints its member outline with ranges instead. All names in one call share a
-  150-line budget; a name past it gets its header and range only. `--refs N` names more callers.
+  150-line budget; a name past it gets its header and range only. It names 3 callers and 8 callees
+  (another file by its file name; `--refs N` for N of each; `callers X` for the full list), and a name
+  shared by overloads and a field answers every overload.
 - `Name@line` picks one overload: the definition starting on that line, else the one whose body contains
   it (`ObjectMapper.readValue@3860`); `file:Name@line` works too. A name that only overloads share
   (`Messages.shouldContain`, up to 12 of them) is answered for every overload by `source`, `symbol`,

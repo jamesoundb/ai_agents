@@ -82,7 +82,8 @@ CAP_UNRESOLVED = 12            # `Unresolved (external or not indexed)` entries
 CAP_IMPORTED_BY = 20           # `imported by:` files on a file card
 CAP_SOURCE_LINES = 60          # `source` body lines (a longer class: member outline) -> --max-lines (0 = all)
 CAP_SOURCE_TOTAL = 150         # `source` body lines across all names of one call      -> one name per call / --max-lines 0
-CAP_SOURCE_REFS = 8            # callers / callees named per `source` symbol         -> --refs / query callers
+CAP_SOURCE_REFS = 8            # callees named per `source` symbol                   -> --refs / query callees
+CAP_SOURCE_CALLERS = 3         # callers named per `source` symbol (a lead, not the list) -> --refs / query callers
 CAP_TESTS_FILES = 8            # test files listed by `tests-for`                     -> --top
 CAP_TESTS_PER_FILE = 3         # test functions named per file by `tests-for`         -> the count shown, `callers`
 # Edge types that mean "src depends on dst" (used for blast radius / reverse dependencies).
@@ -6986,6 +6987,9 @@ def overload_set(g, query, kinds=None):
     if len({m["id"] for m in matches}) < 2:
         return None
     exact = narrow_matches(query, matches)
+    callables = [m for m in exact if m["kind"] in ("method", "function", "constructor")]
+    if len(callables) > 1 and all(m["kind"] == "field" and m["qname"] == callables[0]["qname"] for m in exact if m not in callables):
+        exact = callables   # a field named like its overloads (JTS's `RelateOp.relate`): the overloads are what is meant
     if (1 < len(exact) <= CAP_OVERLOADS and len({m["qname"] for m in exact}) == 1
             and all(m["kind"] in ("method", "function", "constructor") for m in exact)):
         return sorted({m["id"]: m for m in exact}.values(), key=lambda m: (m["file"], m["line"]))
@@ -7541,10 +7545,11 @@ def q_source(g, args):
     no_tests = getattr(args, "no_tests", False)
 
     def where(o, line):
-        # same file as the symbol: just the line; elsewhere: the path the reader needs for a next step
-        return f"L{line}" if o["file"] == n["file"] else f"{o['file']}:{line}"
+        # same file as the symbol: just the line; elsewhere: the file name (the qname already says what it is,
+        # and a full path per entry was a sixth of a `source` answer)
+        return f"L{line}" if o["file"] == n["file"] else f"{os.path.basename(o['file'] or '')}:{line}"
 
-    def ref_line(label, edges, other_key, line_of, query_cmd):
+    def ref_line(label, edges, other_key, line_of, query_cmd, cap):
         groups = {}                                   # other node -> [lines, ambiguous?, edge type]
         def order(e):   # firm before ambiguous, library code before tests, then by line
             o = g.nodes.get(e[other_key]) or {}
@@ -7562,22 +7567,25 @@ def q_source(g, args):
         rows = list(groups.values())
         amb = sum(1 for r in rows if r[2])
         parts = []
-        for o, lines, is_amb, typ in rows[:args.refs]:
+        for o, lines, is_amb, typ in rows[:cap]:
             locs = sorted(set(lines))
             loc = where(o, locs[0]) + ("," + ",".join(str(x) for x in locs[1:4]) if len(locs) > 1 else "")
             parts.append(f"{o['qname']} {loc}" + ("" if typ == "calls" else f" [{typ}]") + ("?" if is_amb else ""))
-        more = f" (+{len(rows) - args.refs}: query {query_cmd} {n['qname']})" if len(rows) > args.refs else ""
-        print(f"{label} ({len(rows)}" + (f", {amb} ambiguous marked ?" if amb else "") + "): " + ", ".join(parts) + more)
+        more = f" (+{len(rows) - cap}: query {query_cmd} {n['qname']})" if len(rows) > cap else ""
+        shown_amb = sum(1 for r in rows[:cap] if r[2])
+        amb_note = (f", {amb} ambiguous marked ?" if shown_amb == amb else f", {amb} ambiguous ({shown_amb} shown, marked ?)") if amb else ""
+        print(f"{label} ({len(rows)}" + amb_note + "): " + ", ".join(parts) + more)
 
     if not args.no_refs:
         note = dispatch_note(g, n)
         if note:
             print(note)
+        # who calls it is a lead when reading code (`callers` answers it in full): 3 unless --refs says otherwise
         ref_line("called by", g.in_edges(n["id"], SOURCE_IN_TYPES), "src",
-                 lambda e, o: e.get("line") or o["line"], "callers")
+                 lambda e, o: e.get("line") or o["line"], "callers", args.refs or CAP_SOURCE_CALLERS)
         if n["kind"] not in CONTAINER_KINDS:
             ref_line("calls", g.out_edges(n["id"], {"calls", "instantiates"}), "dst",
-                     lambda e, o: o["line"], "callees")
+                     lambda e, o: o["line"], "callees", args.refs or CAP_SOURCE_REFS)
     path = os.path.join(getattr(g, "root", "") or "", n["file"])
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -8064,7 +8072,8 @@ def main(argv=None):
     x.add_argument("name", nargs="+")
     x.add_argument("--max-lines", type=int, default=CAP_SOURCE_LINES,
                    help=f"body lines before cutting (default {CAP_SOURCE_LINES}; 0 = whole body; a longer class prints its member outline)")
-    x.add_argument("--refs", type=int, default=CAP_SOURCE_REFS, help=f"callers/callees named per symbol (default {CAP_SOURCE_REFS})")
+    x.add_argument("--refs", type=int, default=None,
+                   help=f"callers/callees named per symbol (default {CAP_SOURCE_CALLERS} callers, {CAP_SOURCE_REFS} callees)")
     x.add_argument("--no-refs", action="store_true", help="only the source lines")
     x.add_argument("--no-tests", action="store_true", help="leave callers/callees in test files out")
     x.set_defaults(qfn=for_each_name(q_source))
