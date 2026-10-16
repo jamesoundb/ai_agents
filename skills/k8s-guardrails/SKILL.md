@@ -48,6 +48,10 @@ What is generated per namespace:
    requests now get the small tier by default and the quota caps total build capacity per namespace.
    Each row is a decision for the team (raise a tier with evidence, annotate `janitor/ttl: forever`,
    allow a claim): name it, do not shrink a workload below its measured need to make it fit.
+   The review sees only files. With a reachable cluster, list what runs in the namespace
+   (`kubectl get deploy,sts -n NS` with their annotations): a Deployment or StatefulSet without
+   `janitor/ttl`/`janitor/expires` is deleted by the rule whether or not it is in the manifests, so
+   name every live one too, hand-made ones first (they have no manifest to fix).
    Recommend rolling out LimitRange first, quota second, the janitor rule last (after a `--dry-run`
    pass of kube-janitor), one namespace at a time.
 4. Hand the files to the GitOps repository (ArgoCD/Flux) rather than applying them. Before
