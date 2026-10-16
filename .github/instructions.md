@@ -289,7 +289,9 @@ templates rather than adding vendor-neutral fallbacks.
   (hidden directories skipped, at most `ASTGRAPH_AUTOBUILD_MAX`, default 8). Never `$HOME` or `/`. The
   launcher writes its pid into the lock before exec-ing the engine (same pid), so even an immediate query
   waits; the engine takes a lock that carries its own pid. A query from the problem directory names the
-  clones that have graphs. One line of context; off with `ASTGRAPH_AUTOBUILD=0`. `install.sh` installs it
+  clones that have graphs. Its context is the build note plus code-graph's SKILL.md after the front
+  matter, with the skill directory, so the first question skips the Skill-load turn (a turn re-sends the
+  whole context; measured 2026-10-16: the first question −$0.03–0.08); off with `ASTGRAPH_AUTOBUILD=0`. `install.sh` installs it
   whenever code-graph is installed (`graph_hook`, `tools/render.py hook HARNESS`, our entry only, removed
   by `--uninstall`):
   - Claude Code: `SessionStart` in `~/.claude/settings.json` (user) / `.claude/settings.local.json`

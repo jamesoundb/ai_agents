@@ -63,9 +63,9 @@ for d in "${dirs[@]}"; do
 done
 [ "${#repos[@]}" -gt 0 ] || exit 0
 
-json_escape() {  # the context line goes into a JSON string
+json_escape() {  # the context goes into a JSON string (newlines kept as \n)
   local s="$1"
-  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; s="${s//$'\t'/ }"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/}"; s="${s//$'\n'/\\n}"; s="${s//$'\t'/ }"
   printf '%s' "$s"
 }
 
@@ -94,6 +94,15 @@ else
   msg="Code graphs: being built in the background, one per repository: ${names[*]} (code-graph skill). Query one with run.sh query --root <repository> <question> (or run queries from inside it). Do not run build: queries wait for it and keep it current."
   [ "$skipped" -gt 0 ] && msg="$msg $skipped more repositories were not built (limit ASTGRAPH_AUTOBUILD_MAX=$max); build those when needed."
 fi
+
+# The skill's instructions ride along, so the first question does not spend a turn loading the skill
+# (that turn re-sends the whole context). Its body is SKILL.md after the front matter.
+skill_dir="$(cd "$here/.." && pwd)"
+body="$(awk 'f > 1 && (NF || started) { started = 1; print } /^---$/ { f++ }' "$skill_dir/SKILL.md" 2>/dev/null)"
+[ -n "$body" ] && msg="$msg
+
+The code-graph skill is already loaded: its SKILL.md follows (skill directory: $skill_dir; scripts/ and reference/ are there). Do not load it with the Skill tool.
+$body"
 
 if [ "$format" = antigravity ]; then
   printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}\n' "$(json_escape "$msg")"

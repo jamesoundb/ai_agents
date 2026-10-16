@@ -351,7 +351,8 @@ waits for it. What gets built depends on where the session starts:
 | anything else (no repository, `$HOME`, `/`) | nothing |
 
 `.ast-graph/` ignores itself, so it never shows up in `git status`. Repositories cloned after the
-session started have no graph yet; the agent builds one when it first needs it.
+session started have no graph yet; the agent builds one when it first needs it. When it builds, the
+hook also hands the agent code-graph's instructions, so the first question skips loading the skill.
 
 Where the hook is installed (our entry only; `--uninstall` removes it):
 

@@ -106,6 +106,9 @@ turn on `build`:
   graphs;
 - anything else: nothing.
 
+When it builds, the hook's session context also carries code-graph's SKILL.md, so the agent
+queries right away instead of first spending a turn loading the skill.
+
 Builds take `graph.db.lock`, so a second build or a query waits for the running one instead of
 parsing the same files again. Where the hook is installed per harness and scope, and how to turn it
 off: root [README](../../README.md#code-graph-built-at-session-start).

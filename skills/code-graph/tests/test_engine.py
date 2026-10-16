@@ -731,6 +731,7 @@ def test_autobuild_hook():
     clones (and is not a checkout itself) gets one graph per clone; a plain directory gets nothing."""
     print("# session-start autobuild hook")
     hook = os.path.join(HERE, "..", "scripts", "autobuild.sh")
+    hook_real = os.path.realpath(hook)
     top = tempfile.mkdtemp(prefix="astgraph-problem-")
     try:
         os.makedirs(os.path.join(top, ".github")); os.makedirs(os.path.join(top, "notes"))
@@ -768,6 +769,9 @@ def test_autobuild_hook():
         check(st == "", f"the clone's git status stays clean: {st!r}")
         ctx = hook_ctx(os.path.join(top, "api"))
         check(ctx is not None and "repository root" in ctx, "a session inside a clone builds that clone")
+        check(ctx is not None and f"skill directory: {os.path.dirname(os.path.dirname(hook_real))}" in ctx
+              and "\n# code-graph:" in ctx and "| who calls / uses X |" in ctx and "allowed-tools" not in ctx,
+              "the context carries the skill's SKILL.md body (no front matter) and its directory")
         check(hook_ctx(os.path.join(top, "notes")) is None, "a plain directory with no clones: no build, no output")
         ctx = agy_ctx(top)
         check(ctx is not None and "/api " in ctx and "/web " in ctx, f"antigravity: problem-directory workspace -> one build per clone: {ctx}")
