@@ -568,7 +568,7 @@ def test_java_static_imports(root, G):
         dst = [G.nodes[e["dst"]] for e in G.edges_from(G.node(f, q)) if e["type"] == "calls"]
         check(len(dst) == 1 and dst[0]["file"].endswith("msg/Messages.java") and want in dst[0]["signature"],
               f"java: {q} calls the imported Messages.shouldContain overload {want}: {[(d['file'], d['signature']) for d in dst]}")
-    out = run("query", "--graph", gp, "callers", "Messages.shouldContain@11")
+    out = run("query", "--graph", gp, "callers", "Messages.shouldContain@11").split("  other calls named")[0]
     check("Checks.check" in out and "WildChecks" not in out and "OtherMessages" not in out,
           f"java: callers of the 2-arg overload = the single-member import's caller only: {out.strip().splitlines()}")
 
@@ -643,7 +643,9 @@ def test_overload_queries(root):
     for target, want in (("Op.meets@12", "Ops.kt:24  [typed: receiver c.op: Op<String>]"),
                          ("Op.meets@14", "Ops.kt:25  [typed: receiver c.op: Op<Boolean>]"),
                          ("Op.meets@14", "Ops.kt:28  [typed: receiver o: Op<Boolean>]"),
-                         ("Filters.apply@19", "Filters.java:27  [typed: argument CountFilter fits PointFilter]")):
+                         ("Filters.apply@19", "Filters.java:27  [typed: argument CountFilter fits PointFilter]"),
+                         # the argument decided, but the overloads' receivers differ too: both are named
+                         ("Op.near@71", "Ops.kt:75  [typed: receiver c.op: Op<String>; argument Boolean]")):
         why = q("callers", target).stdout
         check(want in why, f"callers say which type picked the overload ({want}): {why.strip().splitlines()}")
     # an indexed receiver (`parts[i].apply(f)`, `b.ops[0].meets(x)`) is typed by the array's / list's element
@@ -658,6 +660,17 @@ def test_overload_queries(root):
                      ("Drain.go", "Pipe.feed  L66 -> kotlin/src/main/kotlin/com/acme/text/Ops.kt:60  [typed]")):
         me = q("callees", fn).stdout
         check(want in me, f"a `this` argument is typed as the enclosing class ({fn}): {me.strip().splitlines()[1:]}")
+    # callers of one overload also list the name's other calls (the other overload's, an external receiver's),
+    # so a grep for `.apply(` has nothing to add
+    oc = q("callers", "Filters.apply@19").stdout
+    for want in ("other calls named apply", "-> Filters.apply(PartFilter f)  Filters.java:22 (1): Filters.java:44",
+                 "-> no repo target (external receiver or not linked) (1): Filters.java:86"):
+        check(want in oc, f"callers list the other calls of the name ({want}): {oc.strip().splitlines()[-4:]}")
+    # both overloads asked for at once: the other calls come once, after the last, without the answered overloads
+    both = q("callers", "Filters.apply").stdout
+    check(both.count("other calls named apply") == 1 and "-> Filters.apply(" not in both
+          and both.rstrip().endswith("(1): Filters.java:86"),
+          f"callers of every overload: one other-calls section, answered overloads left out: {both.strip().splitlines()[-3:]}")
     # `source` stays a reading tool: overloads next to a same-named field are answered, callers are a short
     # lead (3 + a count), and a symbol in another file is named by its file name, not the whole path
     pr = q("source", "Probe.check").stdout

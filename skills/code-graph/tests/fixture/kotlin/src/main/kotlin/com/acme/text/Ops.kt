@@ -65,3 +65,11 @@ class Pipe {
 class Drain(val p: Pipe) : Sink {
     fun go(): Int = p.feed(this)
 }
+
+// Two-argument extensions told apart by the second argument (`Boolean` vs a converter) whose receivers also differ
+// (`Op<String>` vs `<T> Op<T>`): the evidence names the receiver as well, since a check of the pick reads both.
+fun Op<String>.near(col: Col<String>, ignoreCase: Boolean): Boolean = ignoreCase
+
+fun <T> Op<T>.near(col: Col<String>, conv: (T) -> String): Boolean = true
+
+fun nearName(c: NameCond): Boolean = c.op.near(Schema.NAME, true)

@@ -70,6 +70,9 @@ a skill folder: permission rules match the literal command.
   dynamic dispatch; `symbol` lists `Overrides` / `Overridden by` (`--all` for the full list).
   `callers` of a Java/Kotlin base method also lists, per override, the calls a subtype receiver binds
   to it (`calls bound to overrides`): together with the direct rows, every call of that contract.
+- `callers` of a function also lists the `other calls named <name>`, by the definition each resolved
+  to (other overloads, other functions, ambiguous, no repo target): with the rows, every call of the
+  name in the repo, so a grep for the name adds nothing.
 - Quote graph output (file:line, edge type, confidence) as evidence in your answer.
 - A missing symbol: check `query stats` (file count, languages); the file may be excluded by default
   (`build`, `dist`, `vendor` ... use `--keep-dir`) or in an unsupported language.

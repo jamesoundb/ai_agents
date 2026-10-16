@@ -102,10 +102,16 @@ type); when several same-arity overloads remain undecided, the call is recorded 
 across that overload set rather than guessed, so `--include-ambiguous` shows the candidates and
 the trace note counts them. When a receiver's or an argument's type picked the overload, a `callers`
 row names it: `[typed: receiver cond.op: Op<String>]`, `[typed: argument VertexFilter fits
-CoordinateFilter]` (only the argument positions where the overloads differ). `callers` of a Java/Kotlin
+CoordinateFilter]` (only the argument positions where the overloads differ; the receiver whenever the
+overloads' receiver types differ). `callers` of a Java/Kotlin
 method that subclasses override adds `calls bound to overrides (subtype receivers)`: per override, its
 direct non-ambiguous callers (15 rows at most; `--no-tests` applies), since a call on a `LinearRing`
-binds to `LineString.apply` yet calls `Geometry.apply`'s contract.
+binds to `LineString.apply` yet calls `Geometry.apply`'s contract. `callers` of a function or method
+(depth 1) then lists `other calls named <name>`: every other call site of the name, one line per target
+(the other overloads with their parameters, other functions of that name, `ambiguous`, and `no repo
+target` for calls on an external receiver or not linked, same language only), file names with lines, 60
+sites and 15 targets at most. With the rows it is every call of the name, what a repo-wide grep for it
+would return; `--json` has it as `other_calls`.
 Terraform addresses use their native form (`aws_instance.app`, `module.vpc`, `var.region`,
 `output.vpc_id`, `local.tags`, `data.aws_ami.app`); `moved`/`import` blocks are `moved.<to>` /
 `import.<to>` and appear as dependents of the address they target. Kubernetes objects are

@@ -77,3 +77,12 @@ class Probe {
 
     void four() { check(4); }
 }
+
+// A call named like a repo method on an external receiver (java.util.function.Function.apply) links to nothing:
+// `callers Filters.apply@19` lists it under "no repo target" with the other overload's call, the calls a grep for
+// `.apply(` would add to the rows.
+class External {
+    String run(java.util.function.Function<String, String> fn) {
+        return fn.apply("x");
+    }
+}

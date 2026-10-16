@@ -5151,7 +5151,7 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         """Among same-named callables, keep those whose parameter count admits the call's argument count,
         then those whose parameter types are compatible with the known argument types; a Kotlin extension
         must take the receiver's type arguments, and the closer receiver match wins a tie."""
-        n_in = len(cands)
+        n_in, orig = len(cands), cands
         if _cur.get("recv_args") and len(cands) > 1:
             cands = [c for c in cands if recv_rank(c) is not None] or cands
         recv_cut, arg_cut = len(cands) < n_in, False   # did the receiver's / the arguments' types decide?
@@ -5206,7 +5206,11 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
         if len(ok) > 1 and all(c["qname"] == ok[0]["qname"] and c["file"] == ok[0]["file"] for c in ok):
             _cur["overload_undecided"] = True   # same-arity overloads the arguments cannot separate
         if len(ok) == 1 and (recv_cut or arg_cut):
-            note_why(ok[0], recv_cut, at if arg_cut else None, rivals if arg_cut else None)
+            # The receiver is named whenever the candidates declare different receiver type arguments
+            # (`Op<String>.f` vs `<T> Op<T>.f`), even when the arguments decided: a check of the pick looks at both.
+            recv_differs = bool(_cur.get("recv_args")) and len(
+                {tuple(c["extra"].get("receiver_args") or ()) for c in orig if c["kind"] in ("function", "method")}) > 1
+            note_why(ok[0], recv_cut or recv_differs, at if arg_cut else None, rivals if arg_cut else None)
         return ok
 
     def note_why(c, recv_cut, at, rivals):
@@ -7377,6 +7381,8 @@ def with_owner_if_constructor(g, n):
 
 
 OVERRIDE_ROWS = 15   # calls bound to overrides printed under `callers` of a base method
+OTHER_CALL_SITES = 60   # sites listed under `callers`' other calls of the same name (the rest counted per group)
+OTHER_CALL_GROUPS = 15  # groups (other definitions) printed there; the rest summed into one line
 
 
 def override_landings(g, n, no_tests):
@@ -7414,6 +7420,78 @@ def print_override_landings(g, landings):
         print(f"    + {total - shown} more: `query callers` on each override lists them")
 
 
+def other_calls(g, n, contract, include_ambiguous, no_tests):
+    """The rest of the calls named like n, outside its contract (n, a constructor's owner, the overrides): what a
+    repo-wide grep for the name would add to `callers`. {label: [(file, line, mark)]}, labels being the other
+    definition a site resolved to, "ambiguous" (receiver type unknown) or "no repo target" (external receiver or
+    not linked). A site with a shown edge into the contract is skipped; an ambiguous one with a candidate in the
+    contract is marked `*`. Edges come by name (one scan of `edges`); sites with no edge at all come from the
+    files' raw refs, read only for files whose parse blob names it."""
+    name = n.get("name")
+    if not name:
+        return {}
+    sites = defaultdict(list)                            # (src, line) -> its edges named `name`
+    for e in g.store.iter_edges("WHERE name=? AND type='calls'", (name,)):
+        sites[(e["src"], e.get("line"))].append(e)
+    groups = defaultdict(list)
+
+    def add(label, src, line, mark=""):
+        f = src.split("::")[0]
+        if not (no_tests and is_test_file(f)):
+            groups[label].append((f, line or 0, mark))
+
+    for (src, line), es in sites.items():
+        if any(e["dst"] in contract and (e["confidence"] != "ambiguous" or include_ambiguous) for e in es):
+            continue                                     # already a row of `callers`
+        firm = [e for e in es if e["confidence"] != "ambiguous"]
+        if not firm:
+            add("ambiguous (receiver type unknown)", src, line, "*" if any(e["dst"] in contract for e in es) else "")
+            continue
+        for d in {e["dst"] for e in firm}:
+            t = g.nodes.get(d) or {}
+            sig = t.get("signature") or ""
+            label = (t.get("qname") or d) + (" ".join(sig[sig.find("("):sig.rfind(")") + 1].split()) if "(" in sig else "")
+            add(f"{label}  {os.path.basename(t.get('file') or '')}:{t.get('line')}", src, line)
+    pat = f'"name":{json.dumps(name)}'
+    lang = EXT_LANG.get(os.path.splitext(n.get("file") or "")[1])
+    for path, blob in g.store.con.execute("SELECT path, blob FROM parsed WHERE instr(blob, ?) > 0", (pat,)):
+        if lang and EXT_LANG.get(os.path.splitext(path)[1]) != lang:
+            continue   # an unlinked call in another language (Kotlin's `x.apply { }` for a Java apply) is not a lead
+        for r in json.loads(blob).get("refs", []):
+            if r.get("kind") == "call" and r.get("name") == name and (r.get("src"), r.get("line")) not in sites:
+                add("no repo target (external receiver or not linked)", r.get("src") or path, r.get("line"))
+    return groups
+
+
+def print_other_calls(groups, name, limit=OTHER_CALL_SITES, overloads=0):
+    """One line per group: the target, the count and the sites, file names with their lines; `limit` sites in all.
+    With nothing left after `overloads` overloads answered in one call, says that the rows hold every call."""
+    total = sum(len(v) for v in groups.values())
+    if not total:
+        if overloads > 1:
+            print(f"  every call named {name} is in the rows of these {overloads} answers (no other calls)")
+        return
+    print(f"  other calls named {name} (not this one; every call of the name is above or here): {total}")
+    left = limit
+    order = sorted(groups.items(), key=lambda kv: (kv[0].startswith(("ambiguous", "no repo")), -len(kv[1]), kv[0]))
+    shown = order[:OTHER_CALL_GROUPS - 1] + [kv for kv in order[OTHER_CALL_GROUPS - 1:] if kv[0].startswith(("ambiguous", "no repo"))]
+    rest = [kv for kv in order if kv not in shown]
+    for label, ss in shown:
+        if left <= 0:
+            print(f"    -> {label} ({len(ss)})")
+            continue
+        by_file = defaultdict(list)
+        for f, line, mark in sorted(ss)[:left]:
+            by_file[os.path.basename(f)].append(f"{line}{mark}")
+        more = f" +{len(ss) - left}" if len(ss) > left else ""
+        print(f"    -> {label} ({len(ss)}): " + "; ".join(f"{f}:{','.join(ls)}" for f, ls in by_file.items()) + more)
+        left -= len(ss)
+    if rest:
+        print(f"    -> {len(rest)} more definitions named {name} ({sum(len(v) for _, v in rest)} calls): `query find {name}` lists them")
+    if any(m for ss in groups.values() for _, _, m in ss):
+        print("    (* this one is among the candidates: --include-ambiguous lists it as a row)")
+
+
 def q_callers(g, args, direction="in"):
     n = ensure_one(g, args.name)
     targets = with_owner_if_constructor(g, n) if direction == "in" else [n["id"]]
@@ -7436,10 +7514,25 @@ def q_callers(g, args, direction="in"):
     else:
         hidden = g.store.count_ambiguous_into(set(targets)) if direction == "in" else g.store.count_ambiguous_from(set(targets))
     landings = override_landings(g, n, no_tests) if direction == "in" else []
+    # The other calls of the name (other overloads, other functions, unlinked calls): with them the answer is the
+    # whole partition of the name's call sites, and a repo-wide grep to check it has nothing to add.
+    others = {}
+    siblings = [i for i in getattr(args, "answered", None) or [] if i != n["id"] and (g.nodes.get(i) or {}).get("name") == n["name"]]
+    last = not siblings or (getattr(args, "answered", None) or []).index(n["id"]) > max(args.answered.index(i) for i in siblings) \
+        if n["id"] in (getattr(args, "answered", None) or []) else True
+    if direction == "in" and n["kind"] in ("function", "method", "constructor") and args.depth == 1 and last:
+        contract = set(targets)
+        for m in [n] + [g.nodes[i] for i in siblings]:
+            contract.add(m["id"])
+            if os.path.splitext(m["file"] or "")[1] in (".kt", ".kts", ".java") and m["kind"] == "method":
+                contract |= {o["id"] for o in overrides_of(g, m)[1]}
+        others = other_calls(g, n, contract, args.include_ambiguous, no_tests)
     if args.json:
         print(json.dumps({"root": n["id"], "levels": seen, "hops": [(a, e, b, l) for a, e, b, l in hops],
                           "note": dispatch_note(g, n) if direction == "in" else None, "ambiguous_hidden": hidden,
-                          "via_overrides": [{"override": o["id"], "edges": es} for o, es in landings]}))
+                          "via_overrides": [{"override": o["id"], "edges": es} for o, es in landings],
+                          "other_calls": {k: [{"file": f, "line": ln, "contract_candidate": bool(m)} for f, ln, m in v]
+                                          for k, v in others.items()}}))
         return
     label = "callers of" if direction == "in" else "callees of"
     print(f"{label} {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}" + ("  (no tests)" if no_tests else ""))
@@ -7453,6 +7546,7 @@ def q_callers(g, args, direction="in"):
         print_override_landings(g, landings)
         if hidden_note:
             print(hidden_note)
+        print_other_calls(others, n["name"], overloads=len(siblings) + 1 if last else 0)
         return
     max_rows = getattr(args, "max_rows", 200)
     mode = "summary" if getattr(args, "summary", False) else "files" if getattr(args, "files_only", False) else "rows"
@@ -7479,6 +7573,7 @@ def q_callers(g, args, direction="in"):
         print_override_landings(g, landings)
         if hidden_note:
             print(hidden_note)
+        print_other_calls(others, n["name"], overloads=len(siblings) + 1 if last else 0)
         return
     per_file = defaultdict(lambda: {"level": 99, "rows": 0})
     per_sym = defaultdict(lambda: [0, 99, None])
@@ -7527,6 +7622,9 @@ def q_callers(g, args, direction="in"):
               f"`query callers` on each override lists them")
     if hidden_note:
         print(hidden_note)
+    if others:
+        print(f"  + {sum(len(v) for v in others.values())} other call(s) named {n['name']} (other definitions, "
+              f"ambiguous or unlinked): listed when the rows are")
 
 
 SOURCE_IN_TYPES = {"calls", "instantiates", "extends", "implements", "references"}
@@ -7677,7 +7775,9 @@ def for_each_name(fn):
             if i and not getattr(args, "json", False):
                 print()
             try:
-                fn(g, argparse.Namespace(**{**vars(args), "name": name}))
+                # `answered`: every name of this call, so `callers` prints a name's other calls once, after the
+                # last of its overloads answered here, and without those overloads (they have their own rows)
+                fn(g, argparse.Namespace(**{**vars(args), "name": name, "answered": names}))
             except QueryError as e:
                 failed += 1
                 print(e.text if e.stdout else f"{name}: {e.text}")

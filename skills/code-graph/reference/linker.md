@@ -83,7 +83,9 @@ The linker is receiver-aware and import-aware:
   When the receiver's type arguments or the argument types narrowed the overload set to one, the call
   record keeps that fact as a third element (`[id, confidence, "argument X fits Y"]`), stored in the edge's
   `why` column and printed on `callers` rows; argument positions where the overloads' parameter types agree
-  are left out. A graph from before the column reads it as empty.
+  are left out. The receiver is named whenever the candidates declare different receiver type arguments,
+  even when the arguments decided (`receiver c.op: Op<String>; argument Boolean`). A graph from before the
+  column reads it as empty.
   Loop and comprehension variables are typed from the iterable (`for it in self.items` with
   `items: list[Item]`, `[i.f() for i in xs]`, `for k, v in d.items()` on a `dict[K, V]`), a walrus
   (`(found := d.get(k))`) binds like an assignment and `dict[K, V].get/pop/setdefault` yields
