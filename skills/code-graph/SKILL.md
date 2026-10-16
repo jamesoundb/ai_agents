@@ -50,10 +50,11 @@ a skill folder: permission rules match the literal command.
    class prints its members with ranges). `--no-tests` leaves test files out of `callers`,
    `callees`, `trace-deps` and `source`.
 
-3. **Trust the line ranges.** `source` already printed the code; a card or caller row gives exact
-   `file:line`. Read only a range the graph gave you, and do not grep for a symbol the graph has
-   already located. Grep is for string literals, config keys, error messages and names the graph
-   reports as unresolved.
+3. **The graph's answer is the answer.** `source` already printed the code and a card or caller row
+   gives exact `file:line`: do not follow a query with a Read or grep of the same code, and do not
+   re-confirm a graph answer with grep or a script. Read only a range the graph gave you but did not
+   print. Grep is for string literals, config keys, error messages and names the graph reports as
+   unresolved, not for checking that `callers` found every call (it counts the calls it hid).
 
 ## Reading the output
 
