@@ -44,6 +44,11 @@ def mem(q):
     return float(q)
 
 
+# files analyze() reads (collect.sh writes them; a kubegraph snapshot has meta/nodes/pods), besides ts_* and MISSING-*
+COLLECT_INPUTS = {"meta.json", "cluster.json", "nodes.json", "pods.json", "workloads.json", "quotas.json",
+                  "autoscaler_logs.json", "teamcity_builds.json", "teamcity_buildtypes.json"}
+
+
 def load_json(d, name):
     p = os.path.join(d, name)
     if not os.path.exists(p):
@@ -573,6 +578,14 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     pricing = json.load(open(a.pricing))
+    names = os.listdir(a.dir) if os.path.isdir(a.dir) else []
+    if not any(n in COLLECT_INPUTS or n.startswith(("ts_", "MISSING-")) for n in names):
+        if "report.json" in names:   # what the platform team publishes: the result, not the input
+            print(f"analyze.py: {a.dir} holds a published discovery report (report.json{', build-tiers.json' if 'build-tiers.json' in names else ''}): "
+                  "read it instead of re-analyzing; analyze.py takes a collect.sh output directory", file=sys.stderr)
+        else:
+            print(f"analyze.py: {a.dir} has none of collect.sh's outputs ({', '.join(sorted(COLLECT_INPUTS))}): run collect.sh into it first", file=sys.stderr)
+        return 2
     rep = analyze(a.dir, [x for x in a.build_namespaces.split(",") if x], a.headroom, pricing, a.idle_hours)
     if a.tiers_out and rep["tiers"]:
         with open(a.tiers_out, "w") as f:

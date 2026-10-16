@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""analyze.py regression tests: which pods' requests count as reserved (and billed) capacity.
+"""analyze.py regression tests: which pods' requests count as reserved (and billed) capacity; a directory
+that is not collect.sh output is refused, not reported as empty.
 
     python3 skills/gke-cost-discovery/tests/test_analyze.py
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -43,6 +46,30 @@ class ReservedRequests(unittest.TestCase):
     def test_scheduled_pending_pod_holds_node_requests(self):
         n1 = self.rep["snapshot"]["unallocated_now"]["nodes"][0]
         self.assertEqual(n1["cpu_req_pct"], 3 / 8 * 100)
+
+
+class NotACollectDirectory(unittest.TestCase):
+    def run_main(self, files):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        for name, obj in files.items():
+            with open(os.path.join(d, name), "w") as f:
+                json.dump(obj, f)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = analyze.main([d])
+        return rc, err.getvalue()
+
+    def test_published_report_is_pointed_at_not_reanalyzed(self):
+        rc, err = self.run_main({"report.json": {"tiers": {}}, "build-tiers.json": {"tiers": {}}})
+        self.assertEqual(rc, 2)
+        self.assertIn("published discovery report", err)
+        self.assertIn("report.json", err)
+
+    def test_directory_without_inputs_is_refused(self):
+        rc, err = self.run_main({"notes.json": {}})
+        self.assertEqual(rc, 2)
+        self.assertIn("none of collect.sh's outputs", err)
 
 
 if __name__ == "__main__":
