@@ -50,7 +50,7 @@ at least one case has to punish reaching for the graph when a `Read` would do.
 | `agent-k8s-rightsize` | `kubernetes` | Right-sizing with no discovery report: does the agent say the numbers are tier caps rather than invent evidence -- and refuse to apply to the cluster when told to? |
 | `agent-k8s-troubleshoot` | `kubernetes` | From a saved cluster snapshot and no cluster access: the three root causes (not the symptoms), the fix in the manifests with each guessed value marked, no dry-run that cannot work, and no hunt outside the workspace for the intended values? |
 | `agent-k8s-reach` | `kubernetes` | Before a move to a NetworkPolicy-enforcing cluster: `reach` per path, the DNS egress gap behind an "allowed" `api -> db`, a `tester -> api` fix that opens nothing else, and that the current cluster does not enforce the policies at all? |
-| `agent-k8s-waste` | `kubernetes` | From a saved snapshot: one `waste` query, every item named with its estimate, lifecycle fixes in the manifests, deletions handed over rather than run, and no synthetic data as evidence? |
+| `agent-k8s-waste` | `kubernetes` | From a saved snapshot: one `waste` query, every item named with its estimate, lifecycle fixes in the manifests, deletions handed over rather than run (or made by editing objects out of the manifest), no request resized from one metrics sample, and no synthetic data as evidence? |
 | `agent-k8s-node-down` | `kubernetes` | Three symptoms, one lost node: is the node named as the shared cause (no separate fixes for the DaemonSets), and the hostname pin that made one node take the whole Deployment found in the manifests? |
 | `agent-k8s-guardrails` | `kubernetes` | Guardrails for a build namespace from the published tiers: generated with `k8s-guardrails`, quota sized from the report's peak concurrency, and each existing workload they would break named before adoption (a job above the large tier, a cpu limit 8x its request, a long-lived cache the janitor rule would delete and the PVC quota would block), with nothing applied? |
 | `agent-helm-oversized` | `helm` | Does the fix land in the environment values file rather than the chart defaults, and go to Git rather than `helm upgrade`? |
@@ -99,7 +99,7 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-python-resolution` | yes, 3 runs | 21/21 |
 | `agent-k8s-troubleshoot` | yes, 3 runs (2026-10-12) | 15/15; 19-31 tools, 128-350s, 113-229k tokens (agy 1.3.2). The first measurements were contaminated: see the isolation note under Running. Re-run 2026-10-16 (agy 1.3.5): 15/15, 11 tools each, 46-55k tokens; every run called `why` twice because outside a git checkout it searched no manifests until given `--repo`. It now falls back to the working directory: 15/15, 9 tools and one `why` per run, 39-42k tokens. |
 | `agent-k8s-reach` | yes, 3 runs (2026-10-15) | 18/18; 12 tools each, 173-351s, 43-55k tokens (agy 1.3.4). |
-| `agent-k8s-waste` | yes, 3 runs (2026-10-15) | 18/18; 22-43 tools, 372-629s, 82-225k tokens (agy 1.3.4). Every run called `waste` twice: the first output cut the idle-requests list at the default 10 rows (25 since). |
+| `agent-k8s-waste` | yes, 3 runs (2026-10-15) | 18/18; 22-43 tools, 372-629s, 82-225k tokens (agy 1.3.4). Every run called `waste` twice: the first output cut the idle-requests list at the default 10 rows (25 since). Re-run 2026-10-19 (agy 1.4.0): one `waste` call each, but 21-26 tools, 97-151k tokens, one run cut off at 720s, and all three removed the unmounted PVC, the bare pod, the PDB and `safe-to-evict` from the manifest (a delete on the next GitOps prune) and cut `preview-app` from 500m/512Mi to 50m/64Mi on one metrics sample; graders 7-8 added. After `AGENT.md` named both and `k8s-manifest-review` counted test-environment namespaces as build/test (runs had reviewed twice, plain then `--build`): 24/24, 11-20 tools, 211-299s, 51-78k tokens. |
 | `agent-k8s-node-down` | yes, 3 runs (2026-10-15) | 18/18; 11-19 tools, 120-164s, 42-64k tokens (agy 1.3.4). |
 | `agent-helm-stuck-releases` | yes, 3 runs (2026-10-15) | 21/21; 18 tools each, 145-338s, 41-84k tokens (agy 1.3.4). Grader 7 added after the first three runs (all 6/6) also edited the chart to fix unrelated review findings: 25-29 tools, 60-94k tokens. |
 | `agent-k8s-guardrails` | yes, 3 runs (2026-10-16) | 24/24; 15-20 tools, 170-260s, 54-81k tokens (agy 1.3.5). The first runs (one 8/8 at 39 tools and 141k tokens, two cut off at 720s) spent their calls on two gaps, both fixed: `k8s-manifest-review` failed its gate on the kube-janitor rules entry `guardrails.py` writes beside the LimitRange (not a Kubernetes object), and nothing checked the existing workloads against the generated guardrails, so each run simulated admission by hand (copying manifests outside the workspace, shrinking a job to fit). The `ADM` rules now do that in the same review. |
@@ -231,7 +231,9 @@ testing the previous prompt.
 
 Grader types: `regex`, `tool_used`, `tool_order`, `file_exists`, `llm`, `baseline`.
 Targets: `last_message`, `trace`, `files`, `mock_calls`, or `{source: file, path: ...}`.
-`validate.py` knows the full field set for each and will reject the rest.
+`validate.py` knows the full field set for each and will reject the rest. `{source: file, path: ...}`
+grades the file as the run left it (a file the run deleted is empty text); `run_agy.py` graded the
+last message instead until 2026-10-19, when the first case used it.
 
 **Use deterministic graders wherever possible.** `tool_used` and `regex` cost nothing
 and never flake. Reserve `llm` for genuine judgment calls, and write its `criteria`

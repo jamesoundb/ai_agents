@@ -27,7 +27,9 @@ kustomize build overlays/test | scripts/run.sh - --build
 
 Policy discovery: `k8s-review.json` and `build-tiers.json` next to the manifests or in the
 current directory. `--build` treats every workload as a build/test workload (otherwise only
-those in `build_namespaces` or carrying the tier label).
+those in `build_namespaces`, in a namespace matching `test_namespaces` -- default `*preview*`, `*review*`,
+`*test*`, `pr-*`, `*-pr-*`, `*ephemeral*`, `*sandbox*`, the globs `cluster-graph waste` uses -- or carrying
+the tier label).
 
 ## Policy (`k8s-review.json`)
 

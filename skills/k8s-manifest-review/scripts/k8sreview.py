@@ -12,6 +12,7 @@ gate for CI.
   helm template . | k8sreview.py -            # stdin
 """
 import argparse
+import fnmatch
 import glob
 import json
 import os
@@ -30,6 +31,8 @@ DEFAULT_POLICY = {
     "default_tier": "medium",
     "tier_label": "build.company.io/tier",
     "build_namespaces": [],            # namespaces whose workloads are builds/test envs; empty + --build = all
+    # Namespaces named like test environments are test envs too: the globs cluster-graph `waste` uses (ENV_NS)
+    "test_namespaces": ["*preview*", "*review*", "*test*", "pr-*", "*-pr-*", "*ephemeral*", "*sandbox*"],
     "ttl_annotation": "janitor/ttl",    # kube-janitor style TTL, e.g. "8h"
     "max_test_replicas": 2,
     "spot_selector": {"cloud.google.com/gke-spot": "true"},
@@ -99,7 +102,8 @@ def review_doc(doc, file, line, rep, is_build):
     labels = meta.get("labels") or {}
     ann = meta.get("annotations") or {}
     spec = doc.get("spec") or {}
-    build = is_build or (ns in P["build_namespaces"]) or (P["tier_label"] in labels)
+    build = is_build or (ns in P["build_namespaces"]) or (P["tier_label"] in labels) or \
+        bool(ns and any(fnmatch.fnmatch(ns, g) for g in P["test_namespaces"]))
 
     if kind in WORKLOAD_KINDS and ns is None:
         rep.add("COR001", "medium", file, line, obj, "no metadata.namespace; the object lands wherever the client points", "set namespace explicitly")

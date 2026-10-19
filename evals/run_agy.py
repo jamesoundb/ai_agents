@@ -206,7 +206,7 @@ def repo_leaks(tools, ws=None):
             or any(m != ws and "norepo" not in m for m in others.findall(a))]
 
 
-def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
+def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True, file_targets=()):
     """Set up a throwaway workspace, run one agy turn in it, return the parsed trace."""
     ws = tempfile.mkdtemp(prefix="agyeval-")
     cfg = {}
@@ -292,6 +292,14 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True):
         for dp, dn, fn in os.walk(ws) for f in fn
         if ".git" not in dp and ".ast-graph" not in dp
     )
+    # And the text of every file a grader targets ({source: file, path: ...}).
+    out["file_text"] = {}
+    for p in file_targets:
+        try:
+            with open(os.path.join(ws, p), encoding="utf-8", errors="replace") as fh:
+                out["file_text"][p] = fh.read()
+        except OSError:
+            pass
     if not keep:
         shutil.rmtree(ws, ignore_errors=True)
     return out
@@ -348,6 +356,10 @@ def target_text(g, run):
         return "\n".join(f"{n} {a}" for n, a in run["tools"])
     if t == "files":
         return "\n".join(run["files"])
+    if isinstance(t, dict) and t.get("source") == "file":
+        # The file as the run left it (read before the workspace was removed); a file the run
+        # deleted is empty text. Falling through to last_message graded the answer instead.
+        return run.get("file_text", {}).get(t.get("path")) or ""
     return run["last_message"]
 
 
@@ -503,7 +515,9 @@ def main():
             # however long it declared, which is what cut the helm and kubernetes cases off.
             timeout = args.timeout or fm.get("timeout_seconds", 420)
             run = run_case_once(cdir, fm, prompt, timeout, args.keep_temp,
-                                isolate=not args.use_global_context)
+                                isolate=not args.use_global_context,
+                                file_targets={g["target"]["path"] for _n, g in graders
+                                              if isinstance(g.get("target"), dict)})
             if run.get("error"):
                 print(f"  run {i}: ERROR {run['error']}")
                 crec["runs"].append({"run": i, "error": run["error"]})

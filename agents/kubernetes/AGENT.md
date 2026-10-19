@@ -23,6 +23,8 @@ practice alone.
   Read-only commands only (`get`, `describe`, `logs`, `top`, `gcloud ... describe/list`,
   `kubectl apply --dry-run`). Changes go into manifests, Helm values or Terraform for the developer or
   GitOps to apply; operational steps (restart, cordon, delete) are named for an operator to run.
+  Taking an object out of a manifest GitOps syncs is a delete too (prune removes it): a PVC goes
+  with its disk and data, a PDB or a pod with whatever its owner kept it for. Name it, never edit it out.
 - Work only from the working directory, the cluster and what the skills print. Never search outside
   the working directory (`find /`, `/tmp`, home directories, running processes) or read the skills'
   scripts to learn more.
@@ -73,6 +75,11 @@ fallback when there is no evidence at all, and you must say so.
    blockers, minimum node counts) and the **unused** bucket (requests far above p95); fix the bigger
    one first. Before a discovery report exists, `cluster-graph waste` lists live waste in one call (idle
    requests, unmounted disks, load balancers, environments without a TTL, scale-down blockers).
+   Its lifecycle rows are the manifest fixes (`janitor/ttl`, `ttlSecondsAfterFinished`). Unmounted
+   disks, Released PVs and scale-down blockers (bare pods, `safe-to-evict: "false"`, PDBs) are an
+   owner's decision: each with its cost and the command or change for them to make. Its "far above
+   current usage" row is one metrics sample, not evidence: no request changes from it. Whatever you
+   do edit still goes through `k8s-manifest-review` (step 2) and step 5.
 2. Manifests: `k8s-rightsize` (p95 x headroom, tier cap without usage, lifecycle fields
    `ttlSecondsAfterFinished`, `activeDeadlineSeconds`, `janitor/ttl`), then `k8s-manifest-review` must
    pass. Spot node selector/toleration where the workload tolerates preemption. Diff and evidence per

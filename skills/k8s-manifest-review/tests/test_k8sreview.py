@@ -225,5 +225,24 @@ class BackoffLimit(unittest.TestCase):
         self.assertEqual(self.eff007(""), ["backoffLimit 6 retries a failing build"])
 
 
+class TestEnvironmentNamespaces(unittest.TestCase):
+    """Without --build, a namespace named like a test environment (cluster-graph `waste`'s globs) gets the
+    build/test rules: a preview Deployment without a teardown TTL is EFF008 in both tools."""
+    DEPLOY = ("apiVersion: apps/v1\nkind: Deployment\nmetadata: {{name: app, namespace: {ns}}}\nspec:\n"
+              "  template: {{spec: {{containers: [{{name: c, image: busybox:1.36}}]}}}}\n")
+
+    def rules(self, ns):
+        rep = kr.Report(kr.load_policy(None, None, []))
+        kr.review_text(self.DEPLOY.format(ns=ns), "app.yaml", rep, False)
+        return {f["rule"] for f in rep.findings}
+
+    def test_preview_namespace_is_a_test_environment(self):
+        self.assertIn("EFF008", self.rules("kg-preview-123"))
+        self.assertIn("EFF008", self.rules("pr-231"))
+
+    def test_other_namespace_is_not(self):
+        self.assertNotIn("EFF008", self.rules("payments"))
+
+
 if __name__ == "__main__":
     unittest.main()
