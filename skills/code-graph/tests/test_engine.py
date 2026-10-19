@@ -560,6 +560,25 @@ def test_java_constructors(root, G):
     check("Archive.Archive" in pth and "Archive.parseSize" in pth, f"java: a call path runs through the constructor: {pth.strip().splitlines()}")
 
 
+def test_type_tests(root, G):
+    """`x is T` / `is T ->` (Kotlin) and `x instanceof T` (Java) are references to T: `callers T` lists the
+    code that branches on it, the row naming the test; nested types resolve as in `new Outer.Inner()`."""
+    print("# kotlin/java: type tests")
+    gp = os.path.join(root, ".ast-graph", "graph.db")
+    kt = run("query", "--graph", gp, "callers", "Ev.Click")
+    for ln in (61, 63):
+        check(f"<- Widget.react  kotlin/src/main/kotlin/com/acme/shop/Order.kt:{ln}  [references, same_file: type test: is Ev.Click]" in kt,
+              f"kotlin: `is Ev.Click` at Order.kt:{ln} is a caller row of Ev.Click: {kt.strip().splitlines()}")
+    outer = [e for e in G.edges_to(G.node("Order.kt", "Ev"), "references") if G.nodes[e["src"]]["qname"] == "Widget.react" and e.get("why")]
+    check(not outer, f"kotlin: `is Ev.Click` references the nested Click, not Ev: {[e['line'] for e in outer]}")
+    jv = run("query", "--graph", gp, "callers", "Circle", "Square")
+    check("<- Areas.kind  java/src/main/java/com/acme/Areas.java:18  [references, package: type test: instanceof Circle]" in jv
+          and "<- Areas.kind  java/src/main/java/com/acme/Areas.java:19  [references, package: type test: instanceof Square]" in jv,
+          f"java: `instanceof Circle c` and `!(s instanceof Square)` are caller rows: {jv.strip().splitlines()}")
+    check("<- Areas.label  java/src/main/java/com/acme/Areas.java:23  [references, package: type test: case Square]" in jv,
+          f"java: a switch pattern `case Square q ->` is a caller row: {jv.strip().splitlines()}")
+
+
 def test_java_static_imports(root, G):
     """`import static C.m;` / `import static C.*;` put C's static methods in scope for unqualified calls."""
     print("# java: static imports")
@@ -1346,6 +1365,7 @@ def main():
         test_kotlin_rules(root, G)
         test_java_constructors(root, G)
         test_java_static_imports(root, G)
+        test_type_tests(root, G)
         test_overload_queries(root)
         test_build_lock(root)
         test_autobuild_hook()

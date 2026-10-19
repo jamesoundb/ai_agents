@@ -12,4 +12,14 @@ public final class Areas {
     static double squareArea(Square q) {
         return q.area();
     }
+
+    // type tests: `callers Circle` / `callers Square` list these branches (a pattern binding and a negated test)
+    static String kind(Shape s) {
+        if (s instanceof Circle c) return "circle " + c.area();
+        return !(s instanceof Square) ? "other" : "square";
+    }
+
+    static String label(Shape s) {
+        return switch (s) { case Square q -> "square"; default -> "shape"; };
+    }
 }

@@ -1502,6 +1502,23 @@ def java_new(ctx, n):
     return False
 
 
+def java_type_test(ctx, n):
+    """`x instanceof T` / `x instanceof T t` / `case T t ->`: a reference to T from the enclosing method, so
+    `callers T` lists the code that branches on it. A pattern on the right is left to its own type_pattern."""
+    t = n.child_by_field_name("right") if n.type == "instanceof_expression" else \
+        next((c for c in n.named_children if c.type != "identifier"), None)
+    if t is not None and t.type not in ("type_pattern", "record_pattern", "pattern"):
+        type_test_ref(ctx, ctx.text(t), n, ("instanceof " if n.type == "instanceof_expression" else "case ") + ctx.text(t))
+    return False
+
+
+def type_test_ref(ctx, txt, n, test):
+    """One `uses_type` ref for the tested type, qualified like `new T()` (`Ev.Click` is the
+    nested Click, not Ev), carrying `type test: <test>` onto the `references` edge."""
+    ctx.add_ref("uses_type", base_type_name(txt), n, hint=split_qualifier(txt)[0], hint_full=strip_type_decor(txt),
+                why="type test: " + " ".join(test.split()))
+
+
 def java_import(ctx, n):
     txt = ctx.text(n).strip().rstrip(";")
     static = re.match(r"^import\s+static\s", txt) is not None
@@ -1530,6 +1547,7 @@ JAVA_HANDLERS = {
     "enhanced_for_statement": java_enhanced_for,
     "method_invocation": java_invocation,
     "object_creation_expression": java_new,
+    "instanceof_expression": java_type_test, "type_pattern": java_type_test,
     "import_declaration": java_import,
     "package_declaration": java_package,
 }
@@ -2067,6 +2085,16 @@ def kt_smart_casts(ctx, cond):
     return out
 
 
+def kt_type_test(ctx, n):
+    """`x is T`, `x !is T`, `is T ->` in a when: a reference to T from the enclosing function, so `callers T`
+    lists the code that branches on it (`in` checks have no type and are skipped)."""
+    if any(c.type == "is" for c in n.children):
+        t = next((c for c in n.named_children if c.type in ("user_type", "nullable_type")), None)
+        if t is not None:
+            type_test_ref(ctx, ctx.text(t), n, ("!is " if "!is" in ctx.text(n) else "is ") + ctx.text(t))
+    return False
+
+
 def kt_if(ctx, n):
     """`if (e is Click) e.describe()`: inside the then-branch, `e` is a Click."""
     kids = n.named_children
@@ -2530,6 +2558,7 @@ KOTLIN_HANDLERS = {
     "function_declaration": kt_function, "property_declaration": kt_property, "call_expression": kt_call,
     "infix_expression": kt_infix, "additive_expression": kt_arith, "multiplicative_expression": kt_arith,
     "if_expression": kt_if, "when_expression": kt_when, "callable_reference": kt_callable_ref,
+    "check_expression": kt_type_test, "type_test": kt_type_test,
 }
 
 
@@ -5754,7 +5783,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                         if targets:
                             if k == "uses_type":
                                 if targets[0]["id"] != r["src"] and targets[0]["id"] != node_by_id.get(r["src"], {}).get("parent"):
-                                    add_edge(r["src"], targets[0]["id"], "references", r["line"], conf, name=name, via="signature")
+                                    add_edge(r["src"], targets[0]["id"], "references", r["line"], conf, name=name, via="signature",
+                                             **({"why": r["why"]} if r.get("why") else {}))   # `type test: is T`
                                 continue
                             for t_ in targets:
                                 if t_["id"] != r["src"]:
@@ -5801,7 +5831,8 @@ def link_graph(root_dir, files, tf_modules, prev=None, jobs=None):
                         continue  # unknown/builtin type names are expected; never counted as unresolved
                     if targets[0]["id"] == r["src"] or targets[0]["id"] == node_by_id.get(r["src"], {}).get("parent"):
                         continue
-                    add_edge(r["src"], targets[0]["id"], "references", r["line"], conf, name=name, via="signature")
+                    add_edge(r["src"], targets[0]["id"], "references", r["line"], conf, name=name, via="signature",
+                             **({"why": r["why"]} if r.get("why") else {}))   # `type test: is T`
                     continue
                 if not targets:
                     unresolved += 1

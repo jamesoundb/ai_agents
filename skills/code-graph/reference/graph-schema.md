@@ -43,7 +43,7 @@ Terraform: `resource`, `data`, `module_call`, `variable` (`var.x`), `output`, `p
 | `calls` | function/method -> function/method/class (constructor call) |
 | `extends`, `implements` | inheritance; Go embedding and interface embedding count as `extends` |
 | `instantiates` | `new Foo()`, `Foo{}` composite literal, Rust struct literal |
-| `references` | signature type use (`via: "signature"`), HCL address reference, K8s object reference (`via: key`) |
+| `references` | signature type use (`via: "signature"`), Kotlin/Java type test in a body (`why`: `type test: is T`, `instanceof T`, `case T`), HCL address reference, K8s object reference (`via: key`) |
 | `uses_module` | Terraform `module` block -> module directory (or `external_module`) |
 | `depends_on` | Terraform explicit `depends_on` |
 | `selects` | K8s Service/PDB/NetworkPolicy selector -> workload with matching pod-template labels |
