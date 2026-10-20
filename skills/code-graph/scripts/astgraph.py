@@ -122,13 +122,14 @@ TEST_FILE_RES = tuple(re.compile(p) for p in (
 def is_test_file(path):
     parts = path.replace(os.sep, "/").split("/")
     if "src" in parts[:-1]:
-        # Gradle/Maven source sets: src/main is production even under a `testing` library module;
-        # src/test, src/androidTest, src/testDebug ... are tests
+        # Gradle/Maven source sets: src/main is production even under a `testing` library module, with a
+        # test-like name (a test runner's TestCase, a tooling API's BaselineSpec) or a `test/` package: the build
+        # never runs tests from it. src/test, src/androidTest, src/testDebug ... are tests
         i = parts.index("src")
         if i + 1 < len(parts) - 1:
             ss = parts[i + 1]
             if ss == "main":
-                return any(r.search(parts[-1]) for r in TEST_FILE_RES)   # only the basename conventions apply
+                return False
             if ss.startswith(("test", "androidTest", "integrationTest", "it")) and ss not in ("it",):
                 return True
     if any(p.lower() in TEST_DIR_SEGMENTS for p in parts[:-1]):

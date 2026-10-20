@@ -207,6 +207,11 @@ def test_resolution(root):
     check(not any(q.endswith(".join") for q, _ in bn), f"py: a string-literal receiver never leads into a repo `join` {bn}")
     check(astgraph.is_test_file("core/testing/src/main/kotlin/x/TopicsTestData.kt") is False and astgraph.is_test_file("core/data/src/test/kotlin/x/RepoTest.kt") and astgraph.is_test_file("feature/x/src/androidTest/kotlin/x/ScreenTest.kt"),
           "jvm: src/main under a `testing` module is production; src/test and src/androidTest are tests")
+    # Maven/Gradle never run tests from src/main: a test-like name or a `test/` package there is production code
+    # (a test-runner app's TestCase, a tooling API's BaselineSpec, assertj's ...ObjectUnderTest)
+    mains = ("modules/app/src/main/java/org/x/test/TestCase.java", "app/src/main/java/org/x/TestBuilderModel.java",
+             "tooling/src/main/kotlin/x/spec/BaselineSpec.kt", "core/src/main/java/x/ProxifyObjectUnderTest.java")
+    check(not any(astgraph.is_test_file(p) for p in mains), f"jvm: test-like names under src/main are production {[p for p in mains if astgraph.is_test_file(p)]}")
 
     # --- JavaScript
     jrun = G.node("js/src/service.js", "Service.run")
@@ -310,7 +315,7 @@ def test_resolution(root):
     check(ext == [("Base.kt", "Base", "import")], f"kotlin: `: Base<Sq>(...)` extends the imported class {ext}")
     imp_edges = [(G.nodes[e["dst"]]["file"].split("/")[-1]) for e in G.g["edges"] if e["type"] == "imports" and e["src"].endswith("OrderService.kt")]
     check("Base.kt" in imp_edges and imp_edges.count("Base.kt") >= 2, f"kotlin: imports of a class, a function and a wildcard all resolve to Base.kt {imp_edges}")
-    check(astgraph.is_test_file("kotlin/src/main/kotlin/x/FooTest.kt") and not astgraph.is_test_file("kotlin/src/main/kotlin/x/Latest.kt"), "kotlin: *Test.kt is a test file, Latest.kt is not")
+    check(astgraph.is_test_file("kotlin/x/FooTest.kt") and not astgraph.is_test_file("kotlin/x/Latest.kt"), "kotlin: *Test.kt is a test file, Latest.kt is not")
     fields = sorted(n["name"] for n in G.g["nodes"] if n["kind"] == "field" and n["file"].endswith("Order.kt"))
     check(fields == ["LARGE", "SMALL", "all", "cached", "h", "id", "id", "items", "lazyOrder", "runner", "side", "sq", "svc", "svc"], f"kotlin: primary-constructor val/var parameters, class properties and enum entries are fields {fields}")
     card = run("query", "--graph", os.path.join(root, ".ast-graph", "graph.db"), "symbol", "Order.kt:Order")

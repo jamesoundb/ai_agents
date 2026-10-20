@@ -397,7 +397,9 @@ templates rather than adding vendor-neutral fallbacks.
   descendant walk is unbounded on hubs). `param_type_names` reads the whole signature (wrapped Java
   parameter lists lost their tail before, so their overrides went unseen). `callers`/`callees` default to depth 1, print compact rows,
   and report how many ambiguous edges they hid; `--no-tests` exists on callers/callees/trace-deps/
-  source. SKILL.md is kept short (everyday workflow only); detail lives in `reference/usage.md`.
+  source. A test file (`is_test_file`) is one under a Gradle/Maven test source set (`src/test`, `src/androidTest`,
+  `src/testDebug` ...), a `test`/`tests`/`spec`... directory or with a test basename (`*Test.java`, `test_*.py`,
+  `*_test.go` ...); anything under `src/main` is production, whatever its name or package. SKILL.md is kept short (everyday workflow only); detail lives in `reference/usage.md`.
 - Output budget: every cap lives in the `CAP_*` block at the top of `astgraph.py`, and each one
   must leave a stated way back — a flag that raises it (`skeleton --max-calls/--max-imports`,
   `symbol --limit/--all`, `trace-deps --max-rows/--files-only`, `source --max-lines/--refs`) or an
