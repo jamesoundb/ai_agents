@@ -384,8 +384,9 @@ templates rather than adding vendor-neutral fallbacks.
   `symbol`, `source`, `callers` and `callees` take several names (`for_each_name`; a failing name
   raises `QueryError`, reported inline). `source` = header with range + compact callers (ambiguous
   marked `?`) + callees + numbered body (60 lines per body, 150 per call: `g.source_lines_left`).
-  `tests-for` = test functions reaching a symbol within 3 caller hops, firm paths first, ambiguous ones
-  marked `?`. A stamp without recorded options (pre-2026-10-02 graph) is never refreshed; the query
+  `tests-for` = test functions reaching a symbol within 3 caller hops (deepened to the nearest tests, up to
+  `TESTS_FOR_MAX_DEPTH` = 8, when none are that close; not with an explicit `--depth`), firm paths first,
+  ambiguous ones marked `?`. A stamp without recorded options (pre-2026-10-02 graph) is never refreshed; the query
   prints a note once the engine hash differs. `Name@line` (no file) selects an overload by its start line or
   a line inside it; a case-exact name wins over case-insensitive matches. `narrow_matches` (shared by
   `ensure_one` and `overload_set`) prefers production code, bodies over C++ prototypes and Python `@overload`

@@ -164,8 +164,10 @@ an external library, a builtin, or generated/unindexed code.
   give way to the implementation. Names matching unrelated symbols still list the ids to choose from.
 - An on/off flag of another query subcommand (`callers X --all`, `symbol X --no-tests`) is ignored with a
   `note:` on stderr instead of a usage error; flags taking a value are still checked.
-- `tests-for X` lists the test functions that reach X through up to `--depth 3` caller hops, grouped by
-  test file, firm paths first; `?` marks a test reached only through an ambiguous edge (tests often call
+- `tests-for X` lists the test functions that reach X through up to 3 caller hops, grouped by test
+  file, firm paths first; with no test that close (a parser helper under `read()` -> `parse()` -> ...) it
+  deepens to the nearest tests, up to 8 hops, and the header says so (`depth=6 (none within 3)`); an
+  explicit `--depth N` does not deepen; `?` marks a test reached only through an ambiguous edge (tests often call
   through untyped locals). `--no-ambiguous` keeps firm paths only, `--top N` lists more files.
 - `symbol X --calls` lists each member's calls; `--all` removes every cap (and implies `--calls`).
 - `overview` is the one query that weighs the whole graph (~3s/265 MB on TensorFlow); everything else

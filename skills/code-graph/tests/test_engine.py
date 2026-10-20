@@ -497,6 +497,12 @@ def test_lean_queries(root):
     check("python/tests/test_service.py" in tf and "test functions in" in tf, f"tests-for: groups the tests that reach a symbol by file: {tf.splitlines()[1:2]}")
     tn = run("query", "--graph", gp, "tests-for", "models.py:Repo.save", "--no-ambiguous")
     check("?" not in tn.split("\n", 1)[1], "tests-for --no-ambiguous lists only firm paths")
+    # the only test is 4 calls above readMulti: the default search deepens to it instead of "none found"
+    td4 = run("query", "--graph", gp, "tests-for", "Wkt.java:Wkt.readMulti")
+    check("WktTest.java (1): WktTest.testReadMulti" in td4 and "depth=4 (none within 3)" in td4,
+          f"tests-for deepens past the default depth to the nearest tests: {td4.strip().splitlines()}")
+    tx = run("query", "--graph", gp, "tests-for", "Wkt.java:Wkt.readMulti", "--depth", "3")
+    check("none found" in tx, f"tests-for with an explicit --depth does not deepen: {tx.strip().splitlines()}")
     big = run("query", "--graph", gp, "source", "service.py:Service", "service.py:helper", "models.py:Repo.save", "--max-lines", "1")
     check(len(re.findall(r"\.py:\d+-\d+ \(\d+ lines\)", big)) == 3, "source: several names share one call")
     loop = run("query", "--graph", gp, "source", "service.py:Factory.run", "--max-lines", "1")

@@ -86,6 +86,8 @@ CAP_SOURCE_REFS = 8            # callees named per `source` symbol              
 CAP_SOURCE_CALLERS = 3         # callers named per `source` symbol (a lead, not the list) -> --refs / query callers
 CAP_TESTS_FILES = 8            # test files listed by `tests-for`                     -> --top
 CAP_TESTS_PER_FILE = 3         # test functions named per file by `tests-for`         -> the count shown, `callers`
+TESTS_FOR_DEPTH = 3            # caller hops `tests-for` follows by default            -> --depth
+TESTS_FOR_MAX_DEPTH = 8        # ... deepened up to this to the nearest tests when none are within the default
 # Edge types that mean "src depends on dst" (used for blast radius / reverse dependencies).
 DEP_EDGE_TYPES = {
     "calls", "imports", "extends", "implements", "instantiates", "references",
@@ -7755,20 +7757,37 @@ def q_source(g, args):
 def q_tests_for(g, args):
     """Test functions that reach a symbol (transitively, through callers), grouped by test file: which
     tests to read and run for a change, instead of grepping tests/ for names. Tests often call through
-    untyped locals, so paths through ambiguous edges are included and marked `?`; firm paths come first."""
+    untyped locals, so paths through ambiguous edges are included and marked `?`; firm paths come first.
+    Without --depth, a symbol with no test within TESTS_FOR_DEPTH hops (a parser helper under read() ->
+    parse() -> ...) gets the nearest tests up to TESTS_FOR_MAX_DEPTH instead of "none found"."""
     n = ensure_one(g, args.name)
     start = with_owner_if_constructor(g, n)
     if n["kind"] in CONTAINER_KINDS:
         start += [k["id"] for k in g.children(n["id"])]
     types = DEP_EDGE_TYPES - {"imports"}
-    firm, _ = bfs(g, start, "in", types, args.depth, False)
-    reach, _ = ({}, None) if args.no_ambiguous else bfs(g, start, "in", types, args.depth, True)
-    hits = defaultdict(list)                 # test file -> [(ambiguous?, hop, node)]
-    for nid, hop in list(firm.items()) + [(k, v) for k, v in reach.items() if k not in firm]:
-        t = g.nodes.get(nid)
-        if t and t["kind"] in ("function", "method") and t.get("file") and is_test_file(t["file"]) and nid not in start:
-            hits[t["file"]].append((nid not in firm, hop, t))
-    print(f"tests reaching {n['qname']}  ({n['file']}:{n['line']})  depth={args.depth}"
+
+    def collect(depth):
+        firm, _ = bfs(g, start, "in", types, depth, False)
+        reach, _ = ({}, None) if args.no_ambiguous else bfs(g, start, "in", types, depth, True)
+        found = defaultdict(list)            # test file -> [(ambiguous?, hop, node)]
+        for nid, hop in list(firm.items()) + [(k, v) for k, v in reach.items() if k not in firm]:
+            t = g.nodes.get(nid)
+            if t and t["kind"] in ("function", "method") and t.get("file") and is_test_file(t["file"]) and nid not in start:
+                found[t["file"]].append((nid not in firm, hop, t))
+        return found
+
+    depth = TESTS_FOR_DEPTH if args.depth is None else args.depth
+    hits, deepened = collect(depth), ""
+    if not hits and args.depth is None:
+        deep = collect(TESTS_FOR_MAX_DEPTH)
+        rows = [r for rs in deep.values() for r in rs]
+        if rows:
+            # stop at the nearest firm test (the nearest ambiguous one when no path is firm)
+            near = min(hop for amb, hop, _ in rows if not amb) if any(not amb for amb, _, _ in rows) \
+                else min(hop for _, hop, _ in rows)
+            hits = {f: kept for f, rs in deep.items() if (kept := [r for r in rs if r[1] <= near])}
+            deepened, depth = f" (none within {depth})", near
+    print(f"tests reaching {n['qname']}  ({n['file']}:{n['line']})  depth={depth}{deepened}"
           + ("" if args.no_ambiguous else "; ? = only through an ambiguous edge"))
     if not hits:
         print("  none found" + ("" if args.no_ambiguous else " (tests calling through fixtures or untyped helpers may still exist)"))
@@ -8210,7 +8229,9 @@ def main(argv=None):
     x.set_defaults(qfn=for_each_name(q_source))
     x = qs.add_parser("tests-for", help="test functions that reach these symbols, grouped by test file (which tests to run)")
     x.add_argument("name", nargs="+")
-    x.add_argument("--depth", type=int, default=3, help="caller hops to follow (default 3)")
+    x.add_argument("--depth", type=int, default=None,
+                   help=f"caller hops to follow (default {TESTS_FOR_DEPTH}, deepened up to {TESTS_FOR_MAX_DEPTH} "
+                        "to the nearest tests when none are that close)")
     x.add_argument("--no-ambiguous", action="store_true", help="only paths made of firm edges")
     x.add_argument("--top", type=int, default=CAP_TESTS_FILES, help=f"test files listed (default {CAP_TESTS_FILES})")
     x.set_defaults(qfn=for_each_name(q_tests_for))
