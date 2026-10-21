@@ -185,7 +185,7 @@ def rightsize_doc(doc, idx, P, headroom, cpu_factor, lifecycle):
             ann = meta.setdefault("annotations", {})
             if P["ttl_annotation"] not in ann and "janitor/expires" not in ann:
                 ann[P["ttl_annotation"]] = P["env_ttl"]
-                changes.append({"object": f"{kind}/{name}", "namespace": ns, "container": "-", "old": "no TTL annotation", "new": f"{P['ttl_annotation']}: {P['env_ttl']}", "basis": "lifecycle", "evidence": "kube-janitor", "saving_cpu": 0, "saving_mem_gib": 0})
+                changes.append({"object": f"{kind}/{name}", "namespace": ns, "container": "-", "old": "no TTL annotation", "new": f"{P['ttl_annotation']}: {P['env_ttl']}", "basis": "lifecycle", "evidence": f"kube-janitor counts the TTL from creation: a live {kind} older than {P['env_ttl']} is deleted on its next pass after the sync", "saving_cpu": 0, "saving_mem_gib": 0})
     return changes
 
 

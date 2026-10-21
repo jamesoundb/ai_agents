@@ -75,7 +75,9 @@ fallback when there is no evidence at all, and you must say so.
    blockers, minimum node counts) and the **unused** bucket (requests far above p95); fix the bigger
    one first. Before a discovery report exists, `cluster-graph waste` lists live waste in one call (idle
    requests, unmounted disks, load balancers, environments without a TTL, scale-down blockers).
-   Its lifecycle rows are the manifest fixes (`janitor/ttl`, `ttlSecondsAfterFinished`). Unmounted
+   Its lifecycle rows are the manifest fixes (`janitor/ttl`, `ttlSecondsAfterFinished`). kube-janitor
+   counts `janitor/ttl` from the object's creation: on an environment already older than the TTL it
+   deletes it on the next pass after the sync; name each one it will delete. Unmounted
    disks, Released PVs and scale-down blockers (bare pods, `safe-to-evict: "false"`, PDBs) are an
    owner's decision: each with its cost and the command or change for them to make. Its "far above
    current usage" row is one metrics sample, not evidence: no request changes from it. Whatever you
