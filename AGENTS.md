@@ -46,6 +46,7 @@ harnesses without agent files they are installed as `<name>` skills and invoked 
 
 | skill | use it for |
 |---|---|
+| `ai-task` | Use when asked to set up a workspace of cloned repositories, or to start, track, resume or close a task in one: git worktrees on a feature branch, a problem definition and a worklog per problem. |
 | `blast-radius` | Use before a refactor, a signature, DTO, schema or infra change, or when reviewing a diff: every dependent file and symbol, the relationship, and the tests to run. |
 | `bug-fix` | Use when fixing a reported bug, failing test or wrong behaviour, before changing code: a checklist of the report's cases, a failing test per case, then the cause fixed and each case proven. |
 | `cluster-graph` | Use before kubectl get/describe loops on a live cluster: one read-only snapshot of every resource, CRDs included, then one query for what is broken, why, or what depends on an object. |

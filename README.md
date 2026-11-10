@@ -295,6 +295,7 @@ the actual cause. To fix it:
 | [code-graph](skills/code-graph/SKILL.md) | Build and query the relationship graph (`source`, `callers`, `callees`, `symbol`, `tests-for`, `trace-deps`, `file`, `path`, `find`, `overview`, `stats`) |
 | [code-skeleton](skills/code-skeleton/SKILL.md) | Token-light skeleton of files with exact line ranges; read-before-cat |
 | [blast-radius](skills/blast-radius/SKILL.md) | Downstream impact matrix for a file, symbol, Terraform address or Kubernetes object |
+| [ai-task](skills/ai-task/SKILL.md) | Task workspaces over cloned repositories: worktrees, a problem definition and a worklog per problem |
 | [bug-fix](skills/bug-fix/SKILL.md) | Bug-fix procedure: checklist of every case the report names, a failing test per case, the cause fixed at every site, each case proven |
 | [install-agents](skills/install-agents/SKILL.md) | Bootstrap: lets the harness install/update/remove this repo's agents and skills via `install.sh` (not installed into target projects) |
 | [terraform-review](skills/terraform-review/SKILL.md) | Deterministic Terraform/GCP review: Google style rules, security rules, configurable policy from `tfreview.json`; optional terraform/tflint/trivy; CI gate |
