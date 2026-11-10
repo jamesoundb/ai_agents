@@ -174,7 +174,12 @@ write_index() {  # INDEX.md is derived from the front matter, so it can never di
     echo
     echo "| Status | ID | Repos | Title |"
     echo "|---|---|---|---|"
-    for f in $(ls -r "$LOGS"/[0-9]*.md 2>/dev/null); do
+    # Newest first: prepend each log, since the glob expands in ascending name (date) order.
+    local logs=()
+    for f in "$LOGS"/[0-9]*.md; do
+      [ -e "$f" ] && logs=("$f" "${logs[@]}")
+    done
+    for f in "${logs[@]}"; do
       echo "| $(field "$f" status) | [$(field "$f" id)]($(basename "$f")) | $(field "$f" repos | tr -d '[]') | $(field "$f" title) |"
     done
   } > "$LOGS/INDEX.md"
@@ -326,7 +331,7 @@ cmd_status() {
   for d in "$TREES"/*/; do
     [ -f "${d}CLAUDE.md" ] || continue       # same definition of "open" as find_task
     found=1
-    echo "$(basename "$d")"
+    basename "$d"
     for wt in "$d"*/; do
       [ -e "$wt.git" ] || continue
       printf '  %-28s %-30s %s changed, %s unpushed\n' "$(basename "$wt")" "$(git -C "$wt" branch --show-current)" \
@@ -399,7 +404,7 @@ cmd_close() {
 
   # Remove only what ai-task generated; rmdir then fails safe on anything else left in the directory.
   rm -rf "$dir/.claude" "$dir/CLAUDE.md" "$dir/GEMINI.md"
-  rmdir "$dir" 2>/dev/null || note "left in place (not created by ai-task): $(ls -A "$dir" | xargs)"
+  rmdir "$dir" 2>/dev/null || note "left in place (not created by ai-task): $(find "$dir" -mindepth 1 -maxdepth 1 -exec basename {} \; | tr '\n' ' ')"
 
   # The slug is the id without its YYYY-MM-DD- prefix. Archiving frees the name for a later task.
   local brief="$INSTR/${id:11}.md"
@@ -407,7 +412,7 @@ cmd_close() {
     mv "$brief" "$ARCHIVE/$id.md"
     set_field "$log" instructions ".ai/instructions/archive/$id.md"
   fi
-  set_field "$log" status done
+  set_field "$log" status "done"
   set_field "$log" closed "$(now)"
   write_index
   ai_commit "close: $id"
