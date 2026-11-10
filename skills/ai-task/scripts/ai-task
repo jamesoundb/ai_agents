@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+# ai-task: one-command task workspaces for a "clone once" directory of repositories.
+#
+# A workspace is the nearest parent directory containing .ai/ai_work_logs (or $AI_WORKSPACE), so one
+# installed copy of this script serves a workspace at any path:
+#
+#   <root>/repo_a, repo_b ...               clones on the default branch; only ever fast-forwarded
+#   <root>/.tasks/<id>/<repo>               disposable: one git worktree per repo on feature/<slug>
+#   <root>/.ai/instructions/<slug>.md       the problem definition, written before the session
+#   <root>/.ai/instructions/reference/<x>.md  lasting notes for a repository or topic
+#   <root>/.ai/instructions/archive/<id>.md   problem definitions of closed tasks
+#   <root>/.ai/ai_work_logs/<id>.md         one worklog per problem (front matter = tracking data)
+#
+# Tasks stay outside .ai on purpose: .ai is its own git repository, and a task directory inside a
+# checkout would make tools (code-graph autobuild) treat all of .ai as the project.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="" AI="" LOGS="" INSTR="" REF="" ARCHIVE="" TREES=""
+
+die()  { echo "ai-task: $*" >&2; exit 1; }
+note() { echo "ai-task: $*"; }
+now()  { date '+%Y-%m-%d %H:%M %Z'; }
+
+usage() {
+  cat <<'EOF'
+ai-task init                       make the current directory a workspace (.ai/ is its own git repository);
+                                   rerun to refresh .ai/bin/ai-task after updating this skill
+ai-task clone <url|owner/name>...  clone into the workspace once, create its reference file
+ai-task sync [repo...]             fetch all; fast-forward clones that are clean and on the default branch
+ai-task start <slug> [repo...] [--title "text"]
+                                   use .ai/instructions/<slug>.md (a stub if absent), sync the repos,
+                                   create worktrees on feature/<slug> and the worklog;
+                                   repos are optional; rerun on an open task to add repos
+ai-task note <slug|id> <text>      add a worklog entry stamped with the real time
+ai-task status                     open tasks with live counts, and instructions not started yet
+ai-task list [repo]                every task, newest first, optionally only those touching a repo
+ai-task close <slug|id> [--force]  remove worktrees, archive the instructions, mark the log done;
+                                   refuses to lose work
+
+Workspace: the nearest parent directory with .ai/, or $AI_WORKSPACE.
+EOF
+}
+
+# ---- workspace discovery --------------------------------------------------------------------------
+
+set_paths() {
+  ROOT="$1"; AI="$ROOT/.ai"; LOGS="$AI/ai_work_logs"; INSTR="$AI/instructions"
+  REF="$INSTR/reference"; ARCHIVE="$INSTR/archive"; TREES="$ROOT/.tasks"
+}
+
+discover_root() {  # prints the workspace root, or nothing when there is none
+  local d
+  if [ -n "${AI_WORKSPACE:-}" ]; then
+    [ -d "$AI_WORKSPACE/.ai/ai_work_logs" ] || die "AI_WORKSPACE=$AI_WORKSPACE is not a workspace (run ai-task init there)"
+    (cd "$AI_WORKSPACE" && pwd -P)
+    return 0
+  fi
+  d="$(pwd -P)"
+  while :; do
+    # ai_work_logs, not just .ai: other tools also create directories named .ai
+    [ -d "$d/.ai/ai_work_logs" ] && { echo "$d"; return 0; }
+    [ "$d" = "/" ] && return 0
+    d="$(dirname "$d")"
+  done
+}
+
+use_workspace() {
+  local r; r="$(discover_root)"
+  [ -n "$r" ] || die "not inside a workspace (no parent directory has .ai/); run 'ai-task init' in your repositories directory"
+  set_paths "$r"
+}
+
+# ---- helpers --------------------------------------------------------------------------------------
+
+default_branch() {  # default_branch <checkout>: origin's default branch name
+  local ref
+  ref="$(git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [ -z "$ref" ]; then
+    git -C "$1" remote set-head origin --auto >/dev/null 2>&1 || true
+    ref="$(git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  fi
+  [ -n "$ref" ] || die "cannot determine the default branch of $1"
+  echo "${ref#origin/}"
+}
+
+all_repos() {  # the clones directly under the root (hidden directories are never repos here)
+  local d
+  for d in "$ROOT"/*/; do [ -e "$d.git" ] && basename "$d"; done
+  return 0
+}
+
+need_repo() { [ -e "$ROOT/$1/.git" ] || die "no clone named '$1' in $ROOT (ai-task clone it first)"; }
+
+copy_identity() {  # Gemini's sandbox replaces HOME, so a commit there needs the identity in the clone
+  local k v
+  for k in user.name user.email; do
+    v="$(git -C "$ROOT/$1" config --global "$k" 2>/dev/null || true)"
+    [ -z "$v" ] || [ -n "$(git -C "$ROOT/$1" config --local "$k" 2>/dev/null || true)" ] || git -C "$ROOT/$1" config --local "$k" "$v"
+  done
+}
+
+ensure_reference() {  # one lasting reference per repo, seeded from the repo's own doc when it has one
+  local f="$REF/$1.md"
+  [ -e "$f" ] && return 0
+  if [ -s "$ROOT/$1/.github/instructions.md" ]; then
+    cp "$ROOT/$1/.github/instructions.md" "$f"
+  else
+    printf '# %s\n\nLiving reference: architecture, setup, gotchas. Not a worklog.\n' "$1" > "$f"
+  fi
+}
+
+sync_repo() {  # never touches a clone with local edits or on another branch: it only reports them
+  local name="$1" dir="$ROOT/$1" base cur
+  if ! git -C "$dir" fetch --prune --quiet origin; then
+    note "$name: fetch failed, using the last fetched state"; return 0
+  fi
+  base="$(default_branch "$dir")"
+  cur="$(git -C "$dir" branch --show-current)"
+  if [ "$cur" != "$base" ]; then note "$name: fetched; not pulled (on '$cur', expected '$base')"; return 0; fi
+  if [ -n "$(git -C "$dir" status --porcelain)" ]; then note "$name: fetched; not pulled (local edits)"; return 0; fi
+  if git -C "$dir" merge --ff-only --quiet "origin/$base" 2>/dev/null; then
+    note "$name: up to date with origin/$base at $(git -C "$dir" rev-parse --short HEAD)"
+  else
+    note "$name: fetched; not pulled ($base has diverged from origin/$base)"
+  fi
+}
+
+find_task() {  # find_task <slug|id>: the open task's id, or nothing
+  local d
+  for d in "$TREES/$1" "$TREES"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-"$1"; do
+    # Open = has its generated context; a closed task's directory may survive holding stray files.
+    [ -f "$d/CLAUDE.md" ] && { basename "$d"; return 0; }
+  done
+  return 0
+}
+
+field() { sed -n "s/^$2: *//p" "$1" | head -1; }           # front-matter value
+set_field() { sed -i "0,/^$2:.*/s||$2: $3|" "$1"; }        # replace the first occurrence only
+
+write_context() {  # generated per-task context and tool permissions; safe to regenerate
+  local dir="$1" id="$2" log="$LOGS/$2.md" branch r repos
+  branch="$(field "$log" branch)"
+  repos="$(field "$log" repos | tr -d '[],')"
+  {
+    echo "# Task $id: $(field "$log" title)"
+    echo
+    echo "Generated by ai-task."
+    echo
+    echo "- Problem definition (read this before doing anything else): $ROOT/$(field "$log" instructions)"
+    echo "- Worklog: $log"
+    echo "- Add one entry per milestone: $AI/bin/ai-task note ${id:11} \"what was found, decided, the result\""
+    if [ -n "$repos" ]; then
+      echo "- Branch in every checkout: $branch. Make all changes in the checkouts below, never in the clones in $ROOT."
+      echo "- Checkouts and their reference docs (correct them when wrong or missing):"
+      for r in $repos; do echo "  - $dir/$r -> $REF/$r.md"; done
+    else
+      echo "- This task has no repositories. Rerun 'ai-task start <slug> <repo>' if one becomes necessary."
+    fi
+  } > "$dir/CLAUDE.md"
+  ln -sfn CLAUDE.md "$dir/GEMINI.md"     # the same task context for both tools
+  # The worklog lives outside the session directory, so Claude must be told it may write there.
+  # Antigravity has no equivalent project setting; it is launched with --add-dir (see cmd_start).
+  mkdir -p "$dir/.claude"
+  printf '{ "permissions": { "additionalDirectories": ["%s"] } }\n' "$AI" > "$dir/.claude/settings.local.json"
+}
+
+write_index() {  # INDEX.md is derived from the front matter, so it can never disagree with the logs
+  local f
+  {
+    echo "# Work log index"
+    echo
+    echo "Generated by ai-task; do not edit."
+    echo
+    echo "| Status | ID | Repos | Title |"
+    echo "|---|---|---|---|"
+    for f in $(ls -r "$LOGS"/[0-9]*.md 2>/dev/null); do
+      echo "| $(field "$f" status) | [$(field "$f" id)]($(basename "$f")) | $(field "$f" repos | tr -d '[]') | $(field "$f" title) |"
+    done
+  } > "$LOGS/INDEX.md"
+}
+
+ai_commit() {  # record the tracking state; a failure here must never fail the task operation
+  local id=()
+  # Sandboxes often replace HOME, which loses the user's git identity; tracking must still work.
+  [ -n "$(git -C "$AI" config user.email 2>/dev/null || true)" ] || id=(-c user.name=ai-task -c user.email=ai-task@localhost)
+  git -C "$AI" add -A >/dev/null 2>&1 || true
+  git -C "$AI" "${id[@]}" commit --quiet -m "$1" >/dev/null 2>&1 || true
+}
+
+# ---- commands -------------------------------------------------------------------------------------
+
+cmd_init() {
+  local here parent
+  here="$(pwd -P)"
+  parent="$(AI_WORKSPACE='' discover_root)"
+  [ -z "$parent" ] || [ "$parent" = "$here" ] || die "already inside the workspace $parent"
+  # A workspace holds checkouts; it must not be one, or .ai would land inside that repository.
+  ! git -C "$here" rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "$here is inside a git checkout; run init in the directory that holds your clones"
+  set_paths "$here"
+  mkdir -p "$LOGS" "$REF" "$ARCHIVE" "$TREES"
+  [ -e "$AI/.git" ] || git init --quiet -b main "$AI"
+  # A copy inside the workspace: sandboxes can reach only the session directory, not the installed
+  # skill, and it gives every tool the same literal path to grant.
+  mkdir -p "$AI/bin"
+  [ "$SELF" -ef "$AI/bin/ai-task" ] || cp "$SELF" "$AI/bin/ai-task"
+  chmod +x "$AI/bin/ai-task"
+  local r; for r in $(all_repos); do copy_identity "$r"; done
+  write_index
+  ai_commit "init"
+  note "workspace ready at $ROOT"
+}
+
+cmd_clone() {
+  use_workspace
+  [ $# -ge 1 ] || die "clone needs at least one repository"
+  local spec name
+  for spec in "$@"; do
+    name="$(basename "$spec" .git)"
+    if [ -e "$ROOT/$name/.git" ]; then note "$name: already cloned"; continue; fi
+    case "$spec" in
+      *://*|git@*) git clone --quiet "$spec" "$ROOT/$name" ;;
+      *)           git clone --quiet "https://github.com/$spec.git" "$ROOT/$name" ;;
+    esac
+    ensure_reference "$name"
+    copy_identity "$name"
+    note "$name: cloned"
+  done
+  ai_commit "clone: $*"
+}
+
+cmd_sync() {
+  use_workspace
+  local r repos=("$@")
+  [ $# -gt 0 ] || mapfile -t repos < <(all_repos)
+  for r in "${repos[@]}"; do need_repo "$r"; sync_repo "$r"; done
+}
+
+cmd_start() {
+  use_workspace
+  local title="" args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --title) [ $# -ge 2 ] || die "--title needs a value"; title="$2"; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  [ "${#args[@]}" -ge 1 ] || die "start needs a slug"
+  local slug="${args[0]}" repos=("${args[@]:1}") r
+  [[ "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "slug must be lowercase letters, digits and hyphens"
+  for r in "${repos[@]}"; do need_repo "$r"; done
+
+  # An open task with this slug is reused, so "start" also adds repos to a running task.
+  local id; id="$(find_task "$slug")"
+  [ -n "$id" ] || id="$(date +%F)-$slug"
+  local dir="$TREES/$id" log="$LOGS/$id.md" branch="feature/$slug" brief="$INSTR/$slug.md"
+  if [ -e "$log" ] && [ "$(field "$log" status)" != open ]; then
+    die "task $id is already closed; use a different slug"
+  fi
+
+  # The file the user wrote first is the source of the task; a stub keeps "every task has one" true.
+  [ -e "$brief" ] || printf '# %s\n\nProblem definition: what is wrong or wanted, scope, constraints.\n' "${title:-$slug}" > "$brief"
+  [ -n "$title" ] || title="$(sed -n 's/^# \+//p' "$brief" | head -1)"
+  title="${title:-$slug}"; title="${title//|//}"       # a pipe would break the index table
+
+  mkdir -p "$dir"
+  if [ ! -e "$log" ]; then
+    cat > "$log" <<EOF
+---
+id: $id
+title: $title
+status: open
+created: $(now)
+closed:
+instructions: .ai/instructions/$slug.md
+branch:
+repos: []
+---
+# $title
+
+EOF
+  fi
+
+  for r in "${repos[@]}"; do
+    if [ -e "$dir/$r/.git" ]; then note "$r: already in this task"; continue; fi
+    sync_repo "$r"
+    local base; base="$(default_branch "$ROOT/$r")"
+    # --no-track: a plain "git push -u" must create feature/<slug>, never target the default branch
+    if git -C "$ROOT/$r" show-ref --verify --quiet "refs/heads/$branch"; then
+      git -C "$ROOT/$r" worktree add --quiet "$dir/$r" "$branch"
+    else
+      git -C "$ROOT/$r" worktree add --quiet --no-track -b "$branch" "$dir/$r" "origin/$base"
+    fi
+    local current; current="$(field "$log" repos | tr -d '[],')"
+    set_field "$log" repos "[$(echo "$current $r" | xargs | sed 's/ /, /g')]"
+    set_field "$log" branch "$branch"
+    ensure_reference "$r"
+    copy_identity "$r"
+  done
+
+  write_context "$dir" "$id"
+  write_index
+  ai_commit "start: $id ($(field "$log" repos))"
+  note "task $id ready"
+  echo "  instructions:      $brief"
+  echo "  checkouts:         $dir"
+  echo "  worklog:           $log"
+  echo "  run sessions from: $ROOT (sandboxes can only reach the session directory)"
+}
+
+cmd_note() {
+  use_workspace
+  [ $# -ge 2 ] || die "note needs a slug and the text"
+  local key="$1"; shift
+  local id; id="$(find_task "$key")"
+  [ -n "$id" ] || die "no open task '$key'"
+  # The script stamps the entry: a session without clock access was seen inventing timestamps.
+  printf '## %s\n\n%s\n\n' "$(now)" "$*" >> "$LOGS/$id.md"
+  ai_commit "note: $id"
+  note "added to $id"
+}
+
+cmd_status() {
+  use_workspace
+  local d found=0 wt f slug waiting=""
+  for d in "$TREES"/*/; do
+    [ -f "${d}CLAUDE.md" ] || continue       # same definition of "open" as find_task
+    found=1
+    echo "$(basename "$d")"
+    for wt in "$d"*/; do
+      [ -e "$wt.git" ] || continue
+      printf '  %-28s %-30s %s changed, %s unpushed\n' "$(basename "$wt")" "$(git -C "$wt" branch --show-current)" \
+        "$(git -C "$wt" status --porcelain | wc -l)" "$(git -C "$wt" log --oneline HEAD --not --remotes | wc -l)"
+    done
+  done
+  [ "$found" = 1 ] || note "no open tasks"
+  # Top-level instructions without an open task are drafts: close moves finished ones to archive/.
+  for f in "$INSTR"/*.md; do
+    [ -e "$f" ] || continue
+    slug="$(basename "$f" .md)"
+    [ -n "$(find_task "$slug")" ] || waiting+="$slug "
+  done
+  [ -z "$waiting" ] || echo "not started: $waiting"
+}
+
+cmd_list() {
+  use_workspace
+  # Whole-word match on the repos column so that "gitops" does not match "k8s-operations-gitops".
+  if [ $# -ge 1 ]; then
+    awk -F'|' -v r="$1" 'NR<=6 {next} { n=split($4,a,/[ ,]+/); for(i=1;i<=n;i++) if(a[i]==r){print; break} }' "$LOGS/INDEX.md"
+  else
+    sed -n '5,$p' "$LOGS/INDEX.md"
+  fi
+}
+
+cmd_close() {
+  use_workspace
+  local force=0 args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in --force) force=1; shift ;; *) args+=("$1"); shift ;; esac
+  done
+  [ "${#args[@]}" = 1 ] || die "close needs one slug or id"
+  local id; id="$(find_task "${args[0]}")"
+  [ -n "$id" ] || die "no open task '${args[0]}'"
+  local dir="$TREES/$id" log="$LOGS/$id.md" wt r problems="" inside=0
+  # Closing can delete the directory a session runs in; work from the root so this script still can.
+  case "$(pwd -P)/" in "$dir"/*) inside=1 ;; esac
+  cd "$ROOT"
+
+  # Check every worktree before removing any, so that a refusal leaves the task fully intact.
+  for wt in "$dir"/*/; do
+    [ -e "$wt.git" ] || continue
+    r="$(basename "$wt")"
+    [ -z "$(git -C "$wt" status --porcelain)" ] || problems+="  $r: uncommitted changes"$'\n'
+    [ "$(git -C "$wt" log --oneline HEAD --not --remotes | wc -l)" = 0 ] || problems+="  $r: commits not on any remote"$'\n'
+  done
+  # A rule alone did not stop agents closing with an empty log, and the log is the point of the task.
+  # Anything after the front matter other than the title counts as an entry.
+  awk 'f>=2 && NF && !/^# / {found=1} /^---$/ {f++} END {exit !found}' "$log" \
+    || problems+="  worklog: no entries yet; add the result first: $log"$'\n'
+  if [ -n "$problems" ] && [ "$force" = 0 ]; then
+    printf 'ai-task: not closing %s:\n%s' "$id" "$problems" >&2
+    exit 1
+  fi
+
+  for wt in "$dir"/*/; do
+    [ -e "$wt.git" ] || continue
+    r="$(basename "$wt")"
+    local branch unpushed
+    branch="$(git -C "$wt" branch --show-current)"
+    unpushed="$(git -C "$wt" log --oneline HEAD --not --remotes | wc -l)"
+    git -C "$ROOT/$r" worktree remove --force "${wt%/}"
+    if [ "$unpushed" = 0 ]; then
+      git -C "$ROOT/$r" branch --quiet -D "$branch"      # every commit is on a remote: nothing to lose
+    else
+      note "$r: kept local branch $branch ($unpushed unpushed commits)"
+    fi
+  done
+
+  # Remove only what ai-task generated; rmdir then fails safe on anything else left in the directory.
+  rm -rf "$dir/.claude" "$dir/CLAUDE.md" "$dir/GEMINI.md"
+  rmdir "$dir" 2>/dev/null || note "left in place (not created by ai-task): $(ls -A "$dir" | xargs)"
+
+  # The slug is the id without its YYYY-MM-DD- prefix. Archiving frees the name for a later task.
+  local brief="$INSTR/${id:11}.md"
+  if [ -f "$brief" ]; then
+    mv "$brief" "$ARCHIVE/$id.md"
+    set_field "$log" instructions ".ai/instructions/archive/$id.md"
+  fi
+  set_field "$log" status done
+  set_field "$log" closed "$(now)"
+  write_index
+  ai_commit "close: $id"
+  note "task $id closed"
+  [ "$inside" = 0 ] || note "this session's directory no longer exists; continue from $ROOT"
+}
+
+case "${1:-}" in
+  init)   shift; cmd_init "$@" ;;
+  clone)  shift; cmd_clone "$@" ;;
+  sync)   shift; cmd_sync "$@" ;;
+  start)  shift; cmd_start "$@" ;;
+  note)   shift; cmd_note "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  list)   shift; cmd_list "$@" ;;
+  close)  shift; cmd_close "$@" ;;
+  *) usage; [ $# -eq 0 ] || exit 1 ;;
+esac

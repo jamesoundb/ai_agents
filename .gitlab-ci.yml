@@ -92,6 +92,7 @@ engine-tests:
   stage: test
   extends: .python-deps
   script:
+    - skills/ai-task/tests/run_tests.sh   # ai-task: workspace discovery, task lifecycle, refusals
     - skills/code-graph/tests/run_tests.sh   # code-graph regression suite (9-language fixture)
     - python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case (minikube fixture)
     - python3 skills/gke-cost-discovery/tests/test_analyze.py   # gke-cost-discovery: reserved capacity; non-collect dirs refused
