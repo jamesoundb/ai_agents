@@ -76,8 +76,12 @@ ok "a stub problem file is created" "test -s .ai/instructions/solo.md"
 ok "a repo can be added" "$A start solo demo"
 ok "the branch is recorded once a repo is added" "grep -q '^branch: feature/solo' .ai/ai_work_logs/$D-solo.md"
 echo x > ".tasks/$D-solo/demo/g"
-ok "--force closes" "$A close solo --force"
+echo x > ".tasks/$D-solo/stray.txt"        # not created by ai-task: kept, and named in the output
+ok "--force closes and names a stray file" "$A close solo --force 2>&1 | grep -q 'left in place.*stray.txt'"
+ok "the stray file is kept" "test -f .tasks/$D-solo/stray.txt"
 ok "list finds tasks by repo" "$A list demo | grep -q $D-solo"
+# Same date, so name order decides: solo sorts after first and must be listed above it.
+ok "the index lists newest first" "[ \"\$(grep -oE '\\[$D-(first|solo)\\]' .ai/ai_work_logs/INDEX.md | tr -d '\\n')\" = '[$D-solo][$D-first]' ]"
 ok "the tracking repository is clean" "[ -z \"\$(git -C .ai status --short)\" ]"
 
 echo "$pass passed, $fail failed"

@@ -71,7 +71,7 @@ lint:
   script:
     # Blocking: only things that are broken (Python syntax errors and undefined names, shell errors).
     - ruff check --isolated --select E9,F63,F7,F82 --exclude skills/code-graph/tests/fixture .
-    - shellcheck --severity=error $(git ls-files '*.sh')
+    - shellcheck --severity=error $(tools/ci/shell_scripts.sh)
 
 lint-advisory:
   stage: check
@@ -83,7 +83,7 @@ lint-advisory:
     # permanently yellow (which trains everyone to ignore it): E501 long lines, E702 compact
     # semicolon lines (argparse tables), E741 short names like `l` for label/line.
     - ruff check --isolated --select E,F,W,B --ignore E501,E702,E741 --exclude skills/code-graph/tests/fixture --statistics . || rc=1
-    - shellcheck $(git ls-files '*.sh') || rc=1
+    - shellcheck $(tools/ci/shell_scripts.sh) || rc=1
     - exit $rc
 
 # ---------------------------------------------------------------- test
