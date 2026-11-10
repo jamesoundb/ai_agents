@@ -34,7 +34,7 @@ rmdir "$W/sub"
 no "init inside a checkout is refused" "cd '$W/demo' && '$TOOL' init"
 ok "AI_WORKSPACE selects the workspace" "cd '$T/outside' && AI_WORKSPACE='$W' '$TOOL' status"
 
-cd "$W"
+cd "$W" || exit 1
 A=.ai/bin/ai-task
 printf '# My problem\n\nDetails.\n' > .ai/instructions/first.md
 sum="$(sha1sum < .ai/instructions/first.md)"
