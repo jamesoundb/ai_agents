@@ -14,11 +14,14 @@ stages: [check, test, release]
 
 variables:
   # Python image from Google's Docker Hub mirror instead of Docker Hub (same image digest; no Docker
-  # Hub rate limits). The mirror is a cache, not a scanner: Google does not scan or patch it. Point
-  # this at a company Artifact Registry remote repository with scanning if you have one.
-  # Every image here is pinned by digest, so a re-pushed tag cannot change what CI runs. To update
-  # a pin: docker buildx imagetools inspect <image>:<tag>, then copy the top-level Digest line.
-  PYTHON_IMAGE: mirror.gcr.io/library/python:3.12@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d2691
+  # Hub rate limits). The mirror is a cache, not a scanner: Google does not scan or patch it; the
+  # image-scan job does. Point this at a company Artifact Registry remote repository if you have one.
+  # slim-bookworm (Debian 12, security support to 2028): no fixable HIGH/CRITICAL vulnerabilities,
+  # where the full python:3.12 image had 36, and 1/9 of the download. It has no git; every job
+  # installs it from Debian (see default.before_script).
+  # Pinned by digest, so a re-pushed tag cannot change what CI runs. To update a pin:
+  # docker buildx imagetools inspect <image>:<tag>, then copy the top-level Digest line.
+  PYTHON_IMAGE: mirror.gcr.io/library/python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_ROOT_USER_ACTION: ignore
@@ -26,8 +29,12 @@ variables:
   RELEASE_TAG_RE: '/^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/'
 
 default:
-  image: $PYTHON_IMAGE         # Debian-based: has git and bash; skills need Python 3.10+
+  image: $PYTHON_IMAGE         # Debian-based: has bash; skills need Python 3.10+
   interruptible: true          # a newer push to the same branch cancels the older pipeline
+  # git from Debian's security-patched archive (the slim image has none). Jobs that set their own
+  # before_script start it with *git-install.
+  before_script:
+    - &git-install apt-get update -qq && apt-get install -y -qq --no-install-recommends git >/dev/null
 
 # tree-sitter for code-graph/terraform-review/k8s-manifest-review, installed into the image's python3,
 # which the skills' run.sh picks up. PyYAML is deliberately NOT pre-installed: k8s-rightsize's run.sh
@@ -39,6 +46,7 @@ default:
       files: [skills/code-graph/scripts/requirements.txt, skills/k8s-rightsize/scripts/requirements.txt]
     paths: [.cache/pip]
   before_script:
+    - *git-install
     - pip install --quiet -r skills/code-graph/scripts/requirements.txt
 
 # Pinned lint tools, so a new ruff/shellcheck release cannot turn a green pipeline red by itself.
@@ -47,6 +55,7 @@ default:
     key: pip-lint
     paths: [.cache/pip]
   before_script:
+    - *git-install
     - pip install --quiet ruff==0.16.8 shellcheck-py==0.11.0.1
 
 # ---------------------------------------------------------------- check
@@ -60,9 +69,11 @@ repo-checks:
     # evals/validate.py parses YAML frontmatter (block scalars, lists, nested maps), so it needs a
     # real parser rather than a hand-rolled one. Pinned like the lint tools, so a PyYAML release
     # cannot turn this job red on its own. check_repo.py itself stays stdlib-only.
+    - *git-install
     - pip install --quiet pyyaml==6.0.2
   script:
     - python3 tools/ci/check_repo.py      # frontmatter, agent->skill references, AGENTS.md in sync
+    - python3 tools/ci/test_create_release.py   # the release job's API call, against a local stand-in
     # Structural check of the behavioral eval suite. Does NOT run the evals (that needs the
     # claude CLI and spends API credits) -- it catches malformed graders, uncompilable regexes
     # and missing fixtures before anyone pays for a run.
@@ -89,23 +100,24 @@ lint-advisory:
     - shellcheck $(tools/ci/shell_scripts.sh) || rc=1
     - exit $rc
 
-# Trivy scan of every digest-pinned image in this file, Trivy's own included: fixable HIGH and
-# CRITICAL vulnerabilities, i.e. ones a newer pin removes. Advisory while the current pins still
-# have findings; drop allow_failure once they are clean. Pinned by digest, the same on Docker Hub,
-# GHCR, ECR Public and mirror.gcr.io (Trivy's releases were compromised in March 2026: 0.69.4-0.69.6).
+# Blocking Trivy scan (tools/ci/scan_images.sh): fixable HIGH and CRITICAL vulnerabilities in every
+# digest-pinned image and in what the jobs install at start-up (git, the pip packages below).
+# Set up like the other jobs first, so its own filesystem is what they run on.
 image-scan:
   stage: check
-  image:
-    name: mirror.gcr.io/aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
-    entrypoint: [""]
-  allow_failure: true
   variables:
     TRIVY_CACHE_DIR: "$CI_PROJECT_DIR/.trivycache"
     TRIVY_NO_PROGRESS: "true"
   cache:
-    key: trivy-db
-    paths: [.trivycache]
-    when: always                          # keep the vulnerability database even when findings fail the job
+    - key: trivy-db
+      paths: [.trivycache]
+      when: always                        # keep the vulnerability database even when findings fail the job
+    - key: pip-image-scan
+      paths: [.cache/pip]
+  before_script:
+    - *git-install
+    # Everything the other jobs pip-install, at the versions they install.
+    - pip install --quiet -r skills/code-graph/scripts/requirements.txt -r skills/k8s-rightsize/scripts/requirements.txt ruff==0.16.8 shellcheck-py==0.11.0.1 pyyaml==6.0.2
   script:
     - sh tools/ci/scan_images.sh
 
@@ -158,13 +170,10 @@ release-notes:
 
 release:
   stage: release
-  # A fixed glab release, pinned by digest (see PYTHON_IMAGE above), instead of :latest.
-  image: registry.gitlab.com/gitlab-org/cli:v1.126.0@sha256:9ec98acf58abe1c9982fd1a5f544bd9a1a4ae5420c83c75b39eb8b08c93f621a
   rules:
     - if: $CI_COMMIT_TAG =~ $RELEASE_TAG_RE
   # Only release a tag whose checks all passed; release-notes also supplies the notes file.
-  needs: [release-notes, repo-checks, lint, engine-tests, install-check, smoke]
-  variables:
-    GLAB_ENABLE_CI_AUTOLOGIN: "true"         # glab authenticates with CI_JOB_TOKEN
+  needs: [release-notes, repo-checks, lint, image-scan, engine-tests, install-check, smoke]
   script:
-    - glab release create "$CI_COMMIT_TAG" --name "$CI_COMMIT_TAG" --notes-file release-notes.md --repo "$CI_PROJECT_PATH"
+    # Releases API with CI_JOB_TOKEN, in the scanned default image (no separate glab image).
+    - python3 tools/ci/create_release.py release-notes.md
