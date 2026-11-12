@@ -165,6 +165,10 @@ git pull
 
 Then start a new session: restart the CLI, or reload the IDE window.
 
+A user-scope install also links the `ai-task` command into `~/.local/bin` (see the
+[ai-task README](skills/ai-task/README.md#the-ai-task-command)); `--update` adds it to older
+installs. If `~/.local/bin` is not on your PATH, the installer prints the line to add.
+
 ### Which clone did I install from?
 
 Run `./install.sh --status` in any clone of this repo. It writes nothing; it lists every install
@@ -426,7 +430,7 @@ python3 tools/ci/check_repo.py          # frontmatter, agent->skill references, 
 python3 evals/validate.py               # eval cases are structurally valid (the pipeline runs this too)
 tools/ci/install_check.sh               # project + user scope installs into temp dirs, then uninstall
 skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
-skills/ai-task/tests/run_tests.sh       # ai-task: workspace, task lifecycle, refusals (local bare remote)
+skills/ai-task/tests/run_tests.sh       # ai-task: workspace, task lifecycle, refusals (local bare remote); CI also runs it under bash 3.2 (macOS)
 python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case
 python3 tools/ci/test_create_release.py # the release job's API call, against a local stand-in
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data

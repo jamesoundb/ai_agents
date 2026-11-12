@@ -42,14 +42,26 @@ workspace with a problem file and a worklog, and no worktrees.
    Where it lands: `~/.claude/skills/ai-task` (Claude Code), `~/.gemini/config/skills/ai-task`
    (Antigravity), `~/.agents/skills/ai-task` (Gemini CLI, Codex).
 
-2. **Give the agent the workflow rules.** The agent follows this workflow because its global
+2. **Put `ai-task` on your PATH.** The install above also links `~/.local/bin/ai-task` to the
+   script in your clone, so you can type `ai-task init` in any folder. If `~/.local/bin` is not on
+   your PATH yet, the installer says so and prints the line to add; it never edits your shell
+   files itself. Add it to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), then open a new terminal:
+
+   ```bash
+   export PATH="$HOME/.local/bin:$PATH"
+   ```
+
+   Many Linux distributions already put `~/.local/bin` on PATH at login once the folder exists.
+   Check with `command -v ai-task`. Details below, under "The `ai-task` command".
+
+3. **Give the agent the workflow rules.** The agent follows this workflow because its global
    instructions tell it to. The [global_ai_instructions](https://gitlab.com/jamesoundb/global_ai_instructions)
    repository has a ready-made `CLAUDE.md` and `GEMINI.md` with a "Workspace workflow" section, and
    an `install.sh` that links them into `~/.claude/` and `~/.gemini/`. Read them before installing:
    they replace your current global files (which are kept as `.bak-<timestamp>`). To keep your own,
    copy just the "Workspace workflow" section into them.
 
-3. **Optional, Claude Code: stop the permission prompts.** Add both forms to `permissions.allow` in
+4. **Optional, Claude Code: stop the permission prompts.** Add both forms to `permissions.allow` in
    `~/.claude/settings.json`; agents call the script by its relative and its absolute path:
 
    ```json
@@ -65,7 +77,8 @@ they are:
 
 ```bash
 cd ~/dev
-~/.claude/skills/ai-task/scripts/ai-task init      # or the path for your tool, above
+ai-task init
+# without the PATH entry: ~/.claude/skills/ai-task/scripts/ai-task init (or your tool's path, above)
 ```
 
 `init` refuses inside another workspace and inside a git checkout. Do not run it in your home
@@ -73,8 +86,8 @@ directory: every folder below would belong to that workspace. Add repositories w
 accepts a full URL or, for GitHub, `owner/name`:
 
 ```bash
-.ai/bin/ai-task clone https://gitlab.example.com/team/service.git
-.ai/bin/ai-task clone owner/name                    # short form: github.com only
+ai-task clone https://gitlab.example.com/team/service.git
+ai-task clone owner/name                    # short form: github.com only
 ```
 
 ## Day to day
@@ -101,7 +114,9 @@ Everything the agent does is a plain command, so you can run any of them yoursel
 | `ai-task list [repo]` | Every task, newest first; optionally only those touching a repository. |
 | `ai-task close <slug> [--force]` | Remove the worktrees, archive the problem file, mark the worklog done. |
 
-From the workspace root, the command is `.ai/bin/ai-task`.
+You type `ai-task` (the command on your PATH). Agents run `.ai/bin/ai-task`, the workspace's own
+copy, from the workspace root: a sandbox can reach only that folder, and a literal path is easy to
+grant. Both behave the same: the workspace is the nearest folder above you that has `.ai/`.
 
 `close` refuses while any worktree has uncommitted or unpushed work, or the worklog is empty, so
 nothing is lost by accident. `--force` overrides that; a branch with unpushed commits is still kept.
@@ -133,9 +148,42 @@ Gemini CLI's Docker sandbox mounts only the launch folder and replaces `HOME`, s
 the workspace, and `init`, `clone` and `start` copy your git name and email into each clone so that
 commits work.
 
+## The `ai-task` command
+
+`install.sh` manages one file outside the tools' own folders: the link `~/.local/bin/ai-task`. The
+rules it follows:
+
+- **When.** A user-scope install (`--scope user`) of any tool that includes the `ai-task` skill
+  creates the link, and `--update` adds it to an install made before the link existed. A project
+  install never writes into your home directory. A `--copy` install gets no link, since the link
+  would point into the clone that `--copy` is meant to avoid.
+- **What it points at.** The script in your clone (`skills/ai-task/scripts/ai-task`), so a
+  `git pull` updates the command too. `install.sh --status` shows where it points.
+- **Your files are safe.** If `~/.local/bin/ai-task` already exists and is not a link into this
+  clone, the installer leaves it alone and says so; `--force` replaces it. Nothing else in
+  `~/.local/bin` is touched, and `~/.zshrc`, `~/.bashrc` and `~/.profile` are never edited.
+- **Removal.** `--uninstall` removes the link once no installed tool still uses the skill. For
+  example, uninstalling Claude Code while Antigravity still has it keeps the link. The
+  `~/.local/bin` folder itself is left in place.
+
+## Linux and macOS
+
+The script runs on both. On a Mac it uses the system's own bash 3.2 and BSD tools, so Homebrew
+`bash` or GNU `sed` are not needed. CI runs the tests on Linux and again under bash 3.2 without GNU
+tools. To check a machine yourself, run the tests from your clone (no network, nothing outside a
+temporary folder is touched):
+
+```bash
+~/ai_agents/skills/ai-task/tests/run_tests.sh
+```
+
+Changing the script: keep it to bash 3.2 and POSIX tools. That means no `mapfile`, no `sed -i`, no
+`readlink -f` and no `\+` in `sed`, and an array that can be empty is expanded as
+`${a[@]+"${a[@]}"}`. The tests reject the common slips.
+
 ## Updating
 
 ```bash
 cd ~/ai_agents && git pull && ./install.sh --update
-cd ~/dev && .ai/bin/ai-task init            # refresh the workspace's copy of the script
+cd ~/dev && ai-task init                    # refresh the workspace's copy of the script
 ```

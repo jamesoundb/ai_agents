@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tests for ai-task, run against a throwaway workspace with a local bare remote. No network.
+# Portable like the script itself (Linux, macOS): CI also runs it under bash 3.2 with BusyBox tools.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOL="$HERE/../scripts/ai-task"
@@ -24,6 +25,10 @@ W="$T/any-name"; mkdir -p "$W" "$T/outside"
 git clone -q "$T/demo.git" "$W/demo"       # a clone that predates the workspace
 git -C "$W/demo" remote set-head origin -a >/dev/null
 
+# macOS ships bash 3.2 and BSD sed: none of these GNU-only forms may come back (comments excepted).
+no "the script uses no GNU-only commands" "grep -v '^[[:space:]]*#' '$TOOL' | grep -E 'sed -i|readlink -f|mapfile|readarray|\\\\\\+'"
+no "every array expansion survives an empty array under bash 3.2" "grep -v '^[[:space:]]*#' '$TOOL' | grep -E '[^+]\"\\\$\\{[A-Za-z_]+\\[@\\]\\}\"'"
+
 no "commands outside a workspace fail" "cd '$T/outside' && '$TOOL' status"
 ok "init" "cd '$W' && '$TOOL' init"
 ok "init places the workspace copy" "test -x '$W/.ai/bin/ai-task'"
@@ -39,11 +44,11 @@ ok "AI_WORKSPACE selects the workspace" "cd '$T/outside' && AI_WORKSPACE='$W' '$
 cd "$W" || exit 1
 A=.ai/bin/ai-task
 printf '# My problem\n\nDetails.\n' > .ai/instructions/first.md
-sum="$(sha1sum < .ai/instructions/first.md)"
+sum="$(cksum < .ai/instructions/first.md)"
 ok "a draft is listed as not started" "$A status | grep -q 'not started: first'"
 ok "start with repo" "$A start first demo"
 L=".ai/ai_work_logs/$D-first.md"
-ok "the problem file is left unchanged" "[ '$sum' = \"\$(sha1sum < .ai/instructions/first.md)\" ]"
+ok "the problem file is left unchanged" "[ '$sum' = \"\$(cksum < .ai/instructions/first.md)\" ]"
 ok "the title comes from the problem file" "grep -q '^title: My problem' $L"
 ok "the worktree is on the feature branch" "[ \"\$(git -C .tasks/$D-first/demo branch --show-current)\" = feature/first ]"
 no "the new branch has no upstream" "git -C .tasks/$D-first/demo rev-parse --abbrev-ref '@{u}'"
@@ -52,6 +57,9 @@ ok "the reference file exists" "test -f .ai/instructions/reference/demo.md"
 no "a repo's .github/instructions.md is not copied" "grep -q OLD-LAYOUT-NOTES .ai/instructions/reference/demo.md"
 ok "the reference starts as the plain stub" "grep -q '^Living reference' .ai/instructions/reference/demo.md"
 ok "discovery works inside a worktree" "cd .tasks/$D-first/demo && '$TOOL' status"
+# BSD wc pads its counts ("       0"), which broke this line and the unpushed check in close.
+# The branch column is 30 wide plus one space: exactly 18 spaces after feature/first.
+ok "status counts are plain numbers" "$A status | grep -qE 'feature/first {18}0 changed, 0 unpushed'"
 
 no "an empty worklog blocks close" "$A close first"
 ok "note adds an entry" "$A note first 'found the cause'"
@@ -64,7 +72,9 @@ ok "a refused close does not archive" "test -f .ai/instructions/first.md"
 git -C ".tasks/$D-first/demo" add f; git -C ".tasks/$D-first/demo" commit -q -m work
 no "unpushed work blocks close" "$A close first"
 git -C ".tasks/$D-first/demo" push -q -u origin feature/first
+chmod 640 "$L"
 ok "pushed work closes, from inside the task" "cd .tasks/$D-first/demo && '$TOOL' close first"
+ok "rewriting the log's fields keeps its permissions" "ls -l $L | grep -q '^-rw-r-----'"
 ok "the problem file is archived" "test -f .ai/instructions/archive/$D-first.md"
 ok "the log points at the archive" "grep -q '^instructions: .ai/instructions/archive/' $L"
 ok "the log is marked done" "grep -q '^status: done' $L"
@@ -87,6 +97,13 @@ ok "list finds tasks by repo" "$A list demo | grep -q $D-solo"
 # Same date, so name order decides: solo sorts after first and must be listed above it.
 ok "the index lists newest first" "[ \"\$(grep -oE '\\[$D-(first|solo)\\]' .ai/ai_work_logs/INDEX.md | tr -d '\\n')\" = '[$D-solo][$D-first]' ]"
 ok "the tracking repository is clean" "[ -z \"\$(git -C .ai status --short)\" ]"
+ok "sync with no names visits every clone" "$A sync | grep -q '^ai-task: demo:'"
+
+# install.sh links the script into ~/.local/bin; init through that link must copy the script itself.
+mkdir -p "$T/bin" "$T/linked"
+ln -s "$TOOL" "$T/bin/ai-task"
+ok "init through a PATH link" "cd '$T/linked' && PATH='$T/bin:$PATH' ai-task init"
+ok "the workspace copy is the script, not a link" "test -f '$T/linked/.ai/bin/ai-task' && test ! -L '$T/linked/.ai/bin/ai-task' && cmp -s '$TOOL' '$T/linked/.ai/bin/ai-task'"
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
