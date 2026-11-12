@@ -15,7 +15,9 @@ no()  { if ( eval "$2" ) >/dev/null 2>&1; then fail=$((fail + 1)); echo "FAIL: $
 
 git init -q --bare -b main "$T/demo.git"
 git clone -q "$T/demo.git" "$T/seed" 2>/dev/null
-git -C "$T/seed" commit -q --allow-empty -m first
+# The repository carries an old-layout .github/instructions.md, which ai-task must not pick up.
+mkdir "$T/seed/.github"; echo 'OLD-LAYOUT-NOTES' > "$T/seed/.github/instructions.md"
+git -C "$T/seed" add .github; git -C "$T/seed" commit -q -m first
 git -C "$T/seed" push -q origin HEAD:main
 
 W="$T/any-name"; mkdir -p "$W" "$T/outside"
@@ -47,6 +49,8 @@ ok "the worktree is on the feature branch" "[ \"\$(git -C .tasks/$D-first/demo b
 no "the new branch has no upstream" "git -C .tasks/$D-first/demo rev-parse --abbrev-ref '@{u}'"
 ok "the clone stays on main" "[ \"\$(git -C demo branch --show-current)\" = main ]"
 ok "the reference file exists" "test -f .ai/instructions/reference/demo.md"
+no "a repo's .github/instructions.md is not copied" "grep -q OLD-LAYOUT-NOTES .ai/instructions/reference/demo.md"
+ok "the reference starts as the plain stub" "grep -q '^Living reference' .ai/instructions/reference/demo.md"
 ok "discovery works inside a worktree" "cd .tasks/$D-first/demo && '$TOOL' status"
 
 no "an empty worklog blocks close" "$A close first"

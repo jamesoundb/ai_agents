@@ -100,14 +100,10 @@ copy_identity() {  # Gemini's sandbox replaces HOME, so a commit there needs the
   done
 }
 
-ensure_reference() {  # one lasting reference per repo, seeded from the repo's own doc when it has one
+ensure_reference() {  # one lasting reference per repo, always started fresh in .ai/ (never from a repo's own files)
   local f="$REF/$1.md"
   [ -e "$f" ] && return 0
-  if [ -s "$ROOT/$1/.github/instructions.md" ]; then
-    cp "$ROOT/$1/.github/instructions.md" "$f"
-  else
-    printf '# %s\n\nLiving reference: architecture, setup, gotchas. Not a worklog.\n' "$1" > "$f"
-  fi
+  printf '# %s\n\nLiving reference: architecture, setup, gotchas. Not a worklog.\n' "$1" > "$f"
 }
 
 sync_repo() {  # never touches a clone with local edits or on another branch: it only reports them
