@@ -401,6 +401,51 @@ check "install names its update command"             grep -qxF "update later: cd
 case "$REPO" in "$HOME"/*) REPO_SHOWN="~${REPO#"$HOME"}" ;; *) REPO_SHOWN="$REPO" ;; esac
 check "project install names its update command"     grep -qxF "update later: cd $REPO_SHOWN && git pull && ./install.sh --update --target $P" "$WORK/sp3.log"
 
+echo "== the ai-task command (~/.local/bin/ai-task) =="
+AI_SRC="$REPO/skills/ai-task/scripts/ai-task"
+links_to_src() { [ -L "$1" ] && [ "$(readlink "$1")" = "$AI_SRC" ]; }
+runs_quietly() { "$@" > /dev/null; }
+# the full user install above (FAKE_HOME), run with a PATH that does not hold ~/.local/bin
+check "user install links the command"               links_to_src "$FAKE_HOME/.local/bin/ai-task"
+check "the command runs"                             runs_quietly "$FAKE_HOME/.local/bin/ai-task"
+check "a missing PATH entry is reported, not fixed"  grep -q 'is not on your PATH' "$WORK/user.log"
+check "no shell file was written"                    test ! -e "$FAKE_HOME/.zshrc" -a ! -e "$FAKE_HOME/.bashrc" -a ! -e "$FAKE_HOME/.profile"
+HOME="$FAKE_HOME" PATH="$FAKE_HOME/.local/bin:$PATH" run_install "$WORK/cmd-path.log" "$REPO/install.sh" --harness claude --scope user
+check "no PATH note when it is on PATH"              test -z "$(grep 'is not on your PATH' "$WORK/cmd-path.log")"
+HOME="$FAKE_HOME" run_install "$WORK/cmd-st.log" "$REPO/install.sh" --status
+check "status names the command"                     grep -qF "  ai-task command: ~/.local/bin/ai-task -> " "$WORK/cmd-st.log"
+# a project install never writes into HOME
+CP="$WORK/cmd-proj"; CH="$WORK/cmd-proj-home"; mkdir -p "$CP" "$CH"; git -C "$CP" init -q
+HOME="$CH" run_install "$WORK/cmd-p.log" "$REPO/install.sh" --harness all --target "$CP"
+check "project install: no command in HOME"          test ! -e "$CH/.local"
+# --copy installs exist to avoid links into the clone: no command for them
+CC="$WORK/cmd-copy"; mkdir -p "$CC"
+HOME="$CC" run_install "$WORK/cmd-c.log" "$REPO/install.sh" --harness claude --scope user --copy
+check "--copy install: no command"                   test ! -e "$CC/.local/bin/ai-task"
+# an existing ~/.local/bin/ai-task that is not ours is kept, by install and by uninstall
+CF="$WORK/cmd-foreign"; mkdir -p "$CF/.local/bin"; printf '#!/bin/sh\necho THEIRS\n' > "$CF/.local/bin/ai-task"
+HOME="$CF" run_install "$WORK/cmd-f1.log" "$REPO/install.sh" --harness antigravity --scope user
+check "install keeps a foreign ai-task"              grep -qx 'echo THEIRS' "$CF/.local/bin/ai-task"
+check "install says it kept it"                      grep -q 'kept   ~/.local/bin/ai-task (not installed by this tool)' "$WORK/cmd-f1.log"
+check "the skills were still installed"              test -L "$CF/.gemini/config/skills/ai-task"
+HOME="$CF" run_install "$WORK/cmd-f2.log" "$REPO/install.sh" --harness antigravity --scope user --uninstall
+check "uninstall keeps a foreign ai-task"            grep -qx 'echo THEIRS' "$CF/.local/bin/ai-task"
+HOME="$CF" run_install "$WORK/cmd-f3.log" "$REPO/install.sh" --harness antigravity --scope user --force
+check "--force replaces it"                          links_to_src "$CF/.local/bin/ai-task"
+# the link stays while any install still holds ai-task, and goes with the last one
+CU="$WORK/cmd-unin"; mkdir -p "$CU/.local/bin"; echo keep > "$CU/.local/bin/other-tool"
+HOME="$CU" run_install "$WORK/cmd-u1.log" "$REPO/install.sh" --harness claude,antigravity --scope user
+HOME="$CU" run_install "$WORK/cmd-u2.log" "$REPO/install.sh" --harness claude --scope user --uninstall
+check "uninstalling one tool keeps the command"      links_to_src "$CU/.local/bin/ai-task"
+HOME="$CU" run_install "$WORK/cmd-u3.log" "$REPO/install.sh" --harness antigravity --scope user --uninstall
+check "uninstalling the last removes the command"    test ! -e "$CU/.local/bin/ai-task" -a ! -L "$CU/.local/bin/ai-task"
+check "other files in ~/.local/bin are untouched"    grep -qx keep "$CU/.local/bin/other-tool"
+# installs made before the command existed get it from --update
+HOME="$CU" run_install "$WORK/cmd-u4.log" "$REPO/install.sh" --harness antigravity --scope user
+rm "$CU/.local/bin/ai-task"
+HOME="$CU" run_install "$WORK/cmd-u5.log" "$REPO/install.sh" --update
+check "--update adds the command to an older install" links_to_src "$CU/.local/bin/ai-task"
+
 check "this checkout was not modified"        test "$(git -C "$REPO" status --porcelain)" = "$BEFORE"
 
 if [ "$fail" -ne 0 ]; then

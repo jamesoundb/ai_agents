@@ -13,9 +13,22 @@
 #
 # Tasks stay outside .ai on purpose: .ai is its own git repository, and a task directory inside a
 # checkout would make tools (code-graph autobuild) treat all of .ai as the project.
+#
+# Portable: Linux and macOS. That means bash 3.2 (no mapfile; "${a[@]}" on an empty array fails
+# under set -u, so it is written ${a[@]+"${a[@]}"}) and BSD tools (no sed -i, no readlink -f, no
+# \+ in sed; wc pads its numbers).
 set -euo pipefail
 
-SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+resolve_self() {  # the real path of this script, through any symlink (e.g. ~/.local/bin/ai-task)
+  local p="$1" d
+  while [ -L "$p" ]; do
+    d="$(cd -P "$(dirname "$p")" && pwd)"
+    p="$(readlink "$p")"
+    case "$p" in /*) ;; *) p="$d/$p" ;; esac
+  done
+  echo "$(cd -P "$(dirname "$p")" && pwd)/$(basename "$p")"
+}
+SELF="$(resolve_self "${BASH_SOURCE[0]}")"
 ROOT="" AI="" LOGS="" INSTR="" REF="" ARCHIVE="" TREES=""
 
 die()  { echo "ai-task: $*" >&2; exit 1; }
@@ -132,12 +145,22 @@ find_task() {  # find_task <slug|id>: the open task's id, or nothing
 }
 
 field() { sed -n "s/^$2: *//p" "$1" | head -1; }           # front-matter value
-set_field() { sed -i "0,/^$2:.*/s||$2: $3|" "$1"; }        # replace the first occurrence only
+set_field() {  # set_field <file> <key> <value>: replace the first "<key>:" line only
+  # awk and a rewrite in place, not sed -i (BSD sed needs a suffix argument there) and not mv
+  # (that would change the file's permissions). The value comes through the environment, so
+  # awk does not interpret backslashes in it.
+  local tmp; tmp="$(mktemp "${TMPDIR:-/tmp}/ai-task.XXXXXX")"
+  K="$2" V="$3" awk '!done && index($0, ENVIRON["K"] ":") == 1 { print ENVIRON["K"] ": " ENVIRON["V"]; done = 1; next } { print }' "$1" > "$tmp"
+  cat "$tmp" > "$1"; rm -f "$tmp"
+}
+unbracket() { sed 's/[][,]//g'; }                           # "[a, b]" -> "a b" (stdin)
+count_changed()  { git -C "$1" status --porcelain | awk 'END { print NR }'; }   # no wc padding
+count_unpushed() { git -C "$1" rev-list --count HEAD --not --remotes; }
 
 write_context() {  # generated per-task context and tool permissions; safe to regenerate
   local dir="$1" id="$2" log="$LOGS/$2.md" branch r repos
   branch="$(field "$log" branch)"
-  repos="$(field "$log" repos | tr -d '[],')"
+  repos="$(field "$log" repos | unbracket)"
   {
     echo "# Task $id: $(field "$log" title)"
     echo
@@ -173,10 +196,10 @@ write_index() {  # INDEX.md is derived from the front matter, so it can never di
     # Newest first: prepend each log, since the glob expands in ascending name (date) order.
     local logs=()
     for f in "$LOGS"/[0-9]*.md; do
-      [ -e "$f" ] && logs=("$f" "${logs[@]}")
+      [ -e "$f" ] && logs=("$f" ${logs[@]+"${logs[@]}"})
     done
-    for f in "${logs[@]}"; do
-      echo "| $(field "$f" status) | [$(field "$f" id)]($(basename "$f")) | $(field "$f" repos | tr -d '[]') | $(field "$f" title) |"
+    for f in ${logs[@]+"${logs[@]}"}; do
+      echo "| $(field "$f" status) | [$(field "$f" id)]($(basename "$f")) | $(field "$f" repos | sed 's/[][]//g') | $(field "$f" title) |"
     done
   } > "$LOGS/INDEX.md"
 }
@@ -186,7 +209,7 @@ ai_commit() {  # record the tracking state; a failure here must never fail the t
   # Sandboxes often replace HOME, which loses the user's git identity; tracking must still work.
   [ -n "$(git -C "$AI" config user.email 2>/dev/null || true)" ] || id=(-c user.name=ai-task -c user.email=ai-task@localhost)
   git -C "$AI" add -A >/dev/null 2>&1 || true
-  git -C "$AI" "${id[@]}" commit --quiet -m "$1" >/dev/null 2>&1 || true
+  git -C "$AI" ${id[@]+"${id[@]}"} commit --quiet -m "$1" >/dev/null 2>&1 || true
 }
 
 # ---- commands -------------------------------------------------------------------------------------
@@ -233,8 +256,10 @@ cmd_clone() {
 cmd_sync() {
   use_workspace
   local r repos=("$@")
-  [ $# -gt 0 ] || mapfile -t repos < <(all_repos)
-  for r in "${repos[@]}"; do need_repo "$r"; sync_repo "$r"; done
+  if [ $# -eq 0 ]; then
+    while IFS= read -r r; do repos+=("$r"); done < <(all_repos)
+  fi
+  for r in ${repos[@]+"${repos[@]}"}; do need_repo "$r"; sync_repo "$r"; done
 }
 
 cmd_start() {
@@ -249,7 +274,7 @@ cmd_start() {
   [ "${#args[@]}" -ge 1 ] || die "start needs a slug"
   local slug="${args[0]}" repos=("${args[@]:1}") r
   [[ "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "slug must be lowercase letters, digits and hyphens"
-  for r in "${repos[@]}"; do need_repo "$r"; done
+  for r in ${repos[@]+"${repos[@]}"}; do need_repo "$r"; done
 
   # An open task with this slug is reused, so "start" also adds repos to a running task.
   local id; id="$(find_task "$slug")"
@@ -261,7 +286,7 @@ cmd_start() {
 
   # The file the user wrote first is the source of the task; a stub keeps "every task has one" true.
   [ -e "$brief" ] || printf '# %s\n\nProblem definition: what is wrong or wanted, scope, constraints.\n' "${title:-$slug}" > "$brief"
-  [ -n "$title" ] || title="$(sed -n 's/^# \+//p' "$brief" | head -1)"
+  [ -n "$title" ] || title="$(sed -n 's/^#  *//p' "$brief" | head -1)"
   title="${title:-$slug}"; title="${title//|//}"       # a pipe would break the index table
 
   mkdir -p "$dir"
@@ -282,7 +307,7 @@ repos: []
 EOF
   fi
 
-  for r in "${repos[@]}"; do
+  for r in ${repos[@]+"${repos[@]}"}; do
     if [ -e "$dir/$r/.git" ]; then note "$r: already in this task"; continue; fi
     sync_repo "$r"
     local base; base="$(default_branch "$ROOT/$r")"
@@ -292,7 +317,7 @@ EOF
     else
       git -C "$ROOT/$r" worktree add --quiet --no-track -b "$branch" "$dir/$r" "origin/$base"
     fi
-    local current; current="$(field "$log" repos | tr -d '[],')"
+    local current; current="$(field "$log" repos | unbracket)"
     set_field "$log" repos "[$(echo "$current $r" | xargs | sed 's/ /, /g')]"
     set_field "$log" branch "$branch"
     ensure_reference "$r"
@@ -331,7 +356,7 @@ cmd_status() {
     for wt in "$d"*/; do
       [ -e "$wt.git" ] || continue
       printf '  %-28s %-30s %s changed, %s unpushed\n' "$(basename "$wt")" "$(git -C "$wt" branch --show-current)" \
-        "$(git -C "$wt" status --porcelain | wc -l)" "$(git -C "$wt" log --oneline HEAD --not --remotes | wc -l)"
+        "$(count_changed "$wt")" "$(count_unpushed "$wt")"
     done
   done
   [ "$found" = 1 ] || note "no open tasks"
@@ -373,7 +398,7 @@ cmd_close() {
     [ -e "$wt.git" ] || continue
     r="$(basename "$wt")"
     [ -z "$(git -C "$wt" status --porcelain)" ] || problems+="  $r: uncommitted changes"$'\n'
-    [ "$(git -C "$wt" log --oneline HEAD --not --remotes | wc -l)" = 0 ] || problems+="  $r: commits not on any remote"$'\n'
+    [ "$(count_unpushed "$wt")" = 0 ] || problems+="  $r: commits not on any remote"$'\n'
   done
   # A rule alone did not stop agents closing with an empty log, and the log is the point of the task.
   # Anything after the front matter other than the title counts as an entry.
@@ -389,7 +414,7 @@ cmd_close() {
     r="$(basename "$wt")"
     local branch unpushed
     branch="$(git -C "$wt" branch --show-current)"
-    unpushed="$(git -C "$wt" log --oneline HEAD --not --remotes | wc -l)"
+    unpushed="$(count_unpushed "$wt")"
     git -C "$ROOT/$r" worktree remove --force "${wt%/}"
     if [ "$unpushed" = 0 ]; then
       git -C "$ROOT/$r" branch --quiet -D "$branch"      # every commit is on a remote: nothing to lose

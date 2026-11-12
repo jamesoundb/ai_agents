@@ -22,6 +22,9 @@ variables:
   # Pinned by digest, so a re-pushed tag cannot change what CI runs. To update a pin:
   # docker buildx imagetools inspect <image>:<tag>, then copy the top-level Digest line.
   PYTHON_IMAGE: mirror.gcr.io/library/python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
+  # bash 3.2 (what macOS ships) on Alpine's BusyBox tools: ai-task must run on a stock Mac, so its
+  # tests also run here (job ai-task-portable). Same mirror, pinning and scan as above.
+  BASH32_IMAGE: mirror.gcr.io/library/bash:3.2@sha256:2556c2da19c32c1614d318645c73a7bf64d38be21cf69e98e3ca51f053983719
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_ROOT_USER_ACTION: ignore
@@ -134,6 +137,15 @@ engine-tests:
     - python3 skills/helm-chart-review/tests/test_helmreview.py   # helm-chart-review: HV004 secrets vs Secret references
     - python3 skills/k8s-manifest-review/tests/test_k8sreview.py   # k8s-manifest-review: YAML without a kind is not schema-validated
 
+# ai-task on bash 3.2 without GNU tools, as on a stock Mac (engine-tests covers Linux: bash 5, GNU).
+ai-task-portable:
+  stage: test
+  image: $BASH32_IMAGE
+  before_script:
+    - apk add --no-cache -q git
+  script:
+    - bash skills/ai-task/tests/run_tests.sh
+
 install-check:
   stage: test
   script:
@@ -173,7 +185,7 @@ release:
   rules:
     - if: $CI_COMMIT_TAG =~ $RELEASE_TAG_RE
   # Only release a tag whose checks all passed; release-notes also supplies the notes file.
-  needs: [release-notes, repo-checks, lint, image-scan, engine-tests, install-check, smoke]
+  needs: [release-notes, repo-checks, lint, image-scan, engine-tests, ai-task-portable, install-check, smoke]
   script:
     # Releases API with CI_JOB_TOKEN, in the scanned default image (no separate glab image).
     - python3 tools/ci/create_release.py release-notes.md

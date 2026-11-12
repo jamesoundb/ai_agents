@@ -94,6 +94,15 @@ Unlike `detect_install` it reads installs from any clone (`status_line`: a link 
 clone, a copy or plugin carries the clone's path in its marker file) and uses `installed_for` for
 shared folders. A normal install ends with the same command (`update later: ...`, `update_cmd`).
 
+The `ai-task` command (`ai_task_command`, run after every install, update and uninstall at user
+scope): while any user-scope install holds the `ai-task` skill as a link into this clone (loose
+or plugin, any harness: `ai_task_linked`), `~/.local/bin/ai-task` is a link to
+`skills/ai-task/scripts/ai-task` in this clone; once none does, that link is removed. Only a link
+into this clone is replaced or removed (`symlink_into_repo`); any other file there is kept and
+named (`--force` replaces it). An uninstall never creates it, project scope and `--copy` never
+touch it, and shell files are never edited: a missing PATH entry is only reported. `--status`
+prints where the link points.
+
 ## Harness mapping (what install.sh emits)
 | harness | project scope | user scope | agent representation |
 |---|---|---|---|
@@ -223,7 +232,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
 | `bug-fix` | procedure only (no script): report -> checklist of cases -> failing test per case -> cause fixed at every site -> each case proven; navigation through the code-graph engine | `../code-graph/scripts/run.sh` |
 | `install-agents` | bootstrap: harness-driven install/update/uninstall of this repo's agents and skills | `skills/install-agents/scripts/install.sh` -> `install.sh` |
-| `ai-task` | bash: workspace discovery (nearest parent with `.ai/`, or `AI_WORKSPACE`), worktrees on `feature/<slug>` under `.tasks/`, problem files and worklogs with front matter in `.ai/` (its own git repository, generated `INDEX.md`); `init` copies the script to `.ai/bin/ai-task` for sandboxed sessions and copies the git identity into clones; `close` refuses uncommitted, unpushed or empty-log work. Reference notes always start as a stub (never copied from a repository). Guide: `skills/ai-task/README.md`; tests: `tests/run_tests.sh` (local bare remote, no network) | `skills/ai-task/scripts/ai-task` |
+| `ai-task` | bash: workspace discovery (nearest parent with `.ai/`, or `AI_WORKSPACE`), worktrees on `feature/<slug>` under `.tasks/`, problem files and worklogs with front matter in `.ai/` (its own git repository, generated `INDEX.md`); `init` copies the script to `.ai/bin/ai-task` for sandboxed sessions and copies the git identity into clones; `close` refuses uncommitted, unpushed or empty-log work. Reference notes always start as a stub (never copied from a repository). Portable to macOS: bash 3.2 and BSD tools (no `mapfile`, `sed -i`, `readlink -f`, `\+` in sed; empty arrays expanded as `${a[@]+"${a[@]}"}`); `install.sh` links it into `~/.local/bin`. Guide: `skills/ai-task/README.md`; tests: `tests/run_tests.sh` (local bare remote, no network) | `skills/ai-task/scripts/ai-task` |
 
 `code-skeleton` and `blast-radius` call the `code-graph` engine through the relative path
 `../code-graph/scripts/run.sh`, so the three skill folders must be installed side by side; the
@@ -518,8 +527,10 @@ so the same check runs on a laptop.
   filesystem after the same installs as the other jobs (git, every pip package), so packages
   installed at job start are covered; fixable HIGH/CRITICAL fail it. `repo-checks` also runs
   `tools/ci/test_create_release.py`.
-- `test` stage: `engine-tests` (`run_tests.sh`), `install-check` (project scope into a temp repo +
-  uninstall must leave it clean; user scope into a temp `HOME`; expected counts derived from
+- `test` stage: `engine-tests` (`run_tests.sh`), `ai-task-portable` (the ai-task tests under
+  `$BASH32_IMAGE` = `mirror.gcr.io/library/bash:3.2`, digest-pinned: bash 3.2 as on macOS, BusyBox
+  instead of GNU tools; git from Alpine at job start), `install-check` (project scope into a temp repo +
+  uninstall must leave it clean; user scope into a temp `HOME`; the `ai-task` command's link rules; expected counts derived from
   `agents/` and `skills/`), `smoke` (every skill script `--help`; code-graph skeleton;
   terraform-review and k8s-manifest-review on the fixture with `--no-tools`; a freshly scaffolded
   module must pass terraform-review with no findings; where terraform is installed, a tools-mode

@@ -53,6 +53,9 @@
 # gemini ~/.gemini/settings.json; antigravity ~/.gemini/config/hooks.json (gemini and antigravity: user
 # scope only); plugins: hooks/hooks.json (claude, gemini extension), hooks.json (antigravity). Turn it
 # off per environment with ASTGRAPH_AUTOBUILD=0; --uninstall removes it.
+# A user-scope install with the ai-task skill also links ~/.local/bin/ai-task to this clone's
+# script (not with --copy), so `ai-task init` works anywhere once ~/.local/bin is on PATH. Shell
+# files are never edited; an existing ~/.local/bin/ai-task that is not ours is left alone.
 # Plugin layouts with --plugin (project scope | user scope), each holding skills/ and agents:
 #   claude      .claude/skills/ai-agents/.claude-plugin/plugin.json  | ~/.claude/skills/ai-agents (loads as ai-agents@skills-dir)
 #   antigravity .agents/plugins/ai-agents/plugin.json                | ~/.gemini/config/plugins/ai-agents
@@ -679,6 +682,54 @@ setup_engines() {  # setup_engines <skills>: each skill's one-time engine set-up
 }
 
 # ---------------------------------------------------------------------------------------------
+# The ai-task command: a user-scope install that links ai-task (any harness, loose or plugin) also
+# links ~/.local/bin/ai-task to this clone's script, so `ai-task init` works in any folder. Same
+# ownership rule as skills: only a link into this clone is ever replaced or removed; any other
+# file there stays (--force replaces it). Copies (--copy) get no command: it would point into the
+# clone they were made to avoid. The developer's shell files are never edited; a missing PATH
+# entry is only reported.
+BIN_DIR="$HOME/.local/bin"
+AI_TASK_CMD="$BIN_DIR/ai-task"
+AI_TASK_SRC="$SKILLS_SRC/ai-task/scripts/ai-task"
+
+ai_task_linked() {  # some user-scope install still holds ai-task as a link into this clone
+  local h
+  for h in claude codex antigravity gemini copilot; do
+    loose_layout "$h";  symlink_into_repo "$SK/ai-task" && return 0
+    plugin_layout "$h"; symlink_into_repo "$PD/skills/ai-task" && return 0
+  done
+  return 1
+}
+
+ai_task_command() {  # run after every user-scope install, update and uninstall
+  [ "$SCOPE" = user ] && [ "$DRY" = 0 ] || return 0
+  if ! ai_task_linked; then
+    # nothing installed needs it any more: remove our link, never anything else
+    if symlink_into_repo "$AI_TASK_CMD"; then rm -f "$AI_TASK_CMD"; log "removed $(tilde "$AI_TASK_CMD")"; fi
+    return 0
+  fi
+  [ "$UNINSTALL" = 0 ] || return 0   # another install still uses it; an uninstall never creates it
+  if [ -e "$AI_TASK_CMD" ] || [ -L "$AI_TASK_CMD" ]; then
+    if symlink_into_repo "$AI_TASK_CMD"; then :
+    elif [ "$FORCE" = 1 ]; then log "force  replacing $(tilde "$AI_TASK_CMD") (not installed by this tool)"
+    else
+      log "kept   $(tilde "$AI_TASK_CMD") (not installed by this tool); run ai-task by its skill path instead,"
+      log "       or move it aside and re-run to get the command"
+      return 0
+    fi
+    rm -rf "$AI_TASK_CMD"
+  fi
+  mkdir -p "$BIN_DIR"
+  ln -s "$AI_TASK_SRC" "$AI_TASK_CMD"
+  log "cmd    $(tilde "$AI_TASK_CMD")  <- symlink"
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) log "note   $(tilde "$BIN_DIR") is not on your PATH. Add this line to ~/.zshrc (macOS) or ~/.bashrc"
+       log "       (Linux), then open a new terminal:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------------------------
 # --update: find what this clone installed and re-run each install with the same options. Like
 # ownership, this is read from the files (links into this clone, our markers); nothing is stored.
 ALL_AGENTS="$(for d in "$AGENTS_SRC"/*/; do basename "$d"; done | tr "\n" " ")"
@@ -834,6 +885,9 @@ if [ "$STATUS" = 1 ]; then
   echo "status: scope=$SCOPE$( [ "$SCOPE" = project ] && echo " target=$TARGET")"
   for h in ${HARNESSES//,/ }; do for kind in plugin loose; do status_line "$h" "$kind"; done; done
   [ -n "$STATUS_CLONES" ] || { echo "status: nothing installed at scope=$SCOPE (from any clone)"; exit 0; }
+  if [ "$SCOPE" = user ] && [ -L "$AI_TASK_CMD" ]; then
+    printf '  ai-task command: %s -> %s\n' "$(tilde "$AI_TASK_CMD")" "$(tilde "$(resolve_link "$AI_TASK_CMD")")"
+  fi
   while IFS= read -r c; do echo "update: $(update_cmd "$c")"; done <<< "$STATUS_CLONES"
   exit 0
 fi
@@ -893,6 +947,7 @@ if [ "$UPDATE" = 1 ]; then
       log "       add them by re-installing with the lists you want (--agents/--skills), or without them for everything"
     fi
   done
+  ai_task_command   # also gives installs made before the command existed their ai-task link
   [ "$SCOPE" = project ] && update_agents_md
   setup_engines "$SETUP_SKILLS"
   echo "done (update: ${FOUND# })"
@@ -903,6 +958,7 @@ fi
 # half-finished install behind.
 if [ $UNINSTALL = 0 ]; then DRY=1; run_harnesses > /dev/null; DRY=0; fi
 run_harnesses
+ai_task_command
 
 if [ "$SCOPE" = project ]; then
   if [ $UNINSTALL = 1 ]; then remove_agents_md_block; else update_agents_md; fi
