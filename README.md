@@ -295,7 +295,7 @@ the actual cause. To fix it:
 | [code-graph](skills/code-graph/SKILL.md) | Build and query the relationship graph (`source`, `callers`, `callees`, `symbol`, `tests-for`, `trace-deps`, `file`, `path`, `find`, `overview`, `stats`) |
 | [code-skeleton](skills/code-skeleton/SKILL.md) | Token-light skeleton of files with exact line ranges; read-before-cat |
 | [blast-radius](skills/blast-radius/SKILL.md) | Downstream impact matrix for a file, symbol, Terraform address or Kubernetes object |
-| [ai-task](skills/ai-task/SKILL.md) | Task workspaces over cloned repositories: worktrees, a problem definition and a worklog per problem |
+| [ai-task](skills/ai-task/README.md) | Task workspaces over cloned repositories, or none: worktrees, a problem definition and a worklog per problem. Start with its [README](skills/ai-task/README.md) |
 | [bug-fix](skills/bug-fix/SKILL.md) | Bug-fix procedure: checklist of every case the report names, a failing test per case, the cause fixed at every site, each case proven |
 | [install-agents](skills/install-agents/SKILL.md) | Bootstrap: lets the harness install/update/remove this repo's agents and skills via `install.sh` (not installed into target projects) |
 | [terraform-review](skills/terraform-review/SKILL.md) | Deterministic Terraform/GCP review: Google style rules, security rules, configurable policy from `tfreview.json`; optional terraform/tflint/trivy; CI gate |
@@ -348,7 +348,7 @@ waits for it. What gets built depends on where the session starts:
 | Session started in | Built |
 |---|---|
 | a git repository (its root or any subfolder) | that repository's graph, at its root |
-| a folder that is not a repository but holds cloned repositories directly below it (for example a problem folder with `.github/instructions.md` and 3-4 clones) | one graph per clone, in parallel (at most 8, `ASTGRAPH_AUTOBUILD_MAX`); the agent queries each with `query --root <repository>` |
+| a folder that is not a repository but holds cloned repositories directly below it (for example an [ai-task](skills/ai-task/README.md) workspace: `.ai/` and 3-4 clones) | one graph per clone, in parallel (at most 8, `ASTGRAPH_AUTOBUILD_MAX`); the agent queries each with `query --root <repository>` |
 | anything else (no repository, `$HOME`, `/`) | nothing |
 
 `.ast-graph/` ignores itself, so it never shows up in `git status`. Repositories cloned after the
@@ -426,17 +426,25 @@ python3 tools/ci/check_repo.py          # frontmatter, agent->skill references, 
 python3 evals/validate.py               # eval cases are structurally valid (the pipeline runs this too)
 tools/ci/install_check.sh               # project + user scope installs into temp dirs, then uninstall
 skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
+skills/ai-task/tests/run_tests.sh       # ai-task: workspace, task lifecycle, refusals (local bare remote)
 python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case
+python3 tools/ci/test_create_release.py # the release job's API call, against a local stand-in
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
 tools/ci/setup_check.sh                 # engine set-up from an empty cache, offline use, uv, no-write message
 ```
 
 The pipeline also runs lint: syntax errors, undefined names and shell errors block the MR; the
-wider ruff and shellcheck report is shown but does not block.
+wider ruff and shellcheck report is shown but does not block. `image-scan` runs Trivy over every
+pinned image and everything the jobs install, and blocks the MR on any fixable HIGH or CRITICAL
+vulnerability. Run it locally with Docker in the default image (`sh tools/ci/scan_images.sh`, after
+the job's `before_script`). Set up a weekly pipeline schedule on `main` (Build -> Pipeline
+schedules) in every copy of this repository, so new vulnerabilities are caught between commits.
 
 ## Development
 
-Architecture reference: `.github/instructions.md`. Worklogs are kept locally in `.github/troubleshooting/` and are not published.
+Architecture reference: [docs/architecture.md](docs/architecture.md). Task worklogs are not kept in
+this repository; they live in your workspace's `.ai/ai_work_logs/` (see
+[ai-task](skills/ai-task/README.md)).
 
 ## License
 

@@ -30,5 +30,6 @@ discovery/
 # ...except the published-report fixtures of eval cases
 !evals/fixtures/*/discovery/
 
-# Local worklogs (troubleshooting notes) are not published
+# Worklogs from the old layout. Worklogs now live in the developer's workspace (.ai/ai_work_logs/);
+# this stays ignored so existing local notes are never committed by accident.
 .github/troubleshooting/

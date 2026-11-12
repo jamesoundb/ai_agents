@@ -24,8 +24,9 @@ invoke the agents. If skills are unavailable in your harness, run
   in CI. Executing the cases spends model tokens: `python3 evals/run_agy.py` drives Antigravity
   (`agy`), `claude plugin eval .` drives Claude Code, from the same case files. Verify a new
   grader's assertion against real tool output before committing it -- see `evals/README.md`.
-- Architecture reference lives in `.github/instructions.md`; worklogs stay local in
-  `.github/troubleshooting/` (git-ignored).
+- Architecture reference lives in `docs/architecture.md`. Task worklogs are not kept in this
+  repository: they live in the developer's workspace (`.ai/ai_work_logs/`, see
+  `skills/ai-task/README.md`).
 - Every change goes through a merge request whose pipeline (`.gitlab-ci.yml`) must pass. Run the
   same checks locally first: `python3 tools/ci/check_repo.py`, `tools/ci/install_check.sh`,
   `tools/ci/smoke.sh`, `tools/ci/setup_check.sh` (see README "Contributing").
