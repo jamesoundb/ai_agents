@@ -14,8 +14,11 @@ stages: [check, test, release]
 
 variables:
   # Python image from Google's Docker Hub mirror instead of Docker Hub (same image digest; no Docker
-  # Hub rate limits). Point this at a company Artifact Registry remote repository if you have one.
-  PYTHON_IMAGE: mirror.gcr.io/library/python:3.12
+  # Hub rate limits). The mirror is a cache, not a scanner: Google does not scan or patch it. Point
+  # this at a company Artifact Registry remote repository with scanning if you have one.
+  # Every image here is pinned by digest, so a re-pushed tag cannot change what CI runs. To update
+  # a pin: docker buildx imagetools inspect <image>:<tag>, then copy the top-level Digest line.
+  PYTHON_IMAGE: mirror.gcr.io/library/python:3.12@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d2691
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_ROOT_USER_ACTION: ignore
@@ -135,7 +138,8 @@ release-notes:
 
 release:
   stage: release
-  image: registry.gitlab.com/gitlab-org/cli:latest
+  # A fixed glab release, pinned by digest (see PYTHON_IMAGE above), instead of :latest.
+  image: registry.gitlab.com/gitlab-org/cli:v1.126.0@sha256:9ec98acf58abe1c9982fd1a5f544bd9a1a4ae5420c83c75b39eb8b08c93f621a
   rules:
     - if: $CI_COMMIT_TAG =~ $RELEASE_TAG_RE
   # Only release a tag whose checks all passed; release-notes also supplies the notes file.
