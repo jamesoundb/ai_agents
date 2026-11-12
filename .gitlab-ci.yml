@@ -89,6 +89,26 @@ lint-advisory:
     - shellcheck $(tools/ci/shell_scripts.sh) || rc=1
     - exit $rc
 
+# Trivy scan of every digest-pinned image in this file, Trivy's own included: fixable HIGH and
+# CRITICAL vulnerabilities, i.e. ones a newer pin removes. Advisory while the current pins still
+# have findings; drop allow_failure once they are clean. Pinned by digest, the same on Docker Hub,
+# GHCR, ECR Public and mirror.gcr.io (Trivy's releases were compromised in March 2026: 0.69.4-0.69.6).
+image-scan:
+  stage: check
+  image:
+    name: mirror.gcr.io/aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    entrypoint: [""]
+  allow_failure: true
+  variables:
+    TRIVY_CACHE_DIR: "$CI_PROJECT_DIR/.trivycache"
+    TRIVY_NO_PROGRESS: "true"
+  cache:
+    key: trivy-db
+    paths: [.trivycache]
+    when: always                          # keep the vulnerability database even when findings fail the job
+  script:
+    - sh tools/ci/scan_images.sh
+
 # ---------------------------------------------------------------- test
 
 engine-tests:
