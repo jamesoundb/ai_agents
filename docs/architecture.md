@@ -1,4 +1,8 @@
-# Project instructions
+# Architecture reference
+
+How this repository is built and why: layout, install safety, harness mapping, the engines, and
+how changes are tested and released. Not a worklog; task worklogs live in each developer's
+workspace (`.ai/ai_work_logs/`, see [ai-task](../skills/ai-task/README.md)).
 
 ## Goals
 - Develop several agents, each with a corresponding AGENT.md file, that anyone can bring into
@@ -37,8 +41,7 @@ skills/install-agents/          bootstrap skill: the harness installs the agents
 .claude/skills/install-agents, .agents/skills/install-agents, .gemini/skills/install-agents,
 .github/skills/install-agents   COMMITTED symlinks -> ../../skills/install-agents so a fresh clone
                                 exposes the bootstrap skill to every harness
-.github/instructions.md         this file (architecture reference, not a worklog)
-.github/troubleshooting/        local worklogs (git-ignored; not part of the published repo)
+docs/architecture.md            this file (architecture reference, not a worklog)
 ```
 Generated, git-ignored: everything under `.claude/`, `.agents/`, `.gemini/`, `.github/agents/`,
 `.github/skills/` except the four `install-agents` bootstrap symlinks (see `.gitignore`, which uses
@@ -220,6 +223,7 @@ Canonical: `agents/build-pipeline/AGENT.md`.
 | `blast-radius` | downstream impact matrix for a file, symbol, Terraform address or K8s object | `run.sh query trace-deps TARGET` |
 | `bug-fix` | procedure only (no script): report -> checklist of cases -> failing test per case -> cause fixed at every site -> each case proven; navigation through the code-graph engine | `../code-graph/scripts/run.sh` |
 | `install-agents` | bootstrap: harness-driven install/update/uninstall of this repo's agents and skills | `skills/install-agents/scripts/install.sh` -> `install.sh` |
+| `ai-task` | bash: workspace discovery (nearest parent with `.ai/`, or `AI_WORKSPACE`), worktrees on `feature/<slug>` under `.tasks/`, problem files and worklogs with front matter in `.ai/` (its own git repository, generated `INDEX.md`); `init` copies the script to `.ai/bin/ai-task` for sandboxed sessions and copies the git identity into clones; `close` refuses uncommitted, unpushed or empty-log work. Reference notes always start as a stub (never copied from a repository). Guide: `skills/ai-task/README.md`; tests: `tests/run_tests.sh` (local bare remote, no network) | `skills/ai-task/scripts/ai-task` |
 
 `code-skeleton` and `blast-radius` call the `code-graph` engine through the relative path
 `../code-graph/scripts/run.sh`, so the three skill folders must be installed side by side; the
@@ -508,26 +512,38 @@ so the same check runs on a laptop.
   (`allow_failure`: ruff `E,F,W,B` minus `E501`/`E702`/`E741` - deliberate style here, and 900+
   findings would make the job permanently yellow - plus full shellcheck. Both are expected to pass:
   the substantive findings were fixed, so a new one means new code. Lint tool versions are pinned.
+  Shell files are listed by `tools/ci/shell_scripts.sh` (`*.sh` plus extensionless files with a
+  sh/bash shebang). `image-scan` (blocking; `tools/ci/scan_images.sh`): the Trivy release binary,
+  pinned by version and SHA-256, scans every digest-pinned image in the file and the job's own
+  filesystem after the same installs as the other jobs (git, every pip package), so packages
+  installed at job start are covered; fixable HIGH/CRITICAL fail it. `repo-checks` also runs
+  `tools/ci/test_create_release.py`.
 - `test` stage: `engine-tests` (`run_tests.sh`), `install-check` (project scope into a temp repo +
   uninstall must leave it clean; user scope into a temp `HOME`; expected counts derived from
   `agents/` and `skills/`), `smoke` (every skill script `--help`; code-graph skeleton;
   terraform-review and k8s-manifest-review on the fixture with `--no-tools`; a freshly scaffolded
   module must pass terraform-review with no findings; where terraform is installed, a tools-mode
   review must leave that module's directory unchanged; synth -> analyze -> guardrails).
-- Image `$PYTHON_IMAGE` = `mirror.gcr.io/library/python:3.12` (Google's Docker Hub mirror, same digest as
-  Docker Hub's `python:3.12`); tree-sitter (`requirements.txt`) is pip-installed into the image's
-  python3, which the skills' `run.sh` discovers. PyYAML is not pre-installed on purpose:
+- Image `$PYTHON_IMAGE` = `mirror.gcr.io/library/python:3.12-slim-bookworm`, pinned by digest
+  (Google's Docker Hub mirror: same digest as Docker Hub, a cache that Google does not scan). The
+  slim image has no git; `default.before_script` installs it from Debian (`*git-install` in jobs
+  with their own `before_script`). tree-sitter (`requirements.txt`) is pip-installed into the
+  image's python3, which the skills' `run.sh` discovers. PyYAML is not pre-installed on purpose:
   `k8s-rightsize/scripts/run.sh` installs it, exercising the first-run path. Review scripts exit 0 = gate pass,
   1 = gate fail, 2 = error; the smoke test accepts 0/1 plus a `Gate (` line.
 - Release: tags matching `^v\d+\.\d+\.\d+(-suffix)?$` run `release-notes`
   (`release_notes.sh`, full history via `GIT_DEPTH: 0`) and `release`
-  (`registry.gitlab.com/gitlab-org/cli`, `glab release create` with `GLAB_ENABLE_CI_AUTOLOGIN`, i.e.
-  the job token). `release` needs every check job, so a tag whose checks fail is not released.
+  (`tools/ci/create_release.py`: the Releases API with `CI_JOB_TOKEN`, standard library only, in
+  the default image). `release` needs every check job, `image-scan` included, so a tag whose checks
+  fail is not released.
   Creating the tag in the UI with release notes pre-creates the release and fails the job.
 - Rollback policy: developers track `main`; roll back with a revert on `main` (forward fix), never
   by moving tags. Tags are known-good pins (`git checkout vX.Y.Z` + re-run install).
 - Project settings the YAML cannot set: protect `v*` tags (Maintainers), "Pipelines must succeed"
-  on merge, and runners/compute minutes for the group.
+  on merge, runners/compute minutes for the group, and a weekly pipeline schedule on `main`
+  (Build -> Pipeline schedules, e.g. `0 6 * * 1`) so newly published vulnerabilities fail
+  `image-scan` without waiting for a commit. Every copy of the repository (a company mirror too)
+  needs its own schedule.
 
 ## Design references
 - Whitney, "Stop Dumping Raw Code into LLMs: Why ASTs lead to Scalable AI Agents" (Medium).
