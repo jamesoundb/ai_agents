@@ -49,7 +49,7 @@ ok "a draft is listed as not started" "$A status | grep -q 'not started: first'"
 ok "start with repo" "$A start first demo"
 L=".ai/ai_work_logs/$D-first.md"
 ok "the problem file is left unchanged" "[ '$sum' = \"\$(cksum < .ai/instructions/first.md)\" ]"
-ok "the title comes from the problem file" "grep -q '^title: My problem' $L"
+ok "the title comes from the problem file" "grep -q '^title: \"My problem\"' $L"
 ok "the worktree is on the feature branch" "[ \"\$(git -C .tasks/$D-first/demo branch --show-current)\" = feature/first ]"
 no "the new branch has no upstream" "git -C .tasks/$D-first/demo rev-parse --abbrev-ref '@{u}'"
 ok "the clone stays on main" "[ \"\$(git -C demo branch --show-current)\" = main ]"
@@ -98,6 +98,22 @@ ok "list finds tasks by repo" "$A list demo | grep -q $D-solo"
 ok "the index lists newest first" "[ \"\$(grep -oE '\\[$D-(first|solo)\\]' .ai/ai_work_logs/INDEX.md | tr -d '\\n')\" = '[$D-solo][$D-first]' ]"
 ok "the tracking repository is clean" "[ -z \"\$(git -C .ai status --short)\" ]"
 ok "sync with no names visits every clone" "$A sync | grep -q '^ai-task: demo:'"
+
+# A title is front matter: ": " (a nested mapping), " #" (a comment), quotes and backslashes must
+# survive as one YAML string, and every reader must show it unquoted. Expected lines live in files
+# so that grep -F compares them literally, with no shell quoting in between.
+printf '# Probe: a "quoted" \\ path #1\n' > .ai/instructions/colon.md
+printf '%s\n' 'title: "Probe: a \"quoted\" \\ path #1"' > "$T/want-yaml"
+printf '%s\n' "# Task $D-colon: Probe: a \"quoted\" \\ path #1" > "$T/want-context"
+printf '%s\n' '| Probe: a "quoted" \ path #1 |' > "$T/want-index"
+# A log written before titles were quoted must still read back as it is.
+printf -- '---\nid: %s-old\ntitle: Old style\nstatus: done\nrepos: []\n---\n' "$D" > ".ai/ai_work_logs/$D-old.md"
+ok "start with a title full of YAML syntax" "$A start colon"
+ok "the title is written as a double-quoted YAML string" "grep -qxF -f '$T/want-yaml' .ai/ai_work_logs/$D-colon.md"
+ok "the task context shows the plain title" "grep -qxF -f '$T/want-context' .tasks/$D-colon/CLAUDE.md"
+ok "a quoted-title task closes" "$A close colon --force"
+ok "the index shows the plain title" "grep -qF -f '$T/want-index' .ai/ai_work_logs/INDEX.md"
+ok "the index reads an old unquoted title" "grep -qF '| Old style |' .ai/ai_work_logs/INDEX.md"
 
 # install.sh links the script into ~/.local/bin; init through that link must copy the script itself.
 mkdir -p "$T/bin" "$T/linked"

@@ -43,7 +43,9 @@ if PATH="$NOUV_PATH" "$S/code-graph/scripts/run.sh" --setup > "$WORK/out" 2>&1 \
   ok "venv created at \$XDG_CACHE_HOME/astgraph/venv"
 else bad "code-graph --setup"; fi
 want="$("$ASTGRAPH_VENV/bin/python" -B -c "import sys; sys.path.insert(0, sys.argv[1]); from astgraph import EXT_LANG; print(' '.join(sorted(set(EXT_LANG.values()))))" "$S/code-graph/scripts" 2>/dev/null)"
-have=" $(grammars)"
+# Ask the pack which grammars its cache holds: file names are not language names from 1.25.2 on
+# (javascript ships as libtree_sitter_javascript_orchard.so). Case 1 always gets the latest pack.
+have=" $("$ASTGRAPH_VENV/bin/python" -c 'import tree_sitter_language_pack as t; print(" ".join(sorted(t.downloaded_languages())))' 2>/dev/null)"
 missing=""; for l in $want; do case "$have " in *" $l "*) ;; *) missing="$missing $l" ;; esac; done
 if [ -n "$want" ] && [ -z "$missing" ]; then ok "grammars downloaded: $want"; else echo "  FAIL grammars missing:${missing:- (no language list)}"; fail=1; fi
 

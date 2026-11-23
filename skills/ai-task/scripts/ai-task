@@ -144,7 +144,16 @@ find_task() {  # find_task <slug|id>: the open task's id, or nothing
   return 0
 }
 
-field() { sed -n "s/^$2: *//p" "$1" | head -1; }           # front-matter value
+field() {  # field <file> <key>: a front-matter value, with yaml_quote undone
+  local v; v="$(sed -n "s/^$2: *//p" "$1" | head -1)"
+  case "$v" in
+    \"*\") v="${v#\"}"; v="${v%\"}"; v="$(printf '%s\n' "$v" | sed 's/\\\(.\)/\1/g')" ;;
+  esac
+  printf '%s\n' "$v"
+}
+# A double-quoted YAML scalar: free text (a title) may hold ": ", " #" or a leading [ { - & * !
+# that would otherwise break the front matter or change its meaning. Single-line input.
+yaml_quote() { printf '"%s"\n' "$(printf '%s\n' "$1" | sed 's/[\\"]/\\&/g')"; }
 set_field() {  # set_field <file> <key> <value>: replace the first "<key>:" line only
   # awk and a rewrite in place, not sed -i (BSD sed needs a suffix argument there) and not mv
   # (that would change the file's permissions). The value comes through the environment, so
@@ -294,7 +303,7 @@ cmd_start() {
     cat > "$log" <<EOF
 ---
 id: $id
-title: $title
+title: $(yaml_quote "$title")
 status: open
 created: $(now)
 closed:
