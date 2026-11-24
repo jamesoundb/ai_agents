@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(perf-tests.{0,400}(reject|exceed|above|over the|denied|forbidden|larger than|bigger than|max)|(reject|exceed|denied|forbidden).{0,400}perf-tests)'
+pattern: '(perf-tests.{0,400}(reject|exceed|above|over the|denied|forbidden|larger than|bigger than|max)|(reject|exceed|denied|forbidden).{0,400}perf-tests)'
+flags: "is"
 match: "contains"
 ---
 The tiers' large tier is 6 cpu / 24Gi and the LimitRange `max` encodes it; `perf-tests-job.yaml`

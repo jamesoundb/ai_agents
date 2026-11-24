@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)agents-test-m02.{0,400}(NotReady|not\s+ready|kubelet)|(NotReady|not\s+ready|kubelet).{0,400}agents-test-m02'
+pattern: 'agents-test-m02.{0,400}(NotReady|not\s+ready|kubelet)|(NotReady|not\s+ready|kubelet).{0,400}agents-test-m02'
+flags: "is"
 match: "contains"
 ---
 The shared cause, verified with `why deploy/on-m02` (2026-10-15):

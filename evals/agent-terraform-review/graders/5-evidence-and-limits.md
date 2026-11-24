@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)evidence.{0,4000}limits'
+pattern: 'evidence.{0,4000}limits'
+flags: "is"
 match: "contains"
 ---
 The persona discriminator.

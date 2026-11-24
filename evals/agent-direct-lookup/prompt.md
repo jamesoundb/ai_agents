@@ -1,6 +1,5 @@
 ---
 name: "ast-treesitter takes the fast path for a direct lookup"
-agent: ast-treesitter
 tags: ["agent", "workflow", "proportionality"]
 runs: 3
 max_turns: 10

@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of|(running|up|alive) (for|since) ).{0,300}(delet|tear|remov)|(delet|tear|remov).{0,300}(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of)'
+pattern: '(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of|(running|up|alive) (for|since) ).{0,300}(delet|tear|remov)|(delet|tear|remov).{0,300}(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of)'
+flags: "is"
 match: "contains"
 ---
 `preview-env.yaml` was "created by the build and never torn down", so the live `preview-api` is

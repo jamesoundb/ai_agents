@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)reporting\.py'
+pattern: 'reporting\.py'
+flags: "i"
 match: "contains"
 ---
 Hop 2: RevenueReport.replay_order -> OrderService.place -> PaymentGateway.charge.

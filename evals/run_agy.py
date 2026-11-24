@@ -62,6 +62,19 @@ def load_frontmatter(path):
 
 
 # ---------------------------------------------------------------- running one turn
+ALL_HARNESSES = ("antigravity", "claude")
+NOT_CASES = {"fixtures", "scaffold", "results", "tests", "__pycache__"}   # evals/ dirs that hold no case
+
+
+def case_harnesses(case_dir):
+    """The harnesses a case runs on: case.yaml `context.harnesses`, else all of them."""
+    cy = os.path.join(case_dir, "case.yaml")
+    if not os.path.exists(cy):
+        return ALL_HARNESSES
+    ctx = (yaml.safe_load(open(cy, encoding="utf-8")) or {}).get("context", {}) or {}
+    return tuple(ctx.get("harnesses") or ALL_HARNESSES)
+
+
 def isolated_home(base, fresh=False):
     """A HOME with the installed skills and credentials but WITHOUT the operator's GEMINI.md.
 
@@ -214,14 +227,9 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True, file_target
     if os.path.exists(cy):
         cfg = (yaml.safe_load(open(cy, encoding="utf-8")) or {}).get("context", {}) or {}
 
-    for d in cfg.get("add_dirs", []) or []:
-        src = os.path.normpath(os.path.join(case_dir, d))
-        for entry in os.listdir(src):
-            if entry == ".ast-graph":
-                continue                      # generated; never seed a workspace with it
-            s, t = os.path.join(src, entry), os.path.join(ws, entry)
-            shutil.copytree(s, t) if os.path.isdir(s) else shutil.copy2(s, t)
-
+    # The case's scaffold.sh lays its fixture into the workspace (scaffold/lay-fixture.sh). add_dirs
+    # is not copied: `claude plugin eval` grants those directories read-only instead, so copying
+    # them here would make the two runners start the same case from different workspaces.
     script = cfg.get("scaffold_script")
     if script:
         sp = os.path.normpath(os.path.join(case_dir, script))
@@ -251,8 +259,11 @@ def run_case_once(case_dir, fm, prompt, timeout, keep, isolate=True, file_target
     # loaded -- verified by asking a loaded session whether a read-only persona was in effect
     # ("NONE" without the flag, the ast-treesitter mandate with it). A case that omits `agent:`
     # therefore tests the skills only, which is what every case did before this was added.
-    if fm.get("agent"):
-        cmd += ["--agent", fm["agent"]]
+    # The agent is named in case.yaml `context.agent`: `claude plugin eval` rejects an `agent:`
+    # key in prompt.md, and both runners read the same case files.
+    agent = cfg.get("agent") or fm.get("agent")
+    if agent:
+        cmd += ["--agent", agent]
     if fm.get("model"):
         cmd += ["--model", fm["model"]]
     env = dict(os.environ)
@@ -483,9 +494,11 @@ def main():
 
     cases = sorted(d for d in os.listdir(HERE)
                    if os.path.isdir(os.path.join(HERE, d))
-                   and d not in {"fixtures", "scaffold", "results", "__pycache__"})
+                   and d not in NOT_CASES)
     if args.case:
         cases = [c for c in cases if any(fnmatch.fnmatch(c, p) for p in args.case)]
+    # case.yaml `context.harnesses` limits a case to the harnesses its graders assert on.
+    cases = [c for c in cases if "antigravity" in case_harnesses(os.path.join(HERE, c))]
     if not cases:
         print("no matching cases", file=sys.stderr)
         return 1

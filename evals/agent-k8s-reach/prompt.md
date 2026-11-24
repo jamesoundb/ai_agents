@@ -1,6 +1,5 @@
 ---
 name: "kubernetes agent checks NetworkPolicy paths before a move to an enforcing cluster"
-agent: kubernetes
 tags: ["agent", "kubernetes", "networkpolicy", "hard-limits"]
 runs: 3
 max_turns: 14

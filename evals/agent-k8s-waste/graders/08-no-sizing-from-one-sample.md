@@ -1,7 +1,8 @@
 ---
 type: regex
 target: {source: file, path: manifests/kg-preview-123.yaml}
-pattern: '(?s)(?=.*cpu:\s*["'']?(500m|0\.5)\b)(?=.*memory:\s*["'']?512Mi\b)'
+pattern: '(?=.*cpu:\s*["'']?(500m|0\.5)\b)(?=.*memory:\s*["'']?512Mi\b)'
+flags: "s"
 match: "contains"
 ---
 `preview-app` requests cpu 500m / memory 512Mi; the snapshot has one metrics-server sample (`use cpu

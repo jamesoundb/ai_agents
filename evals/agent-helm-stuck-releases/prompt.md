@@ -1,6 +1,5 @@
 ---
 name: "helm agent unblocks a locked and a failed release without touching them"
-agent: helm
 tags: ["agent", "helm", "gitops", "hard-limits"]
 runs: 3
 max_turns: 14

@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*does-not-exist)(?=.*app-settings)(?=.*shop-frontend)'
+pattern: '(?=.*does-not-exist)(?=.*app-settings)(?=.*shop-frontend)'
+flags: "is"
 match: "contains"
 ---
 All three root causes, not the symptoms. Verified against `why` on this snapshot (2026-10-08):

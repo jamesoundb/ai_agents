@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)Checkout'
+pattern: 'Checkout'
+flags: "i"
 match: "contains"
 ---
 `Checkout.submit` is the production caller, and reaching it needs real Kotlin resolution rather
