@@ -488,13 +488,13 @@ class ReadOnlyCache(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
-    def cli(self, *argv):
-        # A fresh process: the database directory is resolved when kubegraph is imported.
+    def cli(self, *argv, tmpdir=None, cwd=None):
+        # A fresh process per call, as each Bash call is: the directory is resolved at import.
         import subprocess
         env = {k: v for k, v in os.environ.items() if k != "KUBEGRAPH_DIR"}
-        env.update(HOME=self.home, TMPDIR=self.tmpdir, KUBECONFIG=os.path.join(self.tmp, "none"))
+        env.update(HOME=self.home, TMPDIR=tmpdir or self.tmpdir, KUBECONFIG=os.path.join(self.tmp, "none"))
         return subprocess.run([sys.executable, os.path.join(HERE, "..", "scripts", "kubegraph.py"), *argv],
-                              capture_output=True, text=True, env=env)
+                              capture_output=True, text=True, env=env, cwd=cwd)
 
     def test_snapshot_and_query_without_db_when_cache_is_read_only(self):
         r = self.cli("snapshot", "--from", FIXTURE)
@@ -502,6 +502,20 @@ class ReadOnlyCache(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.tmpdir, "kubegraph", "agents-test.db")),
                         r.stdout + r.stderr)
         q = self.cli("--context", "agents-test", "--no-refresh", "health", "-n", "kg-faults")
+        self.assertEqual(q.returncode, 0, q.stderr[-800:])
+
+    def test_unwritable_tmpdir_falls_back_to_the_working_directory(self):
+        # `claude plugin eval` also makes $TMPDIR read-only, and its /tmp is private to each Bash
+        # call: a snapshot written to /tmp/kubegraph was gone by the next query (2026-11-24). The
+        # working directory is the one place every call sees and keeps.
+        bad_tmp = os.path.join(self.tmp, "tmpfile")
+        open(bad_tmp, "w").close()                               # a file: nothing goes under it
+        ws = os.path.join(self.tmp, "ws")
+        os.makedirs(ws)
+        r = self.cli("snapshot", "--from", FIXTURE, tmpdir=bad_tmp, cwd=ws)
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertTrue(os.path.isfile(os.path.join(ws, ".kubegraph", "agents-test.db")), r.stdout + r.stderr)
+        q = self.cli("--context", "agents-test", "health", "-n", "kg-faults", tmpdir=bad_tmp, cwd=ws)
         self.assertEqual(q.returncode, 0, q.stderr[-800:])
 
 

@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "last_message"
+focus: "last_message"
 criteria: |
   The answer identifies who calls Ledger.post in a Python package that also contains an unrelated
   LegacyLedger.post in billing/legacy.py.

@@ -35,14 +35,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 NOT_CASES = {"fixtures", "scaffold", "results", "tests", "__pycache__"}   # evals/ dirs that hold no case
 
+# Grader keys per type, as `claude plugin eval` accepts them: any other key is a load error
+# ("Unrecognized key(s) in object"). Only regex takes `target`; llm points its judge with `focus`.
 GRADER_TYPES = {
     "regex": {"required": {"pattern"}, "optional": {"target", "flags", "match"}},
-    "tool_used": {"required": {"tool"}, "optional": {"target", "input_match", "min", "max"}},
-    "tool_order": {"required": {"before", "after"}, "optional": {"target"}},
-    "file_exists": {"required": {"path"}, "optional": {"target"}},
-    "llm": {"required": {"criteria"}, "optional": {"target", "focus"}},
-    "baseline": {"required": {"baseline_file", "criteria"}, "optional": {"target"}},
+    "tool_used": {"required": {"tool"}, "optional": {"input_match", "min", "max"}},
+    "tool_order": {"required": {"before", "after"}, "optional": set()},
+    "file_exists": {"required": {"path"}, "optional": {"exists"}},
+    "llm": {"required": {"criteria"}, "optional": {"focus"}},
+    "baseline": {"required": {"baseline_file", "criteria"}, "optional": set()},
 }
+GRADER_COMMON = {"type", "name", "weight", "arm"}
 TARGETS = {"last_message", "trace", "files", "mock_calls"}
 MATCH_MODES = {"contains", "not_contains"}          # plus "count:N"
 # The keys `claude plugin eval` accepts in prompt.md; any other key is a load error.
@@ -139,10 +142,11 @@ def check_grader(case, path):
         if field not in fm:
             err(rel, f"type {gtype!r} requires field {field!r}")
     for field in fm:
-        if field != "type" and field not in spec["required"] | spec["optional"]:
-            warn(rel, f"field {field!r} is not used by type {gtype!r}")
+        if field not in GRADER_COMMON | spec["required"] | spec["optional"]:
+            err(rel, f"field {field!r} is not a {gtype!r} grader key (claude plugin eval refuses to load "
+                     f"the case)" + ("; an llm grader takes focus:" if field == "target" and gtype == "llm" else ""))
 
-    target = fm.get("target")
+    target = fm.get("target", fm.get("focus"))
     if isinstance(target, str) and target not in TARGETS:
         err(rel, f"target {target!r} is not one of {', '.join(sorted(TARGETS))} (or a {{source: file, path: ...}} mapping)")
     elif isinstance(target, dict) and target.get("source") != "file":

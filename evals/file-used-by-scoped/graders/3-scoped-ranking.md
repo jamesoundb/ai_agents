@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "last_message"
+focus: "last_message"
 criteria: |
   The question asks which symbols of core/util.py the code under app/ relies on most, ranked by
   how many files in app/ use each. The correct ranking is: parse_amount (4 app files), then

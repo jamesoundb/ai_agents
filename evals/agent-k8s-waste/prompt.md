@@ -2,7 +2,7 @@
 name: "kubernetes agent itemizes current cluster waste from a saved snapshot"
 tags: ["agent", "kubernetes", "cost", "hard-limits"]
 runs: 3
-max_turns: 14
+max_turns: 41
 timeout_seconds: 720
 allowed_tools: ["Bash", "Read", "Glob", "Grep", "Skill", "Edit", "Write"]
 ---

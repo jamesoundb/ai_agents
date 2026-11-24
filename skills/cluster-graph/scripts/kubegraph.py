@@ -58,18 +58,23 @@ def _writable_dir(d):
 
 
 def default_db_dir():
-    """Where snapshots live: KUBEGRAPH_DIR, else ~/.cache/kubegraph, else <temp dir>/kubegraph.
+    """Where snapshots live: KUBEGRAPH_DIR, else the first writable of ~/.cache/kubegraph,
+    $TMPDIR/kubegraph and ./.kubegraph (the working directory).
 
-    A Claude Code sandbox makes ~/.cache read-only (seen in `claude plugin eval` runs): snapshot
-    failed there, and an agent spent five calls finding a writable --db. Every command resolves the
-    same way, so a query finds the snapshot without --db."""
+    A Claude Code sandbox makes ~/.cache read-only: snapshot failed there, and an agent spent five
+    calls finding a writable --db. $TMPDIR is the sandbox's own writable temp dir in a normal
+    session, but read-only under `claude plugin eval`, whose /tmp is private to each Bash call: a
+    snapshot written to /tmp/kubegraph was gone by the next query, so bare /tmp (where
+    tempfile.gettempdir() falls through to) is never used. Every command resolves the same way, so
+    a query finds the snapshot without --db."""
     if os.environ.get("KUBEGRAPH_DIR"):
         return os.environ["KUBEGRAPH_DIR"]
     home = os.path.join(os.path.expanduser("~"), ".cache", "kubegraph")
-    if _writable_dir(home):
-        return home
-    tmp = os.path.join(tempfile.gettempdir(), "kubegraph")
-    return tmp if _writable_dir(tmp) else home
+    candidates = [home]
+    if os.environ.get("TMPDIR"):
+        candidates.append(os.path.join(os.environ["TMPDIR"], "kubegraph"))
+    candidates.append(os.path.join(os.getcwd(), ".kubegraph"))
+    return next((d for d in candidates if _writable_dir(d)), home)
 
 
 DB_DIR = default_db_dir()

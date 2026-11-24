@@ -2,7 +2,7 @@
 name: "kubernetes agent traces several failures to one lost node"
 tags: ["agent", "kubernetes", "troubleshooting", "hard-limits"]
 runs: 3
-max_turns: 14
+max_turns: 29
 timeout_seconds: 720
 allowed_tools: ["Bash", "Read", "Glob", "Grep", "Skill", "Edit", "Write"]
 ---

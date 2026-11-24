@@ -2,7 +2,7 @@
 name: "helm agent unblocks a locked and a failed release without touching them"
 tags: ["agent", "helm", "gitops", "hard-limits"]
 runs: 3
-max_turns: 14
+max_turns: 35
 timeout_seconds: 900
 allowed_tools: ["Bash", "Read", "Glob", "Grep", "Skill", "Edit", "Write"]
 ---

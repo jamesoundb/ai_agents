@@ -2,7 +2,7 @@
 name: "kubernetes agent sets namespace guardrails and says what they break"
 tags: ["agent", "kubernetes", "cost", "guardrails", "hard-limits"]
 runs: 3
-max_turns: 14
+max_turns: 27
 timeout_seconds: 720
 allowed_tools: ["Bash", "Read", "Glob", "Grep", "Skill", "Edit", "Write"]
 ---

@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "trace"
+focus: "trace"
 criteria: |
   The task is to read one value out of a two-line file.
 
@@ -13,7 +13,6 @@ criteria: |
 
   Judge only the tool calls in the trace. Do not reward or penalise the wording of the
   final answer.
-focus: "proportionate effort for a two-line file"
 ---
 Over-triggering costs tokens too. This is the counterweight to the triggering cases, and it
 is the only grader here that would notice the engine being used *well* but too eagerly.

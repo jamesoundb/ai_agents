@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "last_message"
+focus: "last_message"
 criteria: |
   The answer identifies who calls OrderService.place in a Kotlin codebase that also contains an
   unrelated LegacyOrderService.place.

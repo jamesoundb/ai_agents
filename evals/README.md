@@ -211,6 +211,31 @@ What the CLI does that the Antigravity runner does not (2.1.331, checked by runn
 
 Exit codes: `0` every case scored 1.0, `1` a case scored lower or did not load, `2` setup.
 
+`--max-turns N` runs the selected cases with that cap in the build's copy only: the CLI has no flag
+for it and enforces each case's own value, so measuring what a case needs requires a higher cap.
+
+`max_turns` was never enforced before (agy has no equivalent). Set 2026-11-24 from three Claude
+runs per agent case at `--max-turns 60` (Opus 5.5, CLI 2.1.331): the cap is 1.5 x the most turns
+any run used (the snapshot cases include the eval-sandbox workaround below).
+
+| case | turns used | max_turns |
+|---|---|---|
+| `agent-build-triage` | 7-8 | 12 |
+| `agent-terraform-review` | 9-10 | 15 |
+| `agent-k8s-rightsize` | 6-7 | 11 |
+| `agent-k8s-guardrails` | 10-18 | 27 |
+| `agent-helm-oversized` | 10-17 | 26 |
+| `agent-helm-stuck-releases` | 17-23 | 35 |
+| `agent-k8s-node-down` | 11-19 | 29 |
+| `agent-k8s-reach` | 13-19 | 29 |
+| `agent-k8s-troubleshoot` | 16-24 | 36 |
+| `agent-k8s-waste` | 20-27 | 41 |
+| `agent-direct-lookup` | 4-10 | 10 (not changed) |
+| `agent-kotlin-lookup` | 7-8 | 10 (not changed) |
+| `agent-python-resolution` | 4-8 | 10 (not changed) |
+
+The skill cases are not calibrated yet; `code-graph-callers` used all 10 of its 10.
+
 ### A confound worth knowing about
 
 `~/.gemini/GEMINI.md` holds personal global instructions that Antigravity loads into
@@ -337,13 +362,16 @@ the file graders pass. `install-agents-harness` is Antigravity-only.
 
 Known limits on Claude Code:
 
-- `max_turns` was never enforced before (agy has no equivalent), so the values are untested
-  guesses; `agent-k8s-waste` hit its 14.
-- Inside an eval run only the workspace and `/tmp/claude` are writable: `$TMPDIR` and `~/.cache`
-  are read-only and the network is closed. Every Bash result carries a `cwd-*: Read-only file
-  system` line from the CLI itself, and an engine that writes to `~/.cache` at run time fails
-  (cluster-graph's default snapshot database). The scaffold therefore pre-fetches everything
-  the engines download (`prepare.sh` runs `run.sh --setup`).
+- **Bash keeps no file between calls inside an eval run.** Probed 2026-11-24: the workspace,
+  `$TMPDIR`, `~` and `~/.cache` are read-only to Bash, `/tmp` and `/tmp/claude` are writable but
+  empty again on the next call, and the network is closed. Edit and Write run outside that
+  sandbox, which is why manifests can still be changed. Every Bash result carries a
+  `cwd-*: Read-only file system` line from the CLI itself. The scaffold therefore seeds and
+  pre-fetches everything the engines load (`prepare.sh`: the operator's venv and grammars, then
+  `run.sh --setup`). cluster-graph's `snapshot`, then query, workflow cannot work there: agents in
+  the five snapshot cases chain both into one command or read `cluster-snapshot/*.json` by hand,
+  so `01-uses-reach` / `01-uses-waste` can fail for that reason alone. In an ordinary sandboxed
+  session `$TMPDIR` persists and kubegraph keeps its snapshot there.
 - The eval-time plugin `agent` setting is undocumented; see Running.
 
 Also verified: the fixture provokes every behavior its graders assert on (each checked
