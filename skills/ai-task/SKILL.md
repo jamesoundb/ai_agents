@@ -39,12 +39,16 @@ clones are not changed. Rerun `init` after updating this skill to refresh `.ai/b
 ## Procedure
 
 1. Read `.ai/instructions/<slug>.md`. If the user described the problem in chat, write it there
-   first. The filename is the slug: lowercase letters, digits and hyphens.
+   first, word for word: every requirement, name, exact message and example, not a summary. A
+   session that resumes the task has only this file and the worklog. Your own notes go below it.
+   The filename is the slug: lowercase letters, digits and hyphens.
 2. `.ai/bin/ai-task start <slug> [repo...] [--title "text"]`. List the repositories the problem
    needs, or none. Rerun with the same slug to add one. `.ai/bin/ai-task clone <owner/name>` adds a
    repository that is missing.
-3. Work in `.tasks/<id>/<repo>/`. At each milestone run
-   `.ai/bin/ai-task note <slug> "what was found, decided, the result"`, which records the real time.
+3. Work in `.tasks/<id>/<repo>/`. Once you have a plan, record it first:
+   `.ai/bin/ai-task note <slug> "plan: the parts, their order, how each is checked"`. Then add a
+   `note` at each milestone (a part done, a decision, a dead end) when it is reached, not at the
+   end. `note` records the real time.
 4. Commit and push only when asked.
 5. Add a final `note` with the result, then `.ai/bin/ai-task close <slug>`. It refuses when work is
    uncommitted or unpushed or the worklog is empty. Report that; use `--force` only if the user asks.

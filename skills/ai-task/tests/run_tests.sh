@@ -87,6 +87,11 @@ rm .ai/instructions/first.md
 ok "start with no repos" "$A start solo --title 'No repos'"
 ok "no branch is recorded" "grep -q '^branch: *$' .ai/ai_work_logs/$D-solo.md"
 ok "a stub problem file is created" "test -s .ai/instructions/solo.md"
+# A resumed session has only the files: an empty log makes start ask for the request verbatim and a plan note.
+ok "start on an empty worklog asks for the verbatim request" "$A start solo | grep -q 'word for word'"
+ok "start on an empty worklog asks for a plan note" "$A start solo | grep -q 'ai-task note solo \"plan:'"
+ok "note" "$A note solo 'plan: one part'"
+no "start on a worklog with entries does not repeat it" "$A start solo | grep -q 'word for word'"
 ok "a repo can be added" "$A start solo demo"
 ok "the branch is recorded once a repo is added" "grep -q '^branch: feature/solo' .ai/ai_work_logs/$D-solo.md"
 echo x > ".tasks/$D-solo/demo/g"

@@ -93,11 +93,12 @@ ai-task clone owner/name                    # short form: github.com only
 ## Day to day
 
 1. **Write the problem** in `.ai/instructions/<slug>.md`: what is wrong, what done looks like, and
-   which repositories are involved. Or skip this and describe the problem in chat; the agent writes
-   the file for you.
+   which repositories are involved. Or skip this and describe the problem in chat; the agent copies
+   your words into the file as given, so a later session sees the request exactly as you wrote it.
 2. **Start the session at the workspace root**, not in a repository or a task folder.
 3. **Ask for the work in plain words.** The agent reads the problem file and runs
-   `.ai/bin/ai-task start <slug> <repos>`. As it works it records each milestone with `note`, and it
+   `.ai/bin/ai-task start <slug> <repos>`. It records its plan with `note` first, then each
+   milestone as it is reached, and it
    commits and pushes only when you ask.
 4. **Close** when the work is pushed: the agent adds a final note and runs `close`.
 
