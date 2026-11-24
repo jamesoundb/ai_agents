@@ -1,0 +1,6 @@
+[project]
+name = "ml-pipeline"
+dependencies = [
+  "feature-store-client>=0.4",
+  "numpy",
+]

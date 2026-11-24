@@ -1,0 +1,10 @@
+apiVersion: v2
+name: payments
+version: 0.3.0
+dependencies:
+  - name: service-chart
+    version: 1.x
+    repository: http://{HOST}/api/packages/{ORG}/helm
+  - name: redis
+    version: 19.x
+    repository: https://charts.bitnami.com/bitnami

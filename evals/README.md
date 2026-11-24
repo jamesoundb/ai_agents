@@ -32,6 +32,8 @@ was described as testing the agents while none of the five personas was ever loa
 | `bug-fix-every-case` | Does a bug report reach `bug-fix`, and does the fix cover both sites the report's two cases lead to (a shared helper and a duplicated `quantize`), each proven by a test? |
 | `file-used-by-scoped` | "What in this file does `app/` rely on most": one `query file --used-by --within` call, or a `callers` loop per symbol? The fixture's repo-wide and `app/` rankings disagree, so an unscoped count gives the wrong order. |
 | `install-agents-harness` | Asked to "install the agents" in an `agy` session, does `install-agents` install for `--harness antigravity --scope user`, never `gemini` or `all`? (The first macOS install chose `gemini`, which the Antigravity IDEs never see.) Runs in a copy of the repo with an empty HOME (`fresh_home`). |
+| `compass-plan-handoff` | A refund bug described in chat, nothing cloned yet: does `compass plan` pick payments-api (not the whole org), is the clone handed to `ai-task clone` with the full Gitea URL rather than `git clone`, and is the failed clone (the server is offline by design) reported rather than claimed? The map is replayed into the isolated HOME by `scaffold/dungeon-map.sh`. |
+| `dungeon-map-saved-org` | A teammate's `build --save` of an org whose server is down: `build --from`, no provider API call, and the dependents and dependencies of two repositories from the map (`scaffold/saved-org.sh`), with public packages and images not mistaken for org repositories. |
 
 `skeleton-elision-recovery` is the load-bearing one. The output-budget contract added
 in 2026-09 only pays off if a model acts on the recovery notice. If that case fails
@@ -105,6 +107,7 @@ graders quote. It does **not** mean the behaviour has been measured. Where that 
 | `agent-helm-stuck-releases` | yes, 3 runs (2026-10-15) | 21/21; 18 tools each, 145-338s, 41-84k tokens (agy 1.3.4). Grader 7 added after the first three runs (all 6/6) also edited the chart to fix unrelated review findings: 25-29 tools, 60-94k tokens. |
 | `agent-k8s-guardrails` | yes, 3 runs (2026-10-16) | 24/24; 15-20 tools, 170-260s, 54-81k tokens (agy 1.3.5). The first runs (one 8/8 at 39 tools and 141k tokens, two cut off at 720s) spent their calls on two gaps, both fixed: `k8s-manifest-review` failed its gate on the kube-janitor rules entry `guardrails.py` writes beside the LimitRange (not a Kubernetes object), and nothing checked the existing workloads against the generated guardrails, so each run simulated admission by hand (copying manifests outside the workspace, shrinking a job to fit). The `ADM` rules now do that in the same review. |
 | `install-agents-harness` | **no**, 1 run (2026-10-01) | 3/3; ran `./install.sh --harness antigravity --scope user`, 25 tools, 121s, 130k tokens. Graders checked against that trace and against hand-made gemini/all commands. |
+| `compass-plan-handoff`, `dungeon-map-saved-org` | **no** (added 2026-11-23) | graders checked against the scaffolds' real tool output (`compass plan`, `build --from`, `compass show`); not yet run on a model |
 
 The `ast-treesitter` cases were run after the isolation fixes and are the first evidence those
 fixes work: 39/39 assertions, six runs, **zero** calls outside the workspace, 7-9 tool calls and
