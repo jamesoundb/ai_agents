@@ -76,7 +76,7 @@ class Compass(unittest.TestCase):
         self.assertIn("dmtest/checkout-web depends on it: npm dependency: package.json:5", related)
 
     def test_archived_repos_are_not_proposed(self):
-        rc, out = self.c("plan", "billing monolith")
+        rc, out = self.c("plan", "the old monolith")
         self.assertEqual(rc, 1)
         self.assertNotIn("proposed", out)
         self.assertIn("only archived repositories match: dmtest/legacy-billing", out)

@@ -17,7 +17,9 @@ between two orgs, or two providers, appears as soon as both are built.
 
 Per repository: name, path, description, topics, primary language, default branch, archived and
 fork flags, last activity, a README summary, and the repositories it depends on, each with
-file:line: git submodules, npm / Go / Python / Maven / Gradle dependencies, Helm chart
+file:line: git submodules, npm / Go / Python dependencies, Maven (parents, BOMs, properties),
+Gradle (version catalogs, convention plugins, plugin ids, composite builds), sbt, Clojure, .NET
+(PackageReference, ProjectReference to sibling repositories, packages.config, paket), Helm chart
 dependencies, Terraform module sources (git URLs and registry names), GitLab CI `include:` /
 `trigger:` / components, GitHub and Gitea workflow and action `uses:`, Dockerfile `FROM` images
 built in the org.

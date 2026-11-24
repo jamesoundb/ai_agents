@@ -5,7 +5,8 @@
 
 For a throwaway instance only (see tests/gitea.sh): it creates the org, one repository per folder
 of tests/org/ with the description, topics and archived flag from tests/org/repos.json, and the
-folder's files as the first commit. {HOST} and {ORG} in file contents become --host and --org.
+folder's files as the first commit. {HOST} and {ORG} in file contents become --host and --org,
+{ORGTITLE} the org capitalized (a .NET package id: Dmtest.Ledger).
 gt holds the login; this script never sees a token.
 """
 import argparse
@@ -54,7 +55,8 @@ def main():
         for d, _, names in os.walk(root):
             for n in sorted(names):
                 p = os.path.join(d, n)
-                text = open(p, encoding="utf-8").read().replace("{HOST}", a.host).replace("{ORG}", a.org)
+                text = (open(p, encoding="utf-8").read().replace("{HOST}", a.host)
+                        .replace("{ORGTITLE}", a.org.title()).replace("{ORG}", a.org))
                 files.append({"operation": "create", "path": os.path.relpath(p, root),
                               "content": base64.b64encode(text.encode()).decode()})
         # "oversized": {path: bytes} -- a valid manifest padded past dungeon-map's read limit,
