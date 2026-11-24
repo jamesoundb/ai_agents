@@ -1,0 +1,7 @@
+{
+  "name": "@{ORG}/ui-kit",
+  "version": "2.0.0",
+  "dependencies": {
+    "@{ORG}/design-tokens": "^3.0.0"
+  }
+}

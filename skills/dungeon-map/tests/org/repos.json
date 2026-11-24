@@ -1,0 +1,105 @@
+{
+ "platform-lib": {
+  "description": "Shared Go library for services",
+  "topics": [
+   "go",
+   "library"
+  ]
+ },
+ "payments-api": {
+  "description": "Payments service: charges, refunds, ledger",
+  "topics": [
+   "payments",
+   "go",
+   "service"
+  ]
+ },
+ "proto": {
+  "description": "Shared protobuf definitions",
+  "topics": [
+   "protobuf"
+  ]
+ },
+ "base-image": {
+  "description": "Container base image",
+  "topics": [
+   "docker"
+  ]
+ },
+ "ci-actions": {
+  "description": "Shared CI actions",
+  "topics": [
+   "ci"
+  ]
+ },
+ "ui-kit": {
+  "description": "React component library",
+  "topics": [
+   "react",
+   "frontend"
+  ]
+ },
+ "checkout-web": {
+  "description": "Checkout front end",
+  "topics": [
+   "react",
+   "frontend",
+   "payments"
+  ]
+ },
+ "terraform-google-network": {
+  "description": "VPC network Terraform module",
+  "topics": [
+   "terraform"
+  ]
+ },
+ "infra-live": {
+  "description": "Terraform roots and Helm charts per environment",
+  "topics": [
+   "terraform",
+   "helm"
+  ]
+ },
+ "service-chart": {
+  "description": "Helm library chart for services",
+  "topics": [
+   "helm"
+  ]
+ },
+ "ml-pipeline": {
+  "description": "Fraud model training pipeline",
+  "topics": [
+   "python",
+   "ml"
+  ]
+ },
+ "feature-store-client": {
+  "description": "Feature store Python client",
+  "topics": [
+   "python"
+  ]
+ },
+ "legacy-billing": {
+  "description": "Old billing monolith (archived)",
+  "topics": [
+   "billing"
+  ],
+  "archived": true
+ },
+ "big-monorepo": {
+  "description": "Front-end packages and Python services in one repository",
+  "topics": [
+   "monorepo"
+  ],
+  "oversized": {
+   "packages/huge/package.json": 600000
+  }
+ },
+ "design-tokens": {
+  "description": "Design tokens: colours, spacing, typography",
+  "topics": [
+   "frontend",
+   "design"
+  ]
+ }
+}

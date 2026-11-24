@@ -1,0 +1,8 @@
+[project]
+name = "ml-pipeline"
+dependencies = [
+  "feature-store-client>=0.4",
+  "{ORG}-metrics>=1.0",
+  "{ORG}lib",
+  "numpy",
+]

@@ -24,6 +24,8 @@ invoke the agents. If skills are unavailable in your harness, run
   in CI. Executing the cases spends model tokens: `python3 evals/run_agy.py` drives Antigravity
   (`agy`), `claude plugin eval .` drives Claude Code, from the same case files. Verify a new
   grader's assertion against real tool output before committing it -- see `evals/README.md`.
+- `skills/dungeon-map`: bump `SCANNER` in `scripts/dungeonmap.py` with every change to an
+  extractor or to the file selection (`plan_files`), so cached maps rescan every repository.
 - Architecture reference lives in `docs/architecture.md`. Task worklogs are not kept in this
   repository: they live in the developer's workspace (`.ai/ai_work_logs/`, see
   `skills/ai-task/README.md`).
@@ -53,6 +55,8 @@ harnesses without agent files they are installed as `<name>` skills and invoked 
 | `cluster-graph` | Use before kubectl get/describe loops on a live cluster: one read-only snapshot of every resource, CRDs included, then one query for what is broken, why, or what depends on an object. |
 | `code-graph` | Use instead of grep and reading files whenever you need who calls or uses a symbol, what it calls, how A reaches B, what a class contains or what a change breaks: one query on the repo's tree- sitter code graph. |
 | `code-skeleton` | Use before reading a source file longer than ~80 lines, or when asked what is in a file or directory: classes, functions, signatures and exact line ranges instead of the whole file. |
+| `compass` | Use when a problem needs repositories the workspace does not have yet, to set up or verify the build / test environment of an application (every repository it needs, at any depth), or to find which repositories in the org do X, depend on Y or are used by Z: queries the dungeon map and hands off to ai-task clone / start. |
+| `dungeon-map` | Use to build or refresh a map of every repository in a GitHub org, GitLab group or Gitea org (metadata, README summary, cross-repository dependencies) through gh / glab / gt, without cloning; compass reads it to pick the repositories a problem needs. |
 | `gke-cost-discovery` | Use when asked why a GKE cluster costs too much, to derive build size tiers, or before tuning node pools: unused vs unallocated capacity, over-requested workloads, stale test environments. |
 | `helm-chart-review` | Use for Helm chart PRs and ArgoCD/Flux delivery changes: dependency pinning, values defaults and per-environment layering, GitOps hygiene, and a rendered-manifest review. |
 | `install-agents` | Use when a developer asks to install, update or remove this repository's agents and skills in their coding tool (Claude Code, Codex, Gemini CLI, Antigravity, Copilot), or on a first session here. |

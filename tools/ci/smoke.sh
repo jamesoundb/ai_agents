@@ -58,6 +58,11 @@ KG="$S/cluster-graph/scripts/run.sh"
 step "snapshot --from the fixture" "$KG" snapshot --from "$S/cluster-graph/tests/fixture" --db "$WORK/kg.db"
 step "health, why, used-by, crds"  sh -c "'$KG' health --db '$WORK/kg.db' --no-refresh && '$KG' why deploy/crashy svc/web-typo --db '$WORK/kg.db' --no-refresh && '$KG' used-by cm/web-cfg --db '$WORK/kg.db' --no-refresh && '$KG' crds --db '$WORK/kg.db' --no-refresh"
 
+echo "== dungeon-map -> compass on the saved Gitea org (offline, no provider API) =="
+DM="$S/dungeon-map/scripts/run.sh"
+step "build --from the fixture" "$DM" --cache "$WORK/dm" build localhost:3300/dmtest --provider gitea --from "$S/dungeon-map/tests/fixture/gitea"
+step "maps, compass plan and show" sh -c "'$DM' --cache '$WORK/dm' maps && '$S/compass/scripts/run.sh' plan 'refunds fail' --cache '$WORK/dm' && '$S/compass/scripts/run.sh' show payments-api --cache '$WORK/dm'"
+
 echo "== reviews on the fixture =="
 review "terraform-review on fixture/infra"  "$S/terraform-review/scripts/run.sh" "$FIX/infra" --no-tools
 review "k8s-manifest-review on fixture/k8s" "$S/k8s-manifest-review/scripts/run.sh" "$FIX/k8s"
