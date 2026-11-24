@@ -1,6 +1,5 @@
 ---
 name: "build-pipeline agent names the cause instead of recommending a rerun"
-agent: build-pipeline
 tags: ["agent", "teamcity", "triage", "routing"]
 runs: 3
 max_turns: 12

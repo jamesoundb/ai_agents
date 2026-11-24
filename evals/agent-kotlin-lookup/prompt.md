@@ -1,6 +1,5 @@
 ---
 name: "ast-treesitter resolves a Kotlin caller past a same-named decoy"
-agent: ast-treesitter
 tags: ["agent", "kotlin", "workflow", "resolution"]
 runs: 3
 max_turns: 10

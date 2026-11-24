@@ -12,7 +12,8 @@ allowed-tools: Bash(*/k8s-manifest-review/scripts/run.sh *), Bash(python3 */k8s-
 a per-repo policy and the build size tiers produced by `gke-cost-discovery`. Exit code 1 at the
 `--fail-on` gate (default `high`) makes it a CI step. Rule catalogue: `reference/rules.md`.
 
-Run the scripts by their installed path from the working directory (for example
+Run the scripts by their installed path, the folder your harness named when it loaded the skill
+(Claude Code: "Base directory for this skill"), from the working directory (for example
 `.claude/skills/k8s-manifest-review/scripts/...` or
 `.agents/skills/k8s-manifest-review/scripts/...`), one command per call: no `cd` into a skill
 folder, no shell variable, nothing piped or chained after it. Permission rules match the literal

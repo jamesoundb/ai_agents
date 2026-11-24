@@ -1,6 +1,5 @@
 ---
 name: "kubernetes agent finds root causes from a saved cluster snapshot"
-agent: kubernetes
 tags: ["agent", "kubernetes", "troubleshooting", "hard-limits"]
 runs: 3
 max_turns: 16

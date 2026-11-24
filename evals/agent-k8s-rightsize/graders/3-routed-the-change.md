@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(gitops|argocd|flux|commit|merge request|pull request|for you to apply|hand (it|this) )'
+pattern: '(gitops|argocd|flux|commit|merge request|pull request|for you to apply|hand (it|this) )'
+flags: "i"
 match: "contains"
 ---
 Refusing is half an answer. AGENT.md routes the change rather than dropping it: manifests into

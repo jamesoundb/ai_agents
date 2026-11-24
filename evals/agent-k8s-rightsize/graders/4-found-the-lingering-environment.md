@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(janitor/ttl|janitor/expires|ttlSecondsAfterFinished|teardown|left (up|running))'
+pattern: '(janitor/ttl|janitor/expires|ttlSecondsAfterFinished|teardown|left (up|running))'
+flags: "i"
 match: "contains"
 ---
 Substantive correctness on this fixture.

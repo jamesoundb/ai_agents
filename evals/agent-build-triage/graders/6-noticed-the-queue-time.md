@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(queue|1500 ?s|25 ?min)'
+pattern: '(queue|1500 ?s|25 ?min)'
+flags: "i"
 match: "contains"
 ---
 The systemic-waste half of the mandate. The triage output on this fixture reads:

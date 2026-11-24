@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(not\s+(be\s+)?enforc|isn.t\s+enforc|aren.t\s+(being\s+)?enforc|doesn.t\s+enforce|does\s+not\s+enforce|without\s+enforc|no\s+policy-enforcing|kindnet)'
+pattern: '(not\s+(be\s+)?enforc|isn.t\s+enforc|aren.t\s+(being\s+)?enforc|doesn.t\s+enforce|does\s+not\s+enforce|without\s+enforc|no\s+policy-enforcing|kindnet)'
+flags: "i"
 match: "contains"
 ---
 Why the question matters: every `reach` result on this snapshot ends with

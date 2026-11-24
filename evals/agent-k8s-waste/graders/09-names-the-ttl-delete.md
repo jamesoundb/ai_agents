@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of|(running|up|alive) (for|since) ).{0,300}(delet|tear|remov)|(delet|tear|remov).{0,300}(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of)'
+pattern: '(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of|(running|up|alive) (for|since) ).{0,300}(delet|tear|remov)|(delet|tear|remov).{0,300}(creation|creationTimestamp|older than (the |its )?(ttl|\d+ ?h|\d+ hours)|its age|age of)'
+flags: "is"
 match: "contains"
 ---
 `waste` lists `preview-app` in `kg-preview-123` under lifecycle as "up" for longer than its

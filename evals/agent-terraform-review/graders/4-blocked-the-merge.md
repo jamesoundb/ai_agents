@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(\bblock\b|do not merge|not safe to merge|fail(s|ed)?\b)'
+pattern: '(\bblock\b|do not merge|not safe to merge|fail(s|ed)?\b)'
+flags: "i"
 match: "contains"
 ---
 The gate on this fixture is FAIL (two critical, two high at `--fail-on high`). The question

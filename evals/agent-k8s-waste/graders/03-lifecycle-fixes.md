@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*janitor/(ttl|expires))(?=.*ttlSecondsAfterFinished)'
+pattern: '(?=.*janitor/(ttl|expires))(?=.*ttlSecondsAfterFinished)'
+flags: "is"
 match: "contains"
 ---
 The two fixes that belong in `manifests/kg-preview-123.yaml`: a `janitor/ttl` (or `janitor/expires`)

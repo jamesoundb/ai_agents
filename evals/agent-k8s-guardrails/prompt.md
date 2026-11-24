@@ -1,6 +1,5 @@
 ---
 name: "kubernetes agent sets namespace guardrails and says what they break"
-agent: kubernetes
 tags: ["agent", "kubernetes", "cost", "guardrails", "hard-limits"]
 runs: 3
 max_turns: 14

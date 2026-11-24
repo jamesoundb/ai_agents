@@ -1,6 +1,5 @@
 ---
 name: "kubernetes agent right-sizes without touching the cluster"
-agent: kubernetes
 tags: ["agent", "kubernetes", "cost", "hard-limits"]
 runs: 3
 max_turns: 14

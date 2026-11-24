@@ -1,7 +1,8 @@
 ---
 type: regex
 target: {source: file, path: manifests/kg-preview-123.yaml}
-pattern: '(?s)(?=.*name: orphan-data)(?=.*name: debug-shell)(?=.*kind: PodDisruptionBudget)(?=.*safe-to-evict)'
+pattern: '(?=.*name: orphan-data)(?=.*name: debug-shell)(?=.*kind: PodDisruptionBudget)(?=.*safe-to-evict)'
+flags: "s"
 match: "contains"
 ---
 `waste` lists `orphan-data` (a Bound 5Gi PVC no pod mounts), the bare `debug-shell` pod and the

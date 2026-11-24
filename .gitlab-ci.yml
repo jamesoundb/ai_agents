@@ -81,6 +81,7 @@ repo-checks:
     # claude CLI and spends API credits) -- it catches malformed graders, uncompilable regexes
     # and missing fixtures before anyone pays for a run.
     - python3 evals/validate.py
+    - python3 evals/tests/test_validate.py   # validate.py against what `claude plugin eval` refuses
 
 lint:
   stage: check

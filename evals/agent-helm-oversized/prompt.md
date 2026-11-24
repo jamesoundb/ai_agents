@@ -1,6 +1,5 @@
 ---
 name: "helm agent fixes an oversized test environment at the right layer"
-agent: helm
 tags: ["agent", "helm", "gitops", "hard-limits"]
 runs: 3
 max_turns: 14

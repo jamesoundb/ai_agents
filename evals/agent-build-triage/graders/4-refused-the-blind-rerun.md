@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: "(?i)(do not rerun|don'?t rerun|not (worth )?rerun|a rerun (will|would|does|wo) ?n[o']?t|rerun(ning|s)? (will|would|does|wo) ?n[o']?t|rerun(ning)? (changes|fixes) nothing)"
+pattern: "(do not rerun|don'?t rerun|not (worth )?rerun|a rerun (will|would|does|wo) ?n[o']?t|rerun(ning|s)? (will|would|does|wo) ?n[o']?t|rerun(ning)? (changes|fixes) nothing)"
+flags: "i"
 match: "contains"
 ---
 The load-bearing assertion for this persona. AGENT.md: "you turn a red build into a named cause

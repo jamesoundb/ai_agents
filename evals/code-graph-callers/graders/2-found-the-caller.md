@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)replay_order|RevenueReport'
+pattern: 'replay_order|RevenueReport'
+flags: "i"
 match: "contains"
 ---
 RevenueReport.replay_order (src/reporting.py:13) is the only caller.
