@@ -40,6 +40,20 @@ PLANTED = {
     ("ledger-dotnet", "invoicing-dotnet", "nuget"), ("ledger-dotnet", "shared-dotnet", "dotnet-project"),
     ("ledger-dotnet", "shared-dotnet", "nuget"), ("invoicing-dotnet", "shared-dotnet", "nuget"),
     ("invoicing-dotnet", "shared-dotnet", "paket"),
+    # C / C++: FetchContent, ExternalProject from a source archive, find_package against project(),
+    # Conan, vcpkg and a vcpkg git registry, a Meson wrap
+    ("cpp-app", "cpp-net", "cmake-fetch"), ("cpp-app", "cpp-core", "cmake-fetch"), ("cpp-app", "cpp-core", "cmake"),
+    ("cpp-app", "cpp-core", "conan"), ("cpp-app", "cpp-core", "vcpkg"), ("cpp-app", "vcpkg-registry", "vcpkg"),
+    ("cpp-app", "cpp-net", "meson"),
+    # Rust: a git dependency and a registry crate (one edge), a path dependency to a sibling checkout
+    ("rust-app", "rust-core", "cargo"), ("rust-app", "rust-shared", "cargo"),
+    # Swift: SwiftPM, CocoaPods by name (podspec), Carthage
+    ("swift-app", "swift-kit", "swiftpm"), ("swift-app", "swift-kit", "cocoapods"), ("swift-app", "swift-kit", "carthage"),
+    # Bazel: bazel_dep + git_override (one edge), http_archive of a code-host archive
+    ("bazel-app", "bazel-rules", "bazel"), ("bazel-app", "cpp-net", "bazel"),
+    # Haskell, Zig, Elixir, Erlang
+    ("polyglot-tools", "rust-shared", "cabal"), ("polyglot-tools", "cpp-net", "zig"),
+    ("polyglot-tools", "cpp-core", "mix"), ("polyglot-tools", "bazel-rules", "rebar"),
 }
 
 # The org's own references that no repository provides (src, ident): each must be reported by `gaps`.
@@ -90,7 +104,7 @@ class GiteaFixture(Tmp):
     def test_every_planted_edge_and_no_decoy(self):
         rc, out = self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("24 repos (24 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("36 repos (36 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
         m = dm.load_map(self.cache)
         self.assertEqual(edges(m), PLANTED)
 
@@ -114,10 +128,10 @@ class GiteaFixture(Tmp):
                 r["updated_at"] = "2030-01-01T00:00:00Z"
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("24 repos (1 scanned, 23 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("36 repos (1 scanned, 35 unchanged, 0 failed, 1 incomplete)", out)
         self.assertEqual(edges(dm.load_map(self.cache)), PLANTED)  # reused rows keep their edges
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
-        self.assertIn("(0 scanned, 24 unchanged", out)
+        self.assertIn("(0 scanned, 36 unchanged", out)
 
     def test_no_credentials_in_the_map(self):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
@@ -132,7 +146,7 @@ class GiteaFixture(Tmp):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         rc, out = run("--cache", self.cache, "maps")
         self.assertEqual(rc, 0)
-        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+24 repos\s+25 edges out.*gaps: 1 incomplete, 4 unresolved")
+        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+36 repos\s+43 edges out.*gaps: 1 incomplete, 4 unresolved")
 
 
 def gh_repo(name, **kw):
@@ -302,7 +316,7 @@ class Completeness(Tmp):
         m = dm.load_map(self.cache)
         self.assertEqual({(u["src"].rsplit("/", 1)[1], u["ident"]) for u in m.unresolved}, UNRESOLVED)
         self.assertEqual(edges(m), PLANTED)  # the new references and decoys add no edge
-        self.assertEqual(m.internal_hints, [("pypi", "dmtest-", 2)])
+        self.assertEqual(m.internal_hints, [("crates", "dmtest-", 2), ("pypi", "dmtest-", 2)])
 
     def test_a_shared_package_name_is_internal_only_when_declared(self):
         self.build()
@@ -315,7 +329,7 @@ class Completeness(Tmp):
         self.assertEqual(got, UNRESOLVED | {("ml-pipeline", "dmtest-metrics")})  # not dmtestlib
         u = [u for u in m.unresolved if u["ident"] == "dmtest-metrics"][0]
         self.assertEqual((u["file"], u["line"], u["why"]), ("pyproject.toml", 5, "internal prefix dmtest- (build --internal)"))
-        self.assertEqual(m.internal_hints, [])
+        self.assertEqual(m.internal_hints, [("crates", "dmtest-", 2)])  # only pypi was declared
 
     def test_oversized_manifest_is_a_gap(self):
         self.build()
@@ -365,7 +379,7 @@ class Completeness(Tmp):
     def test_scanner_version_change_rescans_every_repository(self):
         self.build()
         rc, out = self.build()
-        self.assertIn("(0 scanned, 24 unchanged", out)
+        self.assertIn("(0 scanned, 36 unchanged", out)
         old = dm.SCANNER
         try:
             dm.SCANNER = old + 1
@@ -373,7 +387,7 @@ class Completeness(Tmp):
         finally:
             dm.SCANNER = old
         self.assertIn(f"scanner {old} -> {old + 1}: rescanning every repository", out)
-        self.assertIn("(24 scanned, 0 unchanged", out)
+        self.assertIn("(36 scanned, 0 unchanged", out)
 
     def test_a_map_from_before_scanner_versions_is_rescanned(self):
         self.build()
@@ -385,7 +399,7 @@ class Completeness(Tmp):
         self.assertEqual(dm.load_map(self.cache).repos["localhost:3300/dmtest/big-monorepo"]["gaps"], [])
         rc, out = self.build()
         self.assertIn(f"scanner 1 -> {dm.SCANNER}", out)
-        self.assertIn("(24 scanned, 0 unchanged", out)
+        self.assertIn("(36 scanned, 0 unchanged", out)
 
     def test_reused_repositories_keep_their_gaps(self):
         self.build()
@@ -439,7 +453,8 @@ class InternalRules(unittest.TestCase):
         return dm.internal_rules(m, prov)
 
     def test_namespaces_from_what_the_org_provides(self):
-        f, hints = self.rules([("github.com/acme/a", "go", "go.acme.dev/a"), ("github.com/acme/b", "maven", "com.acme:b"),
+        f, hints = self.rules([("github.com/acme/a", "go", "go.acme.dev/a"), ("github.com/acme/a2", "go", "go.acme.dev/a2"),
+                               ("github.com/acme/b", "maven", "com.acme:b"),
                                ("github.com/acme/c", "npm", "@acme/c"), ("github.com/acme/d", "pypi", "acme-d"),
                                ("github.com/acme/e", "pypi", "acme-e"), ("github.com/acme/f", "go", "github.com/acme/f")])
         for ns, ident in (("go", "go.acme.dev/x"), ("go", "github.com/acme/x"), ("git", "github.com/acme/x"),
@@ -461,6 +476,13 @@ class InternalRules(unittest.TestCase):
         self.assertEqual(hints, [("pypi", "opentelemetry-", 2)])
         self.assertFalse(f("pypi", "google-genai"))
         self.assertFalse(f("pypi", "opentelemetry-instrumentation-openai"))  # traceloop's, on PyPI
+
+    def test_a_shared_vanity_domain_is_not_the_orgs(self):
+        """Found live on grpc: grpc-go's google.golang.org/grpc made google.golang.org/protobuf and
+        genproto look like grpc's own modules."""
+        f, _ = self.rules([("github.com/grpc/grpc-go", "go", "google.golang.org/grpc")], org="grpc")
+        self.assertTrue(f("go", "google.golang.org/grpc/examples"))
+        self.assertFalse(f("go", "google.golang.org/protobuf"))
 
     def test_a_fork_does_not_make_its_upstream_internal(self):
         f, _ = self.rules([("github.com/acme/k8s", "go", "k8s.io/kubernetes")], forks={"github.com/acme/k8s"})
@@ -830,6 +852,146 @@ class DotNet(unittest.TestCase):
                         ("project/Dependencies.scala", dm.x_sbt), ("build.sbt", dm.x_sbt), ("deps.edn", dm.x_deps_edn),
                         ("src/main/scala/App.scala", None), ("global.json", None)):
             self.assertIs(dm.extractor_for(path), x, path)
+
+
+class Native(unittest.TestCase):
+    def test_cmake(self):
+        cm = ('cmake_minimum_required(VERSION 3.24)\nproject(CppApp CXX)\nset(NET_URL "https://gitlab.acme.example/cpp/net.git")\n'
+              'include(FetchContent)\nFetchContent_Declare(\n  net\n  GIT_REPOSITORY ${NET_URL}\n  GIT_TAG v1.2\n)\n'
+              'FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)\n'
+              'ExternalProject_Add(legacy URL https://gitlab.acme.example/cpp/legacy/-/archive/v2/legacy-v2.tar.gz)\n'
+              'CPMAddPackage("gh:fmtlib/fmt@10.2.1")\nCPMAddPackage(NAME util GITHUB_REPOSITORY acme/util VERSION 1.0)\n'
+              '# FetchContent_Declare(old GIT_REPOSITORY https://github.com/acme/commented-out.git)\n'
+              'find_package(AcmeCore 2.0 REQUIRED)\nfind_package(Threads)\ninstall(EXPORT AcmeAppTargets DESTINATION lib)\n')
+        r, prov = reqs({"CMakeLists.txt": cm, "cmake/AcmeNetConfig.cmake.in": "@PACKAGE_INIT@\n"})
+        self.assertEqual(r[("cmake-fetch", "git", "gitlab.acme.example/cpp/net")][:2], ("CMakeLists.txt", 5))
+        for k in (("cmake-fetch", "git", "github.com/google/googletest"), ("cmake-fetch", "git", "gitlab.acme.example/cpp/legacy"),
+                  ("cmake-fetch", "git", "github.com/fmtlib/fmt"), ("cmake-fetch", "git", "github.com/acme/util"),
+                  ("cmake", "cmake", "acmecore"), ("cmake", "cmake", "threads")):
+            self.assertIn(k, r)
+        self.assertNotIn(("cmake-fetch", "git", "github.com/acme/commented-out"), r)
+        self.assertEqual(prov, [("cmake", "acmeapp"), ("cmake", "acmenet"), ("cmake", "cppapp")])
+
+    def test_conan_vcpkg_meson(self):
+        r, prov = reqs({
+            "conanfile.txt": "[requires]\nacme-core/1.0@acme/stable\nzlib/1.3\n[generators]\nCMakeDeps\n",
+            "pkg/conanfile.py": 'class P(ConanFile):\n    name = "acme-net"\n    requires = "acme-core/1.0", "boost/1.84"\n'
+                                '    def requirements(self):\n        self.requires("openssl/3.2")\n',
+            "vcpkg.json": '{"name": "acme-app", "dependencies": ["fmt", {"name": "acme-core", "features": ["x"]}]}',
+            "vcpkg-configuration.json": '{"registries": [{"kind": "git", "repository": "https://gitlab.acme.example/cpp/vcpkg-registry.git",'
+                                        ' "packages": ["acme-core"]}]}',
+            "subprojects/net.wrap": "[wrap-git]\nurl = https://gitlab.acme.example/cpp/net.git\nrevision = v1\n",
+            "subprojects/zlib.wrap": "[wrap-file]\nsource_url = https://github.com/madler/zlib/archive/v1.3.tar.gz\n"})
+        for k in (("conan", "conan", "acme-core"), ("conan", "conan", "zlib"), ("conan", "conan", "boost"),
+                  ("conan", "conan", "openssl"), ("vcpkg", "vcpkg", "fmt"), ("vcpkg", "vcpkg", "acme-core"),
+                  ("vcpkg", "git", "gitlab.acme.example/cpp/vcpkg-registry"), ("meson", "git", "gitlab.acme.example/cpp/net"),
+                  ("meson", "git", "github.com/madler/zlib")):
+            self.assertIn(k, r)
+        self.assertNotIn(("conan", "conan", "cmakedeps"), r)
+        self.assertEqual(prov, [("conan", "acme-net"), ("vcpkg", "acme-app")])
+
+    def test_cargo(self):
+        cargo = ('[package]\nname = "acme_app"\n\n[dependencies]\nserde = { version = "1", features = ["derive"] }\n'
+                 'acme-types = { git = "https://gitlab.acme.example/rust/core.git", branch = "main" }\n'
+                 'acme-macros = { version = "0.2", registry = "acme" }\nshared = { path = "../../rust-shared" }\n'
+                 'local = { path = "crates/local" }\nrenamed = { package = "acme_util", version = "1" }\n\n'
+                 "[target.'cfg(unix)'.dependencies]\nlibc = \"0.2\"\n\n[dependencies.tokio]\nversion = \"1\"\nfeatures = [\n  \"full\",\n]\n\n"
+                 '[patch.crates-io]\nacme-types = { git = "https://gitlab.acme.example/rust/core-fork.git" }\n')
+        r, prov = reqs({"app/Cargo.toml": cargo,
+                        ".cargo/config.toml": '[registries.acme]\nindex = "sparse+https://u:p@crates.acme.example/index/"\n'})
+        self.assertEqual(prov, [("crates", "acme-app")])
+        self.assertEqual(r[("cargo", "git", "gitlab.acme.example/rust/core")][:2], ("app/Cargo.toml", 6))
+        for k in (("cargo", "crates", "serde"), ("cargo", "crates", "acme-macros"), ("cargo", "git", "github.com/acme/rust-shared"),
+                  ("cargo", "crates", "acme-util"), ("cargo", "crates", "libc"), ("cargo", "crates", "tokio"),
+                  ("cargo", "git", "gitlab.acme.example/rust/core-fork"),
+                  ("registry", "registry", "https://crates.acme.example/index")):
+            self.assertIn(k, r)
+        self.assertEqual(r[("cargo", "crates", "tokio")][:2], ("app/Cargo.toml", 16))
+        self.assertFalse([k for k in r if k[2] in ("local", "acme-types", "shared")])  # path / git deps are not crates
+
+    def test_swift_pods_carthage(self):
+        r, prov = reqs({"Package.swift": 'let package = Package(\n  name: "App",\n  dependencies: [\n'
+                                         '    .package(url: "https://gitlab.acme.example/ios/kit.git", from: "1.0.0"),\n'
+                                         '    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),\n'
+                                         '    .package(path: "../ios-shared"),\n  ]\n)\n',
+                        "Podfile": "target 'App' do\n  pod 'AcmeKit'\n  pod 'Net', :git => 'https://gitlab.acme.example/ios/net.git'\n"
+                                   "  pod 'Alamofire', '~> 5.8'\nend\n",
+                        "AcmeKit.podspec": "Pod::Spec.new do |s|\n  s.name = 'AcmeKit'\nend\n",
+                        "Cartfile": 'github "Alamofire/Alamofire" ~> 5.8\ngit "https://gitlab.acme.example/ios/legacy.git" "main"\n'})
+        for k in (("swiftpm", "git", "gitlab.acme.example/ios/kit"), ("swiftpm", "git", "github.com/apple/swift-log"),
+                  ("swiftpm", "git", "github.com/acme/ios-shared"), ("cocoapods", "cocoapods", "acmekit"),
+                  ("cocoapods", "git", "gitlab.acme.example/ios/net"), ("cocoapods", "cocoapods", "alamofire"),
+                  ("carthage", "git", "github.com/alamofire/alamofire"), ("carthage", "git", "gitlab.acme.example/ios/legacy")):
+            self.assertIn(k, r)
+        self.assertEqual(r[("swiftpm", "git", "gitlab.acme.example/ios/kit")][:2], ("Package.swift", 4))
+        self.assertEqual(prov, [("cocoapods", "acmekit")])
+
+    def test_bazel(self):
+        r, prov = reqs({
+            "MODULE.bazel": 'module(name = "acme_app", version = "1.0")\nbazel_dep(name = "rules_cc", version = "0.0.9")\n'
+                            'bazel_dep(name = "acme_rules", version = "1.2")\ngit_override(\n    module_name = "acme_rules",\n'
+                            '    remote = "https://gitlab.acme.example/build/rules.git",\n    commit = "abc",\n)\n',
+            "WORKSPACE": 'workspace(name = "acme_app")\nhttp_archive(\n    name = "acme_net",\n'
+                         '    urls = ["https://gitlab.acme.example/cpp/net/-/archive/v1/net-v1.tar.gz"],\n)\n'
+                         'http_archive(name = "zlib", urls = ["https://zlib.net/zlib-1.3.tar.gz"])\n'
+                         'git_repository(name = "abseil", remote = "https://github.com/abseil/abseil-cpp.git")\n',
+            "bazel/repositories.bzl": 'def deps():\n    new_git_repository(name = "x", remote = "https://gitlab.acme.example/cpp/x.git")\n'})
+        for k in (("bazel", "bazel", "rules_cc"), ("bazel", "bazel", "acme_rules"), ("bazel", "git", "gitlab.acme.example/build/rules"),
+                  ("bazel", "git", "gitlab.acme.example/cpp/net"), ("bazel", "git", "github.com/abseil/abseil-cpp"),
+                  ("bazel", "git", "gitlab.acme.example/cpp/x")):
+            self.assertIn(k, r)
+        self.assertEqual(r[("bazel", "git", "gitlab.acme.example/build/rules")][:2], ("MODULE.bazel", 4))
+        self.assertEqual(len([k for k in r if k[0] == "bazel"]), 6)  # zlib.net is not a code host
+        self.assertEqual(prov, [("bazel", "acme_app")])
+
+    def test_cabal_zig_mix_rebar(self):
+        r, _ = reqs({"cabal.project": "packages: .\nsource-repository-package\n  type: git\n  location: https://gitlab.acme.example/hs/lib.git\n",
+                     "build.zig.zon": '.{ .dependencies = .{ .net = .{ .url = "git+https://gitlab.acme.example/zig/net.git#abc" } } }\n',
+                     "mix.exs": 'defp deps do\n  [{:plug, "~> 1.0"}, {:core, git: "https://gitlab.acme.example/ex/core.git", tag: "v1"},\n'
+                                '   {:tool, github: "acme/tool"}]\nend\n',
+                     "rebar.config": '{deps, [{lib, {git, "https://gitlab.acme.example/erl/lib.git", {tag, "1"}}}]}.\n'})
+        for k in (("cabal", "git", "gitlab.acme.example/hs/lib"), ("zig", "git", "gitlab.acme.example/zig/net"),
+                  ("mix", "git", "gitlab.acme.example/ex/core"), ("mix", "git", "github.com/acme/tool"),
+                  ("rebar", "git", "gitlab.acme.example/erl/lib")):
+            self.assertIn(k, r)
+        self.assertEqual(len(r), 5)
+
+    def test_line_numbers_from_grpc(self):
+        """Found live on grpc: a multi-line .package( cited the line without the URL, and ^\\s* in
+        multiline mode cited the blank line above a pod."""
+        r, _ = reqs({"Package.swift": 'let package = Package(\n  dependencies: [\n    .package(\n'
+                                      '      url: "https://github.com/grpc/grpc-swift-2.git",\n      from: "2.0.0"\n    ),\n  ]\n)\n',
+                     "Podfile": "target 'A' do\n\n\n  pod 'BoringSSL-GRPC', :path => '../..'\nend\n"})
+        self.assertEqual(r[("swiftpm", "git", "github.com/grpc/grpc-swift-2")][:2], ("Package.swift", 4))
+        self.assertEqual(r[("cocoapods", "cocoapods", "boringssl-grpc")][:2], ("Podfile", 4))
+
+    def test_a_bazel_registry_entry_is_not_the_repositorys_module(self):
+        r, prov = reqs({"modules/abseil-cpp/20240116.0/MODULE.bazel": 'module(name = "abseil-cpp")\nbazel_dep(name = "rules_cc")\n',
+                        "MODULE.bazel": 'module(name = "registry_tools")\n'})
+        self.assertEqual((r, prov), ({}, [("bazel", "registry_tools")]))
+
+    def test_gradle_project_dir_keeps_the_project_name(self):
+        """grpc-java: project(':grpc-alts').projectDir = "$rootDir/alts" as File."""
+        _, prov = reqs({"settings.gradle": 'include ":grpc-alts"\nproject(\':grpc-alts\').projectDir = "$rootDir/alts" as File\n',
+                        "build.gradle": "subprojects {\n  group = 'io.grpc'\n}\n", "alts/build.gradle": "\n"})
+        self.assertIn(("maven", "io.grpc:grpc-alts"), prov)
+        self.assertNotIn(("maven", "io.grpc:alts"), prov)
+
+    def test_archive_urls(self):
+        for url, want in (("https://github.com/o/r/archive/refs/tags/v1.tar.gz", "github.com/o/r"),
+                          ("https://github.com/o/r/releases/download/v1/r.tar.gz", "github.com/o/r"),
+                          ("https://codeload.github.com/o/r/tar.gz/v1", "github.com/o/r"),
+                          ("https://gitlab.acme.example/a/b/c/-/archive/v1/c.tar.gz", "gitlab.acme.example/a/b/c"),
+                          ("https://zlib.net/zlib-1.3.tar.gz", None)):
+            self.assertEqual(dm.archive_repo(url), want, url)
+
+    def test_crates_names_share_the_org_name_hint(self):
+        m = dm.Map()
+        m.graphs["github.com/acme"] = {"host": "github.com", "org": "acme"}
+        m.repos["github.com/acme/a"] = {"fork": False}
+        f, hints = dm.internal_rules(m, {("crates", "acme-core"): {"github.com/acme/a"}, ("crates", "acme-net"): {"github.com/acme/a"}})
+        self.assertEqual(hints, [("crates", "acme-", 2)])
+        self.assertFalse(f("crates", "acme-other"))  # crates.io has no namespaces: only with --internal
 
 class CliTransportErrors(unittest.TestCase):
     """A stand-in `gh` on PATH: errors are classified and the login hint names the right command."""

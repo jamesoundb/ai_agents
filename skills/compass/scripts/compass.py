@@ -42,6 +42,10 @@ VIA_TEXT = {
     "image": "container base image", "gradle-plugin": "Gradle plugin", "gradle-build": "Gradle included build",
     "sbt": "sbt dependency", "clojure": "Clojure dependency", "nuget": "NuGet package",
     "dotnet-project": ".NET project reference", "paket": "Paket git dependency", "registry": "package registry",
+    "cmake": "CMake find_package", "cmake-fetch": "CMake FetchContent / ExternalProject / CPM", "conan": "Conan package",
+    "vcpkg": "vcpkg dependency", "meson": "Meson wrap", "cargo": "Cargo dependency", "swiftpm": "Swift package",
+    "cocoapods": "CocoaPods pod", "carthage": "Carthage dependency", "bazel": "Bazel module / repository",
+    "cabal": "Cabal source package", "zig": "Zig dependency", "mix": "Mix dependency", "rebar": "rebar3 dependency",
 }
 
 

@@ -1,0 +1,3 @@
+[wrap-git]
+url = http://{HOST}/{ORG}/cpp-net.git
+revision = v1.0

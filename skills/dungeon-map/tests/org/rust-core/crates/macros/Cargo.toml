@@ -1,0 +1,3 @@
+[package]
+name = "{ORG}_macros"
+version = "0.2.0"

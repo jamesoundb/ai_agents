@@ -1,0 +1,10 @@
+{
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "http://{HOST}/{ORG}/vcpkg-registry.git",
+      "baseline": "0000000",
+      "packages": ["cppcore"]
+    }
+  ]
+}

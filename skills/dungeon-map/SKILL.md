@@ -19,7 +19,9 @@ Per repository: name, path, description, topics, primary language, default branc
 fork flags, last activity, a README summary, and the repositories it depends on, each with
 file:line: git submodules, npm / Go / Python dependencies, Maven (parents, BOMs, properties),
 Gradle (version catalogs, convention plugins, plugin ids, composite builds), sbt, Clojure, .NET
-(PackageReference, ProjectReference to sibling repositories, packages.config, paket), Helm chart
+(PackageReference, ProjectReference to sibling repositories, packages.config, paket), C and C++
+(CMake FetchContent / ExternalProject / CPM / find_package, Conan, vcpkg, Meson wraps), Rust (Cargo),
+Swift (SwiftPM, CocoaPods, Carthage), Bazel, Haskell / Zig / Elixir / Erlang git dependencies, Helm chart
 dependencies, Terraform module sources (git URLs and registry names), GitLab CI `include:` /
 `trigger:` / components, GitHub and Gitea workflow and action `uses:`, Dockerfile `FROM` images
 built in the org.

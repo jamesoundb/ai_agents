@@ -1,0 +1,8 @@
+http_archive(
+    name = "cpp_net",
+    urls = ["http://{HOST}/{ORG}/cpp-net/archive/v1.0.tar.gz"],
+)
+git_repository(
+    name = "abseil",
+    remote = "https://github.com/abseil/abseil-cpp.git",
+)

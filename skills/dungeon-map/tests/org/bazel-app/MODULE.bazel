@@ -1,0 +1,9 @@
+module(name = "bazel_app", version = "0.1.0")
+
+bazel_dep(name = "rules_cc", version = "0.0.9")
+bazel_dep(name = "{ORG}_rules", version = "1.2.0")
+git_override(
+    module_name = "{ORG}_rules",
+    remote = "http://{HOST}/{ORG}/bazel-rules.git",
+    commit = "0000000",
+)
