@@ -34,6 +34,12 @@ variables:
 default:
   image: $PYTHON_IMAGE         # Debian-based: has bash; skills need Python 3.10+
   interruptible: true          # a newer push to the same branch cancels the older pipeline
+  # Shared runners pull images through one Artifact Registry quota; on 2026-11-24 four jobs died
+  # before their first line ("toomanyrequests: Quota exceeded", runner_system_failure). Retry on
+  # infrastructure failures only: a job that fails on its own work (script_failure) is not re-run.
+  retry:
+    max: 2
+    when: [runner_system_failure, scheduler_failure, api_failure]
   # git from Debian's security-patched archive (the slim image has none). Jobs that set their own
   # before_script start it with *git-install.
   before_script:
@@ -82,6 +88,7 @@ repo-checks:
     # and missing fixtures before anyone pays for a run.
     - python3 evals/validate.py
     - python3 evals/tests/test_validate.py   # validate.py against what `claude plugin eval` refuses
+    - sh tools/ci/test_scan_images.sh   # image-scan re-runs a rate-limited scan, never a finding
 
 lint:
   stage: check
