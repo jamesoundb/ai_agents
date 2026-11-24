@@ -341,6 +341,18 @@ EOF
   echo "  checkouts:         $dir"
   echo "  worklog:           $log"
   echo "  run sessions from: $ROOT (sandboxes can only reach the session directory)"
+  # A session that picks the task up later has only these files: a summarized request loses the exact
+  # names, messages and examples it is checked against, and an empty log says nothing of the plan.
+  if ! has_entries "$log"; then
+    echo "  next:              the instructions file must hold the request word for word (every requirement,"
+    echo "                     name, exact message and example), not a summary; then record the plan now:"
+    echo "                     $AI/bin/ai-task note $slug \"plan: the parts, their order, how each is checked\""
+  fi
+}
+
+# True when the worklog has an entry: anything after the front matter other than the title.
+has_entries() {
+  awk 'f>=2 && NF && !/^# / {found=1} /^---$/ {f++} END {exit !found}' "$1"
 }
 
 cmd_note() {
@@ -410,8 +422,7 @@ cmd_close() {
     [ "$(count_unpushed "$wt")" = 0 ] || problems+="  $r: commits not on any remote"$'\n'
   done
   # A rule alone did not stop agents closing with an empty log, and the log is the point of the task.
-  # Anything after the front matter other than the title counts as an entry.
-  awk 'f>=2 && NF && !/^# / {found=1} /^---$/ {f++} END {exit !found}' "$log" \
+  has_entries "$log" \
     || problems+="  worklog: no entries yet; add the result first: $log"$'\n'
   if [ -n "$problems" ] && [ "$force" = 0 ]; then
     printf 'ai-task: not closing %s:\n%s' "$id" "$problems" >&2
