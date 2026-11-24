@@ -133,6 +133,8 @@ engine-tests:
     - skills/ai-task/tests/run_tests.sh   # ai-task: workspace discovery, task lifecycle, refusals
     - skills/code-graph/tests/run_tests.sh   # code-graph regression suite (9-language fixture)
     - python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case (minikube fixture)
+    - python3 skills/dungeon-map/tests/test_dungeonmap.py   # dungeon-map: Gitea replay, GitHub/GitLab API shapes, extractors
+    - python3 skills/compass/tests/test_compass.py   # compass: plan, handoff to ai-task, seed, stale map
     - python3 skills/gke-cost-discovery/tests/test_analyze.py   # gke-cost-discovery: reserved capacity; non-collect dirs refused
     - python3 skills/helm-chart-review/tests/test_helmreview.py   # helm-chart-review: HV004 secrets vs Secret references
     - python3 skills/k8s-manifest-review/tests/test_k8sreview.py   # k8s-manifest-review: YAML without a kind is not schema-validated

@@ -300,6 +300,8 @@ the actual cause. To fix it:
 | [code-skeleton](skills/code-skeleton/SKILL.md) | Token-light skeleton of files with exact line ranges; read-before-cat |
 | [blast-radius](skills/blast-radius/SKILL.md) | Downstream impact matrix for a file, symbol, Terraform address or Kubernetes object |
 | [ai-task](skills/ai-task/README.md) | Task workspaces over cloned repositories, or none: worktrees, a problem definition and a worklog per problem. Start with its [README](skills/ai-task/README.md) |
+| [dungeon-map](skills/dungeon-map/SKILL.md) | Map of every repository in a GitHub org, GitLab group (subgroups as their own graphs) or Gitea org, read through `gh`/`glab`/`gt api` without cloning: metadata, README summary and cross-repository edges (submodules, packages, Helm, Terraform, CI includes, workflow `uses:`, base images) with file:line; incremental rebuilds; `build`, `maps` |
+| [compass](skills/compass/SKILL.md) | Queries the dungeon map: `plan` proposes the repositories a problem needs with reasons and related dependencies, `find`, `show`, `handoff` prints the `ai-task clone`/`start` commands (skips present clones, flags basename clashes), `seed` writes map facts into the repository's reference note |
 | [bug-fix](skills/bug-fix/SKILL.md) | Bug-fix procedure: checklist of every case the report names, a failing test per case, the cause fixed at every site, each case proven |
 | [install-agents](skills/install-agents/SKILL.md) | Bootstrap: lets the harness install/update/remove this repo's agents and skills via `install.sh` (not installed into target projects) |
 | [terraform-review](skills/terraform-review/SKILL.md) | Deterministic Terraform/GCP review: Google style rules, security rules, configurable policy from `tfreview.json`; optional terraform/tflint/trivy; CI gate |
@@ -318,7 +320,8 @@ the actual cause. To fix it:
 
 `code-skeleton`, `blast-radius` and `bug-fix` use the engine in `../code-graph/scripts/run.sh`, so
 install them together with `code-graph` (a full install, or the command below, does); the installer
-does not add it for you. The two triage skills use `../cluster-graph/scripts/run.sh` the same way.
+does not add it for you. The two triage skills use `../cluster-graph/scripts/run.sh` the same way, and compass uses
+`../dungeon-map/scripts/dungeonmap.py` (stdlib only, like dungeon-map itself).
 Both engines need Python 3.10+ and no Node.js. cluster-graph uses only the standard library
 (`KUBEGRAPH_PYTHON` picks the interpreter). code-graph creates a private venv with `tree-sitter` on
 first use (override with `ASTGRAPH_PYTHON` / `ASTGRAPH_VENV`), which terraform-review,
@@ -432,6 +435,8 @@ tools/ci/install_check.sh               # project + user scope installs into tem
 skills/code-graph/tests/run_tests.sh    # code-graph engine regression suite
 skills/ai-task/tests/run_tests.sh       # ai-task: workspace, task lifecycle, refusals (local bare remote); CI also runs it under bash 3.2 (macOS)
 python3 skills/cluster-graph/tests/test_kubegraph.py   # cluster-graph: one test per troubleshooting case
+python3 skills/dungeon-map/tests/test_dungeonmap.py    # dungeon-map: Gitea replay, GitHub/GitLab API shapes, extractors
+python3 skills/compass/tests/test_compass.py           # compass: plan, handoff states, seed, stale map
 python3 tools/ci/test_create_release.py # the release job's API call, against a local stand-in
 tools/ci/smoke.sh                       # every skill script runs on fixtures and synthetic data
 tools/ci/setup_check.sh                 # engine set-up from an empty cache, offline use, uv, no-write message
