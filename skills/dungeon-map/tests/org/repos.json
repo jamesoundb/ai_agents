@@ -94,5 +94,12 @@
   "oversized": {
    "packages/huge/package.json": 600000
   }
+ },
+ "design-tokens": {
+  "description": "Design tokens: colours, spacing, typography",
+  "topics": [
+   "frontend",
+   "design"
+  ]
  }
 }

@@ -52,6 +52,15 @@ SCANNER = 2
 MAX_FILES = 300
 # Tree entries listed per repository on GitLab (100 a page) and Gitea (the server's page size).
 MAX_TREE_ENTRIES = 20000
+# The environment each edge is needed in (compass deps --kinds). Every via an extractor emits is
+# listed (a test checks it); later ecosystems add theirs here.
+EDGE_KINDS = ("build", "ci", "dev", "deploy", "runtime")
+VIA_KIND = {
+    "submodule": "build", "npm": "build", "go": "build", "python": "build", "maven": "build",
+    "gradle": "build", "terraform": "build", "image": "build",
+    "ci-include": "ci", "ci-component": "ci", "ci-trigger": "ci", "workflow": "ci", "action": "ci",
+    "helm": "deploy",
+}
 # Code hosts shared by many owners: a Go module path on one is internal only under host/org/.
 SHARED_GO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitea.com", "codeberg.org", "gopkg.in"}
 CACHE = os.environ.get("DUNGEONMAP_DIR") or os.path.join(os.path.expanduser("~"), ".cache", "dungeon-map")
@@ -1309,6 +1318,8 @@ class Map:
         self.unresolved_hint = ""
         self.unresolved = []  # internal requires that resolve to no repository (internal_rules)
         self.internal_hints = []  # [(ns, prefix, packages)]: shared names worth --internal
+        # references to a self-hosted host of the map, in a group / org that is not built
+        self.outside = []  # {src, via, kind, ns, ident, file, line, host, provider, group}
 
     def out_edges(self, key):
         return [e for e in self.edges if e["src"] == key]
@@ -1409,18 +1420,37 @@ def load_map(cache=None, hosts=None):
 
     seen = set()
     internal, m.internal_hints = internal_rules(m, provides, extra)
+    # self-hosted hosts of the map (identities carry no port): host -> (host as built, provider)
+    own_hosts = {g["host"].lower().split(":", 1)[0]: (g["host"], g["provider"]) for g in m.graphs.values()
+                 if g["host"].lower().split(":", 1)[0] not in SHARED_GO_HOSTS}
     for src, via, ns, ident, f, line, detail, gk in requires:
         dsts, how = lookup(ns, ident)
+        if len(dsts) > 1:
+            # One name, several repositories: an archived old home (opentelemetry-js-api still
+            # provides @opentelemetry/api), a mirror or a fork. Prefer the live, non-fork ones.
+            live = {d for d in dsts if not (m.repos.get(d, {}).get("archived") or m.repos.get(d, {}).get("fork"))}
+            dsts = live or dsts
         why = "" if dsts else internal(ns, ident)
-        if why and (src, ns, ident) not in seen:
+        kind = VIA_KIND.get(via, "build")
+        row = {"src": src, "via": via, "kind": kind, "ns": ns, "ident": ident, "file": f, "line": line,
+               "detail": detail, "src_graph": gk}
+        # a short `uses: owner/repo@v` names no host: Gitea fetches it from DEFAULT_ACTIONS_URL
+        # (github.com unless configured), so only a full URL counts as this host's
+        short_use = via in ("action", "workflow") and "://" not in (detail or "")
+        if dsts or (src, ns, ident) in seen:
+            pass
+        elif why:
             seen.add((src, ns, ident))
-            m.unresolved.append({"src": src, "via": via, "ns": ns, "ident": ident, "file": f, "line": line,
-                                 "detail": detail, "why": why, "src_graph": gk})
+            m.unresolved.append({**row, "why": why})
+        elif ns in ("git", "go") and not short_use and ident.count("/") >= 2 and ident.split("/", 1)[0] in own_hosts:
+            seen.add((src, ns, ident))
+            host, prov = own_hosts[ident.split("/", 1)[0]]
+            m.outside.append({**row, "host": host, "provider": prov, "group": ident.split("/")[1]})
         for dst in sorted(dsts):
             if dst == src or (src, dst, via) in seen:
                 continue
             seen.add((src, dst, via))
-            m.edges.append({"src": src, "dst": dst, "via": via, "ns": ns, "ident": ident, "file": f,
+            m.edges.append({"src": src, "dst": dst, "via": via, "kind": kind, "ns": ns, "ident": ident, "file": f,
                             "line": line, "detail": detail, "match": how, "src_graph": gk})
     return m
 
@@ -1507,6 +1537,17 @@ def unresolved_text(u):
     return f"{u['ident']} ({u['via']}, {u['file']}:{u['line']}; {u['why']})"
 
 
+def build_command(host, group, provider, run="run.sh"):
+    """The dungeon-map command that adds a group / org to the map."""
+    prov = "" if KNOWN_HOSTS.get(host.lower()) == provider else f" --provider {provider}"
+    return f"{run} build {host}/{group}{prov}"
+
+
+def outside_text(o, run="run.sh"):
+    return (f"{o['ident']} ({o['via']}, {o['file']}:{o['line']}): {o['host']}/{o['group']} is not in the map; "
+            f"add it: {build_command(o['host'], o['group'], o['provider'], run)}")
+
+
 def cmd_gaps(a):
     """Everything that makes the map incomplete: repositories read in part, and the org's own
     references that no repository in the map provides."""
@@ -1528,9 +1569,10 @@ def cmd_gaps(a):
         repos = sorted(k for k, r in m.repos.items() if r["graph"] == gk and (not keys or k in keys))
         inc = [k for k in repos if m.repos[k]["gaps"]]
         unr = [u for u in m.unresolved if u["src"] in repos]
-        if not inc and not unr:
+        out = [o for o in m.outside if o["src"] in repos]
+        if not inc and not unr and not out:
             continue
-        total += len(inc) + len(unr)
+        total += len(inc) + len(unr) + len(out)
         print(f"{gk}: {len(inc)} repositories read incompletely, {len(unr)} internal references with no repository")
         for k in inc:
             for g in m.repos[k]["gaps"]:
@@ -1539,6 +1581,10 @@ def cmd_gaps(a):
             print("  internal references that resolve to no repository in the map:")
             for u in sorted(unr, key=lambda u: (u["src"], u["ident"])):
                 print(f"    {u['src'].split('/', 1)[1]} -> {unresolved_text(u)}")
+        if out:
+            print("  references into groups / orgs of this host that are not in the map:")
+            for o in sorted(out, key=lambda o: (o["src"], o["ident"])):
+                print(f"    {o['src'].split('/', 1)[1]} -> {outside_text(o)}")
     if not total:
         print("no gaps: every repository was read completely and every internal reference resolves")
     for ns, pre, n in m.internal_hints:

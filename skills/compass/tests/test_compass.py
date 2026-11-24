@@ -86,7 +86,7 @@ class Compass(unittest.TestCase):
     def test_show_both_directions(self):
         rc, out = self.c("show", "ui-kit", "platform-lib")
         self.assertEqual(rc, 0, out)
-        self.assertIn("used by (1):\n    dmtest/checkout-web (npm dependency: package.json:5 in dmtest/checkout-web)", out)
+        self.assertIn("used by (2):\n    dmtest/checkout-web (npm dependency: package.json:5 in dmtest/checkout-web)", out)
         self.assertIn("used by (1):\n    dmtest/payments-api (Go module: go.mod:6 in dmtest/payments-api)", out)
 
     def test_show_lists_gaps_and_internal_references_with_no_repository(self):
@@ -96,6 +96,84 @@ class Compass(unittest.TestCase):
                       "    @dmtest/analytics (npm, package.json:6; npm scope @dmtest is the org's)", out)
         self.assertIn("localhost:3300/dmtest/big-monorepo [read incompletely]", out)
         self.assertIn("  gap: 1 manifest(s) over 512 KB not read: packages/huge/package.json", out)
+
+    # ---- deps: the closure of a build / test environment
+    def test_deps_follows_three_levels_with_the_chain_of_evidence(self):
+        rc, out = self.c("deps", "checkout-web")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("closure of dmtest/checkout-web (kinds: build, ci, dev, deploy, runtime): 3 repositories", out)
+        self.assertIn("  dmtest/ci-actions  [ci]\n      dmtest/checkout-web -> dmtest/ui-kit (npm dependency: "
+                      "package.json:5) -> dmtest/design-tokens (npm dependency: package.json:5) -> dmtest/ci-actions "
+                      "(CI action: .gitea/workflows/ci.yml:7)", out)
+
+    def test_deps_reports_a_cycle_once(self):
+        rc, out = self.c("deps", "checkout-web")
+        self.assertIn("cycles (1):\n  dmtest/design-tokens -> dmtest/ui-kit (npm dependency: package.json:5) -> "
+                      "dmtest/design-tokens (npm dependency: package.json:5)\n", out)
+
+    def test_deps_kind_filter_leaves_out_other_environments(self):
+        rc, out = self.c("deps", "checkout-web", "--kinds", "build")
+        self.assertIn("(kinds: build): 2 repositories", out)
+        self.assertNotIn("ci-actions", out)
+        rc, out = self.c("deps", "checkout-web", "--kinds", "ci,nope")
+        self.assertEqual(rc, 2)
+
+    def test_deps_verdict_names_a_group_not_in_the_map_with_its_build_command(self):
+        rc, out = self.c("deps", "checkout-web")
+        self.assertIn("verdict: incomplete (2 gaps)", out)
+        self.assertRegex(out, r"- localhost:3300/brand is not in the map \(dmtest/design-tokens -> localhost/brand/fonts "
+                              r"\(submodule, \.gitmodules:3\)\); add it: \S*run\.sh build localhost:3300/brand --provider gitea")
+        # a short `uses: actions/checkout@v4` comes from Gitea's DEFAULT_ACTIONS_URL, not this host
+        self.assertNotIn("localhost:3300/actions", out)
+
+    def test_deps_verdict_names_an_internal_reference_with_no_repository(self):
+        rc, out = self.c("deps", "checkout-web", "--kinds", "build")
+        self.assertIn("- dmtest/checkout-web -> @dmtest/analytics (npm, package.json:6; npm scope @dmtest is the org's): "
+                      "no repository in the map provides it", out)
+
+    def test_deps_complete_when_nothing_is_missing(self):
+        rc, out = self.c("deps", "platform-lib")
+        self.assertIn("0 repositories (nothing in the map)", out)
+        self.assertIn("verdict: complete", out)
+
+    def test_deps_depth_limit_is_a_gap(self):
+        rc, out = self.c("deps", "checkout-web", "--depth", "1")
+        self.assertIn("depth 1): 1 repositories", out)
+        self.assertIn("- --depth 1: 1 dependencies past it not followed (dmtest/design-tokens)", out)
+
+    def test_deps_archived_dependency_is_a_gap(self):
+        m = dm.load_map(self.cache)
+        k = "localhost:3300/dmtest/design-tokens"
+        m.repos[k]["archived"] = 1
+        gaps = compass.verdict_gaps(m, [k], set(dm.EDGE_KINDS), [], None, 10 ** 6)
+        self.assertIn(("archived", "dmtest/design-tokens is archived: check the build still uses it, and which "
+                                   "repository replaced it"), gaps)
+
+    def test_deps_check_lists_the_missing_transitive_repositories(self):
+        self.fake_clone("checkout-web", "http://localhost:3300/dmtest/checkout-web.git")
+        self.fake_clone("ui-kit", "http://localhost:3300/dmtest/ui-kit.git")
+        rc, out = self.c("deps", "checkout-web", "--check")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("is missing 2 of 4 repositories:", out)
+        self.assertIn("  missing  dmtest/design-tokens (dmtest/checkout-web -> dmtest/ui-kit", out)
+        self.fake_clone("design-tokens", "http://localhost:3300/dmtest/design-tokens.git")
+        self.fake_clone("ci-actions", "http://localhost:3300/dmtest/ci-actions.git")
+        rc, out = self.c("deps", "checkout-web", "--check")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("has all 4 repositories", out)
+
+    def test_deps_handoff_clones_the_whole_closure(self):
+        self.fake_clone("checkout-web", "http://localhost:3300/dmtest/checkout-web.git")
+        rc, out = self.c("deps", "checkout-web", "--handoff", "--slug", "web-env")
+        self.assertEqual(rc, 0, out)
+        nxt = out.split("next (one command per call):\n")[1].splitlines()
+        self.assertEqual(nxt[:3], [f"  .ai/bin/ai-task clone http://localhost:3300/dmtest/{n}.git"
+                                   for n in ("ui-kit", "design-tokens", "ci-actions")])
+        self.assertEqual(nxt[4], "  .ai/bin/ai-task start web-env checkout-web ui-kit design-tokens ci-actions")
+
+    def test_every_edge_kind_has_compass_text(self):
+        self.assertEqual(set(compass.VIA_TEXT), set(dm.VIA_KIND))
+        self.assertTrue({e["kind"] for e in dm.load_map(self.cache).edges} <= set(dm.EDGE_KINDS))
 
     def test_find_by_topic_and_language(self):
         rc, out = self.c("find", "--topic", "helm")
@@ -123,7 +201,8 @@ class Compass(unittest.TestCase):
         self.assertIn("CLASH    dmtest/proto: proto/ already holds another repository (github.com/someone-else/proto)", out)
         nxt = out.split("next (one command per call):\n")[1].splitlines()
         self.assertEqual(nxt[0], "  .ai/bin/ai-task clone http://localhost:3300/dmtest/ui-kit.git")
-        self.assertTrue(nxt[1].endswith("run.sh seed dmtest/ui-kit"), nxt[1])
+        # the map was read from --cache, so seed must read the same one
+        self.assertTrue(nxt[1].endswith(f"run.sh --cache {self.cache} seed dmtest/ui-kit"), nxt[1])
         self.assertEqual(nxt[2], "  .ai/bin/ai-task start fix-refunds payments-api ui-kit")
 
     def test_handoff_from_a_subdirectory_names_the_root(self):
@@ -132,7 +211,7 @@ class Compass(unittest.TestCase):
         rc, out = self.c("handoff", "ui-kit")
         self.assertIn(f"(run these from the workspace root {os.path.realpath(self.ws)})", out.replace(self.ws, os.path.realpath(self.ws)))
         self.assertIn(os.path.join(".ai", "bin", "ai-task") + " clone", out)
-        self.assertIn(f"{compass.RUN} seed dmtest/ui-kit", out)
+        self.assertIn(f"{compass.RUN} --cache {self.cache} seed dmtest/ui-kit", out)
 
     def test_handoff_without_a_workspace(self):
         bare = tempfile.mkdtemp(dir=self.tmp)
