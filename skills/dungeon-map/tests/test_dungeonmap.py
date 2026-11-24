@@ -739,6 +739,22 @@ class Jvm(unittest.TestCase):
         self.assertEqual(r[("maven", "maven", "org.springframework.boot:spring-boot-configuration-processor")][2],
                          "annotation processor")
 
+    def test_gradle_applied_scripts_count_for_the_applying_script(self):
+        """temporalio/sdk-java: the group lives in gradle/versioning.gradle, applied from the root."""
+        _, prov = reqs({"settings.gradle": "rootProject.name = 'sdk'\ninclude 'temporal-sdk'\n",
+                        "build.gradle": 'apply from: "$rootDir/gradle/versioning.gradle"\nallprojects {\n'
+                                        '  apply from: "$rootDir/gradle/publishing.gradle"\n}\n',
+                        "gradle/versioning.gradle": "subprojects {\n  group = 'io.temporal'\n}\n",
+                        "gradle/publishing.gradle": "def x = 1\n", "temporal-sdk/build.gradle": "\n"})
+        self.assertIn(("maven", "io.temporal:temporal-sdk"), prov)
+        self.assertFalse([p for p in prov if p[1].endswith((":versioning", ":publishing", ":gradle"))])
+
+    def test_samples_are_not_read(self):
+        """temporalio/sdk-java's workflowcheck samples built as if they were the SDK's own modules."""
+        picked = [p for p, _ in dm.select_files([("build.gradle", 1), ("tool/samples/app/build.gradle", 1),
+                                                 ("sample/build.gradle", 1), ("samplesync/build.gradle", 1)])]
+        self.assertEqual(picked, ["build.gradle", "samplesync/build.gradle"])
+
     def test_test_source_sets_are_not_read(self):
         """spring-boot keeps 304 fixture projects under src/intTest/ and src/test/: none is its own build."""
         picked = [p for p, _ in dm.select_files([("pom.xml", 1), ("plugin/src/intTest/projects/a/pom.xml", 1),

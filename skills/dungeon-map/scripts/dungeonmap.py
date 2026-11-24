@@ -948,7 +948,7 @@ def gradle_model(files, ctx):
     for f, lines in scripts.items():
         r = root_of(os.path.dirname(f))
         cats = {name: cat for (cr, name), cat in catalogs.items() if cr == r}
-        fx = facts.setdefault(f, {"group": [], "artifact": [], "plugins": [], "pubs": []})
+        fx = facts.setdefault(f, {"group": [], "artifact": [], "plugins": [], "pubs": [], "applies": []})
         for n, code, stack in lines:
             inner = set(stack)
             m = re.match(r"""^\s*(?:project\.)?group\s*=?\s*['"]([^'"$]+)['"]""", code)
@@ -957,6 +957,14 @@ def gradle_model(files, ctx):
             if m and inner & {"publications", "publishing"}:
                 fx["pubs"].append(("group", m.group(1)))
             scope = "all" if "allprojects" in inner else "sub" if "subprojects" in inner else "own"
+            for mm in re.finditer(r"""\bapply\s*\(?\s*from\s*[:=]\s*(?:file\()?\s*['"]([^'"]+\.gradle(?:\.kts)?)['"]""", code):
+                raw_t = mm.group(1)
+                if re.match(r"^\$\{?(?:rootDir|rootProject\.projectDir)\}?/", raw_t):  # the build root
+                    base, tgt = r, re.sub(r"^\$\{?(?:rootDir|rootProject\.projectDir)\}?/", "", raw_t)
+                else:  # $projectDir/x or a plain relative path: the script's own directory
+                    base, tgt = os.path.dirname(f), re.sub(r"^\$\{?projectDir\}?/", "", raw_t)
+                if "$" not in tgt and not tgt.startswith("http"):
+                    fx["applies"].append((scope, os.path.normpath(os.path.join(base, tgt))))
             for m in re.finditer(r"""\b(?:archivesName\s*(?:\.set\s*\(|=)|archivesBaseName\s*=)\s*['"]([^'"]+)['"]""", code):
                 fx["artifact"].append((scope, m.group(1)))
             m = re.match(r"""^\s*artifactId\s*=?\s*['"]([^'"$]+)['"]""", code)
@@ -1015,6 +1023,23 @@ def gradle_model(files, ctx):
         if m:
             provided_plugins.add(m.group(1).lower())
             prov.append(("gradle-plugin", m.group(1).lower()))
+    # an applied script (apply from: "$rootDir/gradle/versioning.gradle") counts for the script that
+    # applies it, with the scope of the apply line: inside allprojects / subprojects its facts take
+    # that scope (temporalio/sdk-java sets its group this way)
+    for _round in range(2):
+        for f, fx in facts.items():
+            for scope, tgt in fx.get("applies", []):
+                tf = facts.get(tgt)
+                if not tf or tgt == f:
+                    continue
+                for key in ("group", "artifact"):
+                    for sc, v in tf[key]:
+                        item = (sc if scope == "own" else scope, v)
+                        if item not in fx[key]:
+                            fx[key].append(item)
+                for item in tf["pubs"]:
+                    if item not in fx["pubs"]:
+                        fx["pubs"].append(item)
     # catalog entries no script read here references: still declared dependencies of the build
     for (r, cname), cat in catalogs.items():
         for key, (kind, val, n, src) in cat.items():
@@ -1092,7 +1117,7 @@ def gradle_model(files, ctx):
         v = re.sub(pat, name, tmpl or "")
         return None if not v or "$" in v else v
 
-    empty = {"group": [], "artifact": [], "plugins": [], "pubs": []}
+    empty = {"group": [], "artifact": [], "plugins": [], "pubs": [], "applies": []}
     for d, r in sorted(projects.items()):
         if d.split("/")[0] == "buildSrc" or d == "buildSrc":
             continue
@@ -1867,7 +1892,7 @@ def x_dockerfile(path, text, ctx):
 # Directories whose manifests are not the repository's own dependencies: vendored code, test data,
 # examples, and test source sets (spring-boot's maven plugin keeps 304 fixture projects under
 # src/intTest/, src/test/).
-SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?"
+SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?|samples?"
                        r"|src/(?:it|test|intTest|integrationTest|functionalTest|testFixtures))/")
 
 

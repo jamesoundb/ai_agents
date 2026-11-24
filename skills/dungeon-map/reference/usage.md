@@ -149,8 +149,9 @@ source archives on a code host (zlib.net, a mirror); a CMake `add_subdirectory` 
 
 Identities are lowercase and carry no port (`localhost:3300/acme/x` and `git@localhost:acme/x`
 are the same repository). Skipped directories: `node_modules`, `vendor`, `third_party`,
-`.terraform`, `testdata`, `fixtures`, `__fixtures__`, and example code (`example`, `examples`,
-`_example`, `_examples`), whose dependencies are not the repository's own.
+`.terraform`, `testdata`, `fixtures`, `__fixtures__`, example and sample code (`example`, `examples`,
+`_example`, `_examples`, `sample`, `samples`) and test source sets (`src/test`, `src/it`, `src/intTest`, ...), whose
+dependencies are not the repository's own.
 
 ## Matching (at load, across every cached graph)
 
