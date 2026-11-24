@@ -1,0 +1,9 @@
+[versions]
+guava = "33.0.0-jre"
+
+[libraries]
+billing-impl = { module = "com.{ORG}:billing-impl", version = "2.1.0" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+
+[plugins]
+org-conventions = { id = "com.{ORG}.conventions", version = "1.0" }

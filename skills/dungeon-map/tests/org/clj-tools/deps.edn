@@ -1,0 +1,2 @@
+{:deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        {ORG}/inventory-tools {:git/url "http://{HOST}/{ORG}/inventory-scala.git" :git/sha "4f1c2a9"}}}

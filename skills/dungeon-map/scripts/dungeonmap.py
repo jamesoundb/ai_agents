@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - exercised only on 3.10
 SCHEMA = 1
 # What the extractors and select_files read. Bump it whenever either changes: the next build then
 # rescans every repository, so the fix reaches repositories that have not changed since.
-SCANNER = 2
+SCANNER = 3
 # Manifests read per repository. 300 reads all but 3 of open-telemetry's 113 repositories completely
 # (4,032 file reads for the org; reading all of them would take ~4,600, close to GitHub's 5,000 calls
 # an hour). What the cap leaves out is reported as a gap, never dropped silently.
@@ -58,6 +58,11 @@ EDGE_KINDS = ("build", "ci", "dev", "deploy", "runtime")
 VIA_KIND = {
     "submodule": "build", "npm": "build", "go": "build", "python": "build", "maven": "build",
     "gradle": "build", "terraform": "build", "image": "build",
+    "gradle-plugin": "build", "gradle-build": "build", "sbt": "build", "clojure": "build",
+    "nuget": "build", "dotnet-project": "build", "paket": "build",
+    # a package registry URL (repositories, nuget.config): recorded for dm-registries-static,
+    # never matched to a repository yet
+    "registry": "build",
     "ci-include": "ci", "ci-component": "ci", "ci-trigger": "ci", "workflow": "ci", "action": "ci",
     "helm": "deploy",
 }
@@ -622,71 +627,657 @@ def x_setup_cfg(path, text, ctx):
     return prov, req
 
 
+# ---- JVM and .NET -----------------------------------------------------------------
+# Maven, Gradle and sbt files depend on each other inside a repository (a module's groupId comes
+# from its parent POM, `libs.x` from the version catalog, a project's group from the root script or
+# a convention plugin), so their extractors only keep the text; jvm_finish resolves them together
+# once every file is read. .NET and Clojure files stand alone.
+SCALA_SUFFIX = re.compile(r"_(?:2\.1[0-3]|3)$")
+
+
+def maven_id(g, a):
+    """group:artifact, lowercase, without the Scala binary-version suffix (cats-core_2.13)."""
+    return f"{g}:{SCALA_SUFFIX.sub('', a)}".lower()
+
+
+def registry_url(url):
+    """A package registry URL as recorded for dm-registries-static: no credentials, no query."""
+    u = (url or "").strip()
+    if not re.match(r"^[a-z][a-z0-9+.-]*://", u, re.I) or "$" in u:
+        return None
+    u = re.sub(r"^([a-z][a-z0-9+.-]*://)[^@/]*@", r"\1", u, flags=re.I)
+    return u.split("?", 1)[0].split("#", 1)[0].rstrip("/").lower()
+
+
+def defer_jvm(path, text, ctx):
+    ctx.setdefault("_jvm", {})[path] = text
+    ctx.setdefault("_finish", set()).add(jvm_finish)
+    return [], []
+
+
+def x_pom(path, text, ctx):
+    return defer_jvm(path, text, ctx)
+
+
+def x_gradle(path, text, ctx):
+    return defer_jvm(path, text, ctx)
+
+
+def x_gradle_catalog(path, text, ctx):
+    return defer_jvm(path, text, ctx)
+
+
+def x_sbt(path, text, ctx):
+    return defer_jvm(path, text, ctx)
+
+
 def _strip_ns(root):
     for el in root.iter():
-        if "}" in el.tag:
+        if isinstance(el.tag, str) and "}" in el.tag:
             el.tag = el.tag.split("}", 1)[1]
     return root
 
 
-def x_pom(path, text, ctx):
+def jvm_finish(ctx):
+    """Every Maven / Gradle / sbt file of the repository at once: (provides, requires with file)."""
+    files = ctx.get("_jvm", {})
+    prov, req = [], []
+    for fn, pick in ((maven_model, lambda f: os.path.basename(f) == "pom.xml"),
+                     (gradle_model, lambda f: f.endswith((".gradle", ".gradle.kts", "gradle.properties", ".versions.toml"))),
+                     (sbt_model, lambda f: f.endswith((".sbt", ".scala")))):
+        sub = {f: t for f, t in files.items() if pick(f)}
+        if sub:
+            p, r = fn(sub, ctx)
+            prov += p
+            req += r
+    return prov, req
+
+
+# ---- Maven
+def maven_model(poms, ctx):
+    """Coordinates with ${property} resolved through the parent chain inside the repository
+    (relativePath, else the parent's coordinates); parent, dependencies, managed and BOM-imported
+    dependencies, plugins and extensions required; repository URLs recorded."""
+    info = {}
+    for path, text in poms.items():
+        try:
+            root = _strip_ns(ET.fromstring(text))
+        except ET.ParseError:
+            continue
+        par = root.find("parent")
+        pget = (lambda k, par=par: par.findtext(k)) if par is not None else (lambda k: None)
+        props = root.find("properties")
+        info[path] = {"root": root, "text": text, "g": root.findtext("groupId"), "a": root.findtext("artifactId"),
+                      "v": root.findtext("version"), "pg": pget("groupId"), "pa": pget("artifactId"),
+                      "pv": pget("version"), "rel": pget("relativePath"),
+                      "props": {c.tag: (c.text or "").strip() for c in (props if props is not None else [])
+                                if isinstance(c.tag, str)}}
+    by_coord = {((i["g"] or i["pg"]), i["a"]): p for p, i in info.items()}
+
+    def parent_of(p):
+        i = info[p]
+        if not i["pa"]:
+            return None
+        rel = i["rel"] if i["rel"] is not None else "../pom.xml"
+        cand = os.path.normpath(os.path.join(os.path.dirname(p), rel or "."))
+        if not cand.endswith(".xml"):
+            cand = os.path.join(cand, "pom.xml")
+        cand = os.path.normpath(cand)
+        if cand in info and cand != p and info[cand]["a"] == i["pa"]:
+            return cand
+        hit = by_coord.get((i["pg"], i["pa"]))
+        return hit if hit != p else None
+
+    memo = {}
+
+    def props_of(p, seen=()):
+        if p in memo:
+            return memo[p]
+        i, par = info[p], parent_of(p)
+        out = dict(props_of(par, seen + (p,))) if par and par not in seen else {}
+        out.update(i["props"])
+        g, v = i["g"] or i["pg"], i["v"] or i["pv"]
+        for k, val in (("project.groupId", g), ("pom.groupId", g), ("groupId", g), ("project.artifactId", i["a"]),
+                       ("project.version", v), ("version", v), ("project.parent.groupId", i["pg"]),
+                       ("parent.groupId", i["pg"]), ("project.parent.artifactId", i["pa"]),
+                       ("project.parent.version", i["pv"])):
+            if val:
+                out[k] = val
+        memo[p] = out
+        return out
+
+    def res(s, pr):
+        s = (s or "").strip()
+        for _ in range(6):
+            if "${" not in s:
+                return s or None
+            s = re.sub(r"\$\{([^}]+)\}", lambda m: pr.get(m.group(1), m.group(0)), s)
+            if all(m.group(1) not in pr for m in re.finditer(r"\$\{([^}]+)\}", s)):
+                break
+        return None if "${" in s else (s or None)
+
+    prov, req = [], []
+    for path, i in info.items():
+        root, text, pr = i["root"], i["text"], props_of(path)
+        g, a = res(i["g"] or i["pg"], pr), res(i["a"], pr)
+        if g and a:
+            prov.append(("maven", maven_id(g, a)))
+        pg, pa = res(i["pg"], pr), res(i["pa"], pr)
+        if pg and pa:
+            req.append(("maven", "maven", maven_id(pg, pa), path, line_of(text, f"<artifactId>{i['pa']}</artifactId>"),
+                        "parent"))
+        managed = {id(el) for dm_ in root.iter("dependencyManagement") for el in dm_.iter("dependency")}
+        for dep in root.iter("dependency"):
+            dg, da = res(dep.findtext("groupId"), pr), res(dep.findtext("artifactId"), pr)
+            if not (dg and da):
+                continue
+            imp = (dep.findtext("scope") or "") == "import"
+            detail = "BOM import" if imp else ("managed " if id(dep) in managed else "") + (dep.findtext("version") or "")
+            req.append(("maven", "maven", maven_id(dg, da), path,
+                        line_of(text, f"<artifactId>{dep.findtext('artifactId')}</artifactId>"), detail.strip()))
+        for ap in root.iter("annotationProcessorPaths"):  # compiler plugin annotation processors
+            for el in ap.iter("path"):
+                pg_, pa_ = res(el.findtext("groupId"), pr), res(el.findtext("artifactId"), pr)
+                if pg_ and pa_:
+                    req.append(("maven", "maven", maven_id(pg_, pa_), path,
+                                line_of(text, f"<artifactId>{el.findtext('artifactId')}</artifactId>"),
+                                "annotation processor"))
+        for tag in ("plugin", "extension"):
+            for pl in root.iter(tag):
+                pa_ = res(pl.findtext("artifactId"), pr)
+                pg_ = res(pl.findtext("groupId"), pr) or ("org.apache.maven.plugins" if tag == "plugin" else None)
+                if pg_ and pa_:
+                    req.append(("maven", "maven", maven_id(pg_, pa_), path,
+                                line_of(text, f"<artifactId>{pl.findtext('artifactId')}</artifactId>"), f"Maven {tag}"))
+        dist = {id(el) for d in root.iter("distributionManagement") for el in d.iter()}
+        for tag in ("repository", "pluginRepository", "snapshotRepository"):
+            for el in root.iter(tag):
+                url = registry_url(el.findtext("url"))
+                if url:
+                    where = "distributionManagement" if id(el) in dist else tag
+                    req.append(("registry", "registry", url, path, line_of(text, el.findtext("url").strip()),
+                                f"maven {where}"))
+    return prov, req
+
+
+# ---- Gradle
+GRADLE_SCOPES_FOR_GROUP = {"allprojects", "subprojects", "configure", "project"}
+GRADLE_CONFIG_CALL = re.compile(
+    r"""(?<![\w.])([A-Za-z_]\w*|"[\w-]+")\s*\(?\s*(?:(platform|enforcedPlatform)\s*\(\s*)?"""
+    r"""['"]([\w.\-]+):([\w.\-]+)(?::[^'"\s]*)?['"]""")
+GRADLE_NOT_CONFIG = {"id", "version", "apply", "println", "print", "uri", "file", "files", "url", "from", "include",
+                     "includeBuild", "exclude", "group", "name", "set", "mavenBundle", "module", "library"}
+GRADLE_MAP_DEP = re.compile(r"""\bgroup\s*[:=]\s*['"]([\w.\-]+)['"]\s*,\s*name\s*[:=]\s*['"]([\w.\-]+)['"]""")
+
+
+def gradle_lines(text):
+    """[(line number, code without comments, enclosing block names)] for a Gradle script."""
+    text = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    out, stack = [], []
+    for n, raw in enumerate(text.splitlines(), 1):
+        code = re.sub(r"(^|\s)//.*$", r"\1", raw)
+        out.append((n, code, tuple(stack)))
+        bare = re.sub(r"(['\"]).*?\1", '""', code)
+        for m in re.finditer(r"[{}]", bare):
+            if m.group(0) == "{":
+                head = re.findall(r"([A-Za-z_][\w]*)\s*(?:<[^>]*>)?\s*(?:\([^()]*\))?\s*$", bare[:m.start()])
+                stack.append(head[-1] if head else "")
+            elif stack:
+                stack.pop()
+    return out
+
+
+def catalog_entries(text):
+    """A version catalog's libraries, plugins and bundles: {accessor: (kind, value, line)}."""
+    out, section, pending = {}, None, None
+    for n, line in enumerate(text.splitlines(), 1):
+        s = line.split("#", 1)[0].strip()
+        m = re.match(r"^\[(\w+)\]$", s)
+        if m:
+            section, pending = m.group(1), None
+            continue
+        if pending:
+            pending[1].append(s)
+            if "]" in s:
+                names = re.findall(r"['\"]([^'\"]+)['\"]", " ".join(pending[1]))
+                out[f"bundles.{pending[0]}"] = ("bundle", names, pending[2])
+                pending = None
+            continue
+        m = re.match(r"^([\w.\-]+)\s*=\s*(.+)$", s)
+        if not m or section not in ("libraries", "plugins", "bundles"):
+            continue
+        key, val = re.sub(r"[-_.]", ".", m.group(1)).lower(), m.group(2)
+        if section == "libraries":
+            mm = re.match(r"""^['"]([\w.\-]+):([\w.\-]+)(?::[^'"]*)?['"]""", val) \
+                or re.search(r"""module\s*=\s*['"]([\w.\-]+):([\w.\-]+)['"]""", val)
+            if not mm:
+                g, a = re.search(r"""group\s*=\s*['"]([\w.\-]+)['"]""", val), re.search(r"""name\s*=\s*['"]([\w.\-]+)['"]""", val)
+                mm = (g.group(1), a.group(1)) if g and a else None
+            else:
+                mm = (mm.group(1), mm.group(2))
+            if mm:
+                out[key] = ("library", maven_id(*mm), n)
+        elif section == "plugins":
+            mm = re.match(r"""^['"]([\w.\-]+)(?::[^'"]*)?['"]""", val) or re.search(r"""id\s*=\s*['"]([\w.\-]+)['"]""", val)
+            if mm:
+                out[f"plugins.{key}"] = ("plugin", mm.group(1).lower(), n)
+        else:
+            names = re.findall(r"['\"]([^'\"]+)['\"]", val)
+            if "]" in val:
+                out[f"bundles.{key}"] = ("bundle", names, n)
+            else:
+                pending = (key, [val], n)
+    return out
+
+
+def gradle_model(files, ctx):
+    """Projects (settings includes, every script directory), their group (gradle.properties, the root's
+    allprojects / subprojects block, an applied convention plugin, the project's own script) and
+    artifact (archivesName, publication artifactId, else the project name); dependencies as strings,
+    map notation or version-catalog accessors; plugin ids applied and provided; composite builds."""
+    prov, req = [], []
+    scripts = {f: gradle_lines(t) for f, t in files.items() if f.endswith((".gradle", ".gradle.kts"))}
+    props = {}
+    for f, t in files.items():
+        if f.endswith("gradle.properties"):
+            kv = dict(re.findall(r"^\s*([\w.]+)\s*[=:]\s*(.*?)\s*$", t, re.M))
+            props[os.path.dirname(f)] = {k.lower(): v for k, v in kv.items()}
+    # build roots: every directory with a settings script (the repository root counts as one)
+    settings = {os.path.dirname(f): f for f in scripts if os.path.basename(f).startswith("settings.gradle")}
+    roots = sorted(set(settings) | {""}, key=len, reverse=True)
+
+    def root_of(d):
+        return next(r for r in roots if r == "" or d == r or d.startswith(r + "/"))
+
+    catalogs = {}  # (build root, name) -> {accessor: entry}
+    for f, t in files.items():
+        if f.endswith(".versions.toml"):
+            r = root_of(os.path.dirname(os.path.dirname(f)) if os.path.dirname(f).endswith("gradle") else os.path.dirname(f))
+            name = os.path.basename(f).split(".", 1)[0]
+            catalogs[(r, name)] = {k: v + (f,) for k, v in catalog_entries(t).items()}
+    names, includes, projdirs = {}, {}, {}
+    child_prefix, renamed = {}, {}  # settings renames: every child ("spring-ldap-" + name), or one project
+    for r, sf in settings.items():
+        for n, code, _stack in scripts[sf]:
+            m = re.search(r"""rootProject\.name\s*=\s*['"]([^'"]+)['"]""", code)
+            if m:
+                names[r] = m.group(1)
+            m = re.match(r"^\s*include\b(.*)$", code)
+            if m:
+                for pth in re.findall(r"""['"]:?([\w.\-:]+)['"]""", m.group(1)):
+                    includes.setdefault(r, []).append(pth.strip(":").replace(":", "/"))
+            m = re.search(r"""\b\w+\.name\s*=\s*['"]([\w.\-]+)['"]\s*\+\s*\w+""", code)
+            if m:
+                child_prefix[r] = m.group(1)
+            m = re.search(r"""(?:findProject|project)\(\s*['"]:([\w.\-:]+)['"]\s*\)\.name\s*=\s*['"]([\w.\-]+)['"]""", code)
+            if m:
+                renamed[(r, m.group(1))] = m.group(2)
+            m = re.search(r"""project\(\s*['"]:([\w.\-:]+)['"]\s*\)\.projectDir\s*=\s*(?:file\()?\s*['"]([^'"]+)['"]""", code)
+            if m:
+                projdirs[(r, m.group(1).replace(":", "/"))] = m.group(2).strip("./")
+            for m in re.finditer(r"""\bincludeBuild\s*\(?\s*['"]([^'"]+)['"]""", code):
+                tgt = os.path.normpath(os.path.join(r, m.group(1)))
+                if tgt.startswith(".."):
+                    sib = tgt.split("/")[tgt.split("/").count("..")] if tgt.strip("./") else ""
+                    g = git_ident("../" * 1 + sib, base=ctx.get("git")) if sib else None
+                    if g:
+                        req.append(("gradle-build", "git", g, sf, n, f"includeBuild {m.group(1)}"))
+            m = re.search(r"""create\(\s*['"](\w+)['"]\s*\)\s*\{?.*?from\(\s*['"]([\w.\-]+):([\w.\-]+)""", code)
+            if m:
+                req.append(("gradle", "maven", maven_id(m.group(2), m.group(3)), sf, n, "published version catalog"))
+            m = re.search(r"""\blibrary\(\s*['"]([\w.\-]+)['"]\s*,\s*['"]([\w.\-]+)(?::([\w.\-]+))?['"](?:\s*,\s*['"]([\w.\-]+)['"])?""", code)
+            if m:
+                art = m.group(3) or m.group(4)
+                if art:
+                    catalogs.setdefault((r, "libs"), {})[re.sub(r"[-_.]", ".", m.group(1)).lower()] = (
+                        "library", maven_id(m.group(2), art), n, sf)
+            for m in re.finditer(r"""gitRepository\(\s*(?:uri|java\.net\.URI\.create)\(\s*['"]([^'"]+)['"]""", code):
+                g = git_ident(m.group(1))
+                if g:
+                    req.append(("gradle-build", "git", g, sf, n, "sourceControl gitRepository"))
+
+    # facts per script
+    facts = {}  # script -> {"group": [(scope, value)], "artifact": [...], "plugins": [...], "pubs": [...]}
+    used = set()  # (root, accessor) referenced by a script
+    provided_plugins = set()
+    for f, lines in scripts.items():
+        r = root_of(os.path.dirname(f))
+        cats = {name: cat for (cr, name), cat in catalogs.items() if cr == r}
+        fx = facts.setdefault(f, {"group": [], "artifact": [], "plugins": [], "pubs": []})
+        for n, code, stack in lines:
+            inner = set(stack)
+            m = re.match(r"""^\s*(?:project\.)?group\s*=?\s*['"]([^'"$]+)['"]""", code)
+            if m and (not stack or inner <= GRADLE_SCOPES_FOR_GROUP):
+                fx["group"].append(("all" if inner & {"allprojects"} else "sub" if inner else "own", m.group(1)))
+            if m and inner & {"publications", "publishing"}:
+                fx["pubs"].append(("group", m.group(1)))
+            scope = "all" if "allprojects" in inner else "sub" if "subprojects" in inner else "own"
+            for m in re.finditer(r"""\b(?:archivesName\s*(?:\.set\s*\(|=)|archivesBaseName\s*=)\s*['"]([^'"]+)['"]""", code):
+                fx["artifact"].append((scope, m.group(1)))
+            m = re.match(r"""^\s*artifactId\s*=?\s*['"]([^'"$]+)['"]""", code)
+            if m and inner & {"publications", "publishing", "create", "register"}:
+                fx["pubs"].append(("artifact", m.group(1)))
+            m = re.match(r"""^\s*groupId\s*=?\s*['"]([^'"$]+)['"]""", code)
+            if m and inner & {"publications", "publishing", "create", "register"}:
+                fx["pubs"].append(("group", m.group(1)))
+            m = re.match(r"""^\s*id\s*=?\s*['"]([\w.\-]+)['"]""", code)
+            if m and "gradlePlugin" in inner:
+                provided_plugins.add(m.group(1).lower())
+                prov.append(("gradle-plugin", m.group(1).lower()))
+            elif "plugins" in inner or re.match(r"^\s*plugins\s*\{", code):
+                for mm in re.finditer(r"""\bid\s*\(?\s*['"]([\w.\-]+)['"]""", code):
+                    if "." in mm.group(1):
+                        fx["plugins"].append(mm.group(1).lower())
+                        req.append(("gradle-plugin", "gradle-plugin", mm.group(1).lower(), f, n, code.strip()[:120]))
+            for mm in re.finditer(r"""apply\s*\(?\s*plugin\s*[:=]\s*['"]([\w.\-]+)['"]""", code):
+                if "." in mm.group(1):
+                    fx["plugins"].append(mm.group(1).lower())
+                    req.append(("gradle-plugin", "gradle-plugin", mm.group(1).lower(), f, n, code.strip()[:120]))
+            if not stack or "dependencies" in inner or "buildscript" in inner or "constraints" in inner:
+                for mm in GRADLE_CONFIG_CALL.finditer(code):
+                    if mm.group(1).strip('"') in GRADLE_NOT_CONFIG:
+                        continue
+                    detail = (mm.group(2) or "") + " " + code.strip()[:120]
+                    req.append(("gradle", "maven", maven_id(mm.group(3), mm.group(4)), f, n, detail.strip()))
+                for mm in GRADLE_MAP_DEP.finditer(code):
+                    req.append(("gradle", "maven", maven_id(mm.group(1), mm.group(2)), f, n, code.strip()[:120]))
+            for mm in re.finditer(r"""\buseModule\(\s*['"]([\w.\-]+):([\w.\-]+)""", code):
+                # pluginManagement { resolutionStrategy { eachPlugin { useModule("g:a:v") } } }
+                req.append(("gradle", "maven", maven_id(mm.group(1), mm.group(2)), f, n, "plugin " + code.strip()[:110]))
+            for cname, cat in cats.items():
+                refs = [mm.group(1) for mm in re.finditer(rf"\b{cname}\.((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*)", code)]
+                refs += [re.sub(r"[-_.]", ".", mm.group(1)).lower()
+                         for mm in re.finditer(r"""\bfindLibrary\(\s*['"]([\w.\-]+)['"]""", code)] if cname == "libs" else []
+                for ref in refs:
+                    parts = ref.lower().split(".")
+                    key = next((".".join(parts[:k]) for k in range(len(parts), 0, -1) if ".".join(parts[:k]) in cat), None)
+                    if not key:
+                        continue
+                    used.add((r, cname, key))
+                    kind, val, _, _src = cat[key]
+                    members = [x for x in (re.sub(r"[-_.]", ".", b).lower() for b in val) if x in cat] \
+                        if kind == "bundle" else []
+                    used.update((r, cname, x) for x in members)
+                    vals = [cat[x][1] for x in members] if kind == "bundle" else [val]
+                    for v in vals:
+                        if kind == "plugin":
+                            fx["plugins"].append(v)
+                            req.append(("gradle-plugin", "gradle-plugin", v, f, n, f"{cname}.{key}"))
+                        elif isinstance(v, str):
+                            req.append(("gradle", "maven", v, f, n, f"{cname}.{key} " + code.strip()[:100]))
+        # a precompiled script plugin (src/main/kotlin/acme.java-conventions.gradle.kts) provides its id
+        m = re.search(r"/src/main/(?:kotlin|groovy)/(?:.*/)?([\w.\-]+)\.gradle(?:\.kts)?$", "/" + f)
+        if m:
+            provided_plugins.add(m.group(1).lower())
+            prov.append(("gradle-plugin", m.group(1).lower()))
+    # catalog entries no script read here references: still declared dependencies of the build
+    for (r, cname), cat in catalogs.items():
+        for key, (kind, val, n, src) in cat.items():
+            if (r, cname, key) in used or kind == "bundle":
+                continue
+            req.append(("gradle-plugin", "gradle-plugin", val, src, n, f"version catalog {cname}.{key}") if kind == "plugin"
+                       else ("gradle", "maven", val, src, n, f"version catalog {cname}.{key}"))
+
+    # projects and their coordinates, in Gradle's order: gradle.properties, then the subprojects /
+    # allprojects blocks of each ancestor script (root first), then applied convention plugins, then
+    # the project's own script. A publication's groupId / artifactId wins for what is published.
+    conv = {}  # convention plugin id -> its facts
+    for f in scripts:
+        m = re.search(r"/src/main/(?:kotlin|groovy)/(?:.*/)?([\w.\-]+)\.gradle(?:\.kts)?$", "/" + f)
+        if m:
+            conv[m.group(1).lower()] = facts[f]
+    projects, dir_name = {}, {}
+    # settings that set project.buildFileName (spring-framework, spring-security): a script named
+    # <project name>.gradle is that project's build file, wherever it is
+    if any("buildFileName" in files[sf] for sf in settings.values()):
+        for f in scripts:
+            stem = re.sub(r"\.gradle(\.kts)?$", "", os.path.basename(f))
+            d = os.path.dirname(f)
+            if stem in ("build", "settings") or "/src/main/" in "/" + f or d.split("/")[0] in ("buildSrc", "gradle") \
+                    or os.path.basename(d) == "gradle" or f.endswith("gradle.properties"):
+                continue
+            if not any(os.path.join(d, b) in scripts for b in ("build.gradle", "build.gradle.kts")):
+                projects.setdefault(d, root_of(d))
+                dir_name[d] = stem
+    for r in roots:
+        projects[r] = r
+        for inc in includes.get(r, []):
+            d = projdirs.get((r, inc), inc)
+            parts = d.split("/")
+            for k in range(1, len(parts) + 1):  # include(":a:b") also makes project :a
+                sub = "/".join(parts[:k]) if k < len(parts) else d
+                projects.setdefault(os.path.normpath(os.path.join(r, sub)) if r else os.path.normpath(sub), r)
+    for f in scripts:
+        d = os.path.dirname(f)
+        if os.path.basename(f) in ("build.gradle", "build.gradle.kts") and "/src/main/" not in "/" + f:
+            projects.setdefault(d, root_of(d))
+    # project('spring-rabbit') { ... } blocks in a build's root script declare (and configure) projects
+    # that may have no script of their own (spring-amqp, spring-kafka)
+    for r in roots:
+        rs = next((f for f in (os.path.join(r, "build.gradle"), os.path.join(r, "build.gradle.kts")) if f in scripts), None)
+        for _n, code, stack in scripts.get(rs, []):
+            m = re.match(r"""^\s*project\s*\(\s*['"]:?([\w.\-:]+)['"]\s*\)\s*\{""", code)
+            if m and not stack:
+                projects.setdefault(os.path.normpath(os.path.join(r, m.group(1).replace(":", "/"))), r)
+    # settings renames
+    for d, r in list(projects.items()):
+        if d == r:
+            continue
+        rel = os.path.relpath(d, r) if r else d
+        # findProject(":spring-ldap-test-support") names the project after the prefix rename
+        new = renamed.get((r, rel.replace("/", ":"))) or renamed.get((r, child_prefix.get(r, "") + os.path.basename(d)))
+        if new or r in child_prefix:
+            dir_name[d] = new or child_prefix[r] + os.path.basename(d)
+
+    def script_of(d):
+        named = [os.path.join(d, f"{dir_name[d]}{ext}") for ext in (".gradle.kts", ".gradle")] if d in dir_name else []
+        return next((f for f in [os.path.join(d, "build.gradle.kts"), os.path.join(d, "build.gradle")] + named
+                     if f in facts), None)
+
+    def fill(tmpl, d):
+        """An archivesName template ("opentelemetry-sdk-${proj.name}") for project d. A name that
+        already starts with the template's prefix keeps it (the usual `if (!startsWith(...))`)."""
+        name = dir_name.get(d) or (os.path.basename(d) if d else (names.get(d) or ctx.get("name") or ""))
+        pat = r"\$\{?(?:project\.|proj\.|it\.)?name\}?"
+        pre = re.split(pat, tmpl or "", maxsplit=1)[0]
+        if pre and pre != tmpl and name.startswith(pre):
+            return name
+        v = re.sub(pat, name, tmpl or "")
+        return None if not v or "$" in v else v
+
+    empty = {"group": [], "artifact": [], "plugins": [], "pubs": []}
+    for d, r in sorted(projects.items()):
+        if d.split("/")[0] == "buildSrc" or d == "buildSrc":
+            continue
+        fx = facts.get(script_of(d), empty)
+        chain = [a for a in [r] + ["/".join(d.split("/")[:k]) for k in range(1, d.count("/") + 1)]
+                 if a != d and (a == r or a.startswith(r + "/") or r == "")]
+        group = next((props[a]["group"] for a in [d] + chain[::-1] if a in props and props[a].get("group")), None)
+        art = None
+        for a in dict.fromkeys(chain):
+            afx = facts.get(script_of(a), empty)
+            for sc, v in afx["group"]:
+                if sc in ("all", "sub"):
+                    group = v
+            for sc, v in afx["artifact"]:
+                if sc in ("all", "sub"):
+                    art = fill(v, d) or art
+        for sc, v in facts.get(script_of(r), empty)["group"]:
+            if d == r and sc in ("all", "own"):
+                group = v
+        pub_group = None
+        for pid in fx["plugins"]:
+            c = conv.get(pid)
+            if not c:
+                continue
+            group = next((v for sc, v in c["group"] if sc == "own"), group)
+            pub_group = dict(c["pubs"]).get("group", pub_group)
+            if not art:
+                art = next((fill(v, d) for sc, v in c["artifact"] if sc == "own" and fill(v, d)), None)
+        own_group = [v for sc, v in fx["group"] if sc == "own"]
+        if own_group and d != r:
+            group = own_group[-1]
+        if not group and d != r:
+            # last resort: the root project's own group, which convention plugins usually copy to
+            # every project (spring-security: project.group = rootProject.group)
+            group = next((v for sc, v in facts.get(script_of(r), empty)["group"] if sc in ("own", "all")), None)
+        own_art = [fill(v, d) for sc, v in fx["artifact"] if sc == "own" and fill(v, d)]
+        art = (own_art[-1] if own_art else None) or art or props.get(d, {}).get("archivesbasename") \
+            or (names.get(r) or ctx.get("name") if d == r else dir_name.get(d) or os.path.basename(d))
+        pubs = dict(fx["pubs"])
+        g = pubs.get("group") or pub_group or group
+        if g and art:
+            prov.append(("maven", maven_id(g, art)))
+        for k, v in fx["pubs"]:
+            if k == "artifact" and g:
+                prov.append(("maven", maven_id(g, v)))
+    return prov, req
+
+
+# ---- sbt
+SBT_DEP = re.compile(r'"([\w.\-]+)"\s*(%%%|%%|%)\s*"([\w.\-]+)"')
+
+
+def sbt_model(files, ctx):
+    """organization + each project name provided; `"g" %% "a" % v` dependencies and sbt plugins;
+    RootProject / ProjectRef URIs to other repositories."""
+    prov, req, orgs, names = [], [], [], []
+    for f, t in files.items():
+        for n, line in enumerate(t.splitlines(), 1):
+            code = re.sub(r"(^|\s)//.*$", r"\1", line)
+            m = re.search(r"""\borganization\s*(?:in\s+ThisBuild\s*)?:=\s*"([^"$]+)\"""", code)
+            if m:
+                orgs.append(m.group(1))
+            for mm in re.finditer(r"""\bname\s*:=\s*"([^"$]+)\"""", code):
+                names.append(mm.group(1))
+            for mm in re.finditer(r"""\blazy\s+val\s+(\w+)\s*=\s*\(?\s*(?:project\b|Project\()""", code):
+                if mm.group(1) != "root":
+                    names.append(re.sub(r"(?<!^)(?=[A-Z])", "-", mm.group(1)).lower())
+            for mm in SBT_DEP.finditer(code):
+                kind = "sbt plugin" if "addSbtPlugin" in code else mm.group(2)
+                req.append(("sbt", "maven", maven_id(mm.group(1), mm.group(3)), f, n, f"{kind} {code.strip()[:100]}"))
+            for mm in re.finditer(r"""\b(?:RootProject|ProjectRef)\s*\(\s*uri\(\s*"([^"]+)"\s*\)""", code):
+                g = git_ident(mm.group(1))
+                if g:
+                    req.append(("sbt", "git", g, f, n, code.strip()[:120]))
+    for o in dict.fromkeys(orgs):
+        for nm in dict.fromkeys(names):
+            prov.append(("maven", maven_id(o, nm)))
+    return prov, req
+
+
+# ---- Clojure
+def x_deps_edn(path, text, ctx):
+    req = []
+    for m in re.finditer(r"([\w.\-]+(?:/[\w.\-]+)?)\s*\{([^{}]*)\}", text):
+        lib, body = m.group(1), m.group(2)
+        n = text.count("\n", 0, m.start()) + 1
+        url = re.search(r':git/url\s+"([^"]+)"', body)
+        if url or ":git/sha" in body or ":git/tag" in body:
+            g = git_ident(url.group(1)) if url else None
+            if not g:  # tools.deps infers io.github.ORG/REPO -> github.com/ORG/REPO
+                mm = re.match(r"^(?:io|com)\.(github|gitlab)\.([\w\-]+)/([\w.\-]+)$", lib)
+                g = norm_path(f"{mm.group(1)}.com/{mm.group(2)}/{mm.group(3)}") if mm else None
+            if g:
+                req.append(("clojure", "git", g, n, f"{lib} {body.strip()[:80]}"))
+        elif ":mvn/version" in body:
+            grp, _, art = lib.partition("/")
+            req.append(("clojure", "maven", maven_id(grp, art or grp), n, body.strip()[:80]))
+    return [], req
+
+
+def x_project_clj(path, text, ctx):
+    prov, req = [], []
+    m = re.search(r"\(defproject\s+([\w.\-]+(?:/[\w.\-]+)?)\s", text)
+    if m:
+        grp, _, art = m.group(1).partition("/")
+        prov.append(("maven", maven_id(grp, art or grp)))
+    for mm in re.finditer(r"\[([\w.\-]+(?:/[\w.\-]+)?)\s+\"[^\"]+\"", text[m.end() if m else 0:]):
+        grp, _, art = mm.group(1).partition("/")
+        off = (m.end() if m else 0) + mm.start()
+        req.append(("clojure", "maven", maven_id(grp, art or grp), text.count("\n", 0, off) + 1, mm.group(0)[:80]))
+    return prov, req
+
+
+# ---- .NET
+def nuget_id(name):
+    return (name or "").strip().lower()
+
+
+def x_msbuild(path, text, ctx):
+    """*.csproj / *.fsproj / *.vbproj and Directory.*.props / .targets: PackageReference and
+    GlobalPackageReference required, PackageId (else AssemblyName, else the file name) provided,
+    a ProjectReference that leaves the repository required as the sibling repository."""
     try:
         root = _strip_ns(ET.fromstring(text))
     except ET.ParseError:
         return [], []
     prov, req = [], []
-    gid = root.findtext("groupId") or root.findtext("parent/groupId") or ""
-    aid = root.findtext("artifactId") or ""
-    if gid and aid:
-        prov.append(("maven", f"{gid}:{aid}".lower()))
-    pg, pa = root.findtext("parent/groupId"), root.findtext("parent/artifactId")
-    if pg and pa:
-        req.append(("maven", "maven", f"{pg}:{pa}".lower(), line_of(text, f"<artifactId>{pa}</artifactId>"), "parent"))
-    for dep in root.iter("dependency"):
-        g, a = dep.findtext("groupId"), dep.findtext("artifactId")
-        if g and a and "${" not in g + a:
-            req.append(("maven", "maven", f"{g}:{a}".lower(), line_of(text, f"<artifactId>{a}</artifactId>"),
-                        dep.findtext("version") or ""))
+    b = os.path.basename(path)
+    if not b.startswith("Directory."):
+        pid = root.findtext(".//PackageId") or root.findtext(".//AssemblyName") or os.path.splitext(b)[0]
+        if pid and "$(" not in pid:
+            prov.append(("nuget", nuget_id(pid)))
+    for tag in ("PackageReference", "GlobalPackageReference"):
+        for el in root.iter(tag):
+            name = el.get("Include")
+            if name and "$(" not in name:
+                ver = el.get("Version") or el.findtext("Version") or ""
+                req.append(("nuget", "nuget", nuget_id(name), line_of(text, f'"{name}"'), f"{tag} {ver}".strip()))
+    for el in root.iter("ProjectReference"):
+        inc = (el.get("Include") or "").replace("\\", "/")
+        tgt = os.path.normpath(os.path.join(os.path.dirname(path), inc))
+        if tgt.startswith("../"):
+            sib = [x for x in tgt.split("/") if x != ".."][0]
+            g = git_ident(f"../{sib}", base=ctx.get("git"))
+            if g:
+                req.append(("dotnet-project", "git", g, line_of(text, el.get("Include")), f"ProjectReference {inc}"))
     return prov, req
 
 
-GRADLE_DEP = re.compile(r"""^\s*(?:implementation|api|compileOnly|runtimeOnly|testImplementation|"""
-                        r"""testRuntimeOnly|annotationProcessor|kapt|ksp|classpath|compile|testCompile)\b"""
-                        r"""\s*\(?\s*['"]([\w.\-]+):([\w.\-]+)(?::[^'"]*)?['"]""")
+def x_packages_config(path, text, ctx):
+    req = []
+    for m in re.finditer(r"""<package\s[^>]*\bid\s*=\s*["']([^"']+)["']""", text):
+        req.append(("nuget", "nuget", nuget_id(m.group(1)), text.count("\n", 0, m.start()) + 1, "packages.config"))
+    return [], req
 
 
-def x_gradle(path, text, ctx):
-    prov, req = [], []
-    base = os.path.basename(path)
-    if base.startswith("settings.gradle"):
-        m = re.search(r"""rootProject\.name\s*=\s*['"]([^'"]+)['"]""", text)
-        if m:
-            ctx.setdefault("_gradle", {})["root"] = m.group(1)
-        return [], []
-    m = re.search(r"""^\s*group\s*=?\s*['"]([^'"]+)['"]""", text, re.M)
-    if m:
-        d = os.path.dirname(path)
-        ctx.setdefault("_gradle", {}).setdefault("groups", []).append((d, m.group(1)))
-    for i, line in enumerate(text.splitlines(), 1):
-        m = GRADLE_DEP.match(line)
-        if m:
-            req.append(("gradle", "maven", f"{m.group(1)}:{m.group(2)}".lower(), i, line.strip()[:120]))
-    return prov, req
+def x_paket(path, text, ctx):
+    """paket.dependencies (nuget / github / git / source lines) and paket.references (package names)."""
+    req = []
+    refs = os.path.basename(path).lower().startswith("paket.references")
+    for n, line in enumerate(text.splitlines(), 1):
+        s = line.strip()  # comments start a line (// or #); a URL carries // of its own
+        parts = s.split()
+        if not parts or parts[0].startswith(("#", "//")):
+            continue
+        if refs:
+            if parts[0] not in ("group", "File:") and re.match(r"^[\w.\-]+$", parts[0]):
+                req.append(("nuget", "nuget", nuget_id(parts[0]), n, "paket.references"))
+        elif parts[0] == "nuget" and len(parts) > 1:
+            req.append(("nuget", "nuget", nuget_id(parts[1]), n, s[:100]))
+        elif parts[0] in ("github", "gist") and len(parts) > 1:
+            g = git_ident(f"github.com/{parts[1].split(':', 1)[0]}") if parts[0] == "github" else None
+            if g:
+                req.append(("paket", "git", "/".join(g.split("/")[:3]), n, s[:100]))
+        elif parts[0] == "git" and len(parts) > 1:
+            g = git_ident(parts[1])
+            if g:
+                req.append(("paket", "git", g, n, s[:100]))
+        elif parts[0] == "source" and len(parts) > 1:
+            u = registry_url(parts[1])
+            if u:
+                req.append(("registry", "registry", u, n, "paket source"))
+    return [], req
 
 
-def gradle_provides(ctx, repo_name):
-    """group:artifact for the root project and each subproject with a build.gradle (dir name)."""
-    g = ctx.get("_gradle") or {}
-    out = []
-    root_group = next((grp for d, grp in g.get("groups", []) if d == ""), None)
-    for d, grp in g.get("groups", []):
-        art = (g.get("root") or repo_name) if d == "" else os.path.basename(d)
-        out.append(("maven", f"{grp}:{art}".lower()))
-    if root_group:
-        for d in ctx.get("_gradle_dirs", []):
-            if d and not any(d == gd for gd, _ in g.get("groups", [])):
-                out.append(("maven", f"{root_group}:{os.path.basename(d)}".lower()))
-    return out
+def x_nuget_config(path, text, ctx):
+    req = []
+    for m in re.finditer(r"""<add\s[^>]*\bvalue\s*=\s*["']([^"']+)["']""", text):
+        u = registry_url(m.group(1))
+        if u:
+            req.append(("registry", "registry", u, text.count("\n", 0, m.start()) + 1, "nuget packageSource"))
+    return [], req
 
 
 def yaml_list_of_maps(text, key):
@@ -895,7 +1486,11 @@ def x_dockerfile(path, text, ctx):
     return [], req
 
 
-SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?)/")
+# Directories whose manifests are not the repository's own dependencies: vendored code, test data,
+# examples, and test source sets (spring-boot's maven plugin keeps 304 fixture projects under
+# src/intTest/, src/test/).
+SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?"
+                       r"|src/(?:it|test|intTest|integrationTest|functionalTest|testFixtures))/")
 
 
 def extractor_for(path):
@@ -916,8 +1511,25 @@ def extractor_for(path):
         return x_requirements
     if b == "pom.xml":
         return x_pom
-    if b in ("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"):
+    if b.endswith((".gradle", ".gradle.kts")) or b == "gradle.properties":
         return x_gradle
+    if bl.endswith(".versions.toml"):
+        return x_gradle_catalog
+    if b.endswith(".sbt") or (path.startswith("project/") and b.endswith(".scala") and path.count("/") == 1):
+        return x_sbt
+    if b == "deps.edn":
+        return x_deps_edn
+    if b == "project.clj":
+        return x_project_clj
+    if bl.endswith((".csproj", ".fsproj", ".vbproj")) or bl in ("directory.packages.props", "directory.build.props",
+                                                                  "directory.build.targets"):
+        return x_msbuild
+    if bl == "packages.config":
+        return x_packages_config
+    if bl in ("paket.dependencies", "paket.references"):
+        return x_paket
+    if bl == "nuget.config":
+        return x_nuget_config
     if b == "Chart.yaml":
         return x_chart
     if b.endswith(".tf"):
@@ -1071,13 +1683,31 @@ def graph_path(host, org, cache=None):
     return os.path.join(graph_dir(host, org, cache), "map.db")
 
 
+def extract(texts, ctx):
+    """Run the extractors over {path: text}, then the repository-wide finishers they registered
+    (jvm_finish): (provides, requires [(via, ns, ident, file, line, detail)])."""
+    provides, requires = [], []
+    for path, text in texts.items():
+        x = extractor_for(path)
+        if not x:
+            continue
+        p, r = x(path, text, ctx)
+        provides += p
+        requires += [(via, ns, ident, path, line, detail) for via, ns, ident, line, detail in r]
+    for fn in sorted(ctx.get("_finish", ()), key=lambda f: f.__name__):
+        p, r = fn(ctx)
+        provides += p
+        requires += r
+    return provides, requires
+
+
 def scan_repo(prov, repo, max_files=MAX_FILES, max_tree_entries=MAX_TREE_ENTRIES):
     """Read a repository's tree and manifest files: (provides, requires, readme, files, note, gaps).
 
     gaps: [(kind, found, read, detail)], everything that left the scan incomplete (GAP_KINDS)."""
     host = prov.host
     # identities never carry a port (https and ssh ports differ for the same repository)
-    ctx = {"host": host.lower().split(":", 1)[0], "path": repo["path"], "provider": prov.name,
+    ctx = {"host": host.lower().split(":", 1)[0], "path": repo["path"], "provider": prov.name, "name": repo["name"],
            "git": git_ident(repo["clone_https"]) or norm_path(f"{host}/{repo['path']}")}
     provides = [("git", ctx["git"])] + tf_provides(repo)
     if repo.get("empty") or not repo.get("default_branch"):
@@ -1097,20 +1727,16 @@ def scan_repo(prov, repo, max_files=MAX_FILES, max_tree_entries=MAX_TREE_ENTRIES
     if large:
         more = f" (+{len(large) - 5} more)" if len(large) > 5 else ""
         gaps.append(("file-too-large", len(large), 0, ", ".join(large[:5]) + more))
-    ctx["_gradle_dirs"] = [os.path.dirname(p) for p, x in picked if x is x_gradle]
-    has_image = False
-    for path, x in picked:
+    texts = {}
+    for path, _x in picked:
         try:
-            text = prov.read(repo, path)
+            texts[path] = prov.read(repo, path)
         except NotFound:
             continue
         read.append(path)
-        p, r = x(path, text, ctx)
-        provides += p
-        requires += [(via, ns, ident, path, line, detail) for via, ns, ident, line, detail in r]
-        has_image = has_image or x is x_dockerfile
-    provides += gradle_provides(ctx, repo["name"])
-    if has_image:
+    p, requires = extract(texts, ctx)
+    provides += p
+    if any(extractor_for(f) is x_dockerfile for f in texts):
         provides.append(("image", repo["path"].lower()))
     # drop duplicates, keep the first file:line of each
     seen, req = set(), []
@@ -1245,7 +1871,7 @@ def parse_target(target, provider=None):
     return provider, host, org
 
 
-INTERNAL_NS = ("git", "go", "npm", "pypi", "maven", "image", "tfreg", "helm")
+INTERNAL_NS = ("git", "go", "npm", "pypi", "maven", "image", "tfreg", "helm", "nuget", "gradle-plugin")
 
 
 def cmd_build(a):
@@ -1499,6 +2125,11 @@ def internal_rules(m, provides, extra=()):
             g = ident.split(":", 1)[0]
             add("maven", f"{g}:", f"Maven group {g} is the org's")
             add("maven", f"{g}.", f"Maven group {g} is the org's")
+            add("gradle-plugin", f"{g}.", f"Gradle plugin ids under the org's Maven group {g}")
+        elif ns == "nuget" and "." in ident and ident.split(".", 1)[0] in org_words:
+            # NuGet reserves an ID prefix for its owner: Acme.* is acme's
+            pre = ident.split(".", 1)[0]
+            add("nuget", f"{pre}.", f"NuGet prefix {pre}. is the org's")
         elif ns == "tfreg" and "/" in ident:
             o = ident.split("/", 1)[0]
             add("tfreg", f"{o}/", f"Terraform registry namespace {o} is the org's")

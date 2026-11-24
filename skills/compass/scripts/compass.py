@@ -39,7 +39,9 @@ VIA_TEXT = {
     "maven": "Maven dependency", "gradle": "Gradle dependency", "helm": "Helm chart dependency",
     "terraform": "Terraform module", "ci-include": "CI include", "ci-trigger": "CI downstream trigger",
     "ci-component": "CI component", "workflow": "reusable workflow", "action": "CI action",
-    "image": "container base image",
+    "image": "container base image", "gradle-plugin": "Gradle plugin", "gradle-build": "Gradle included build",
+    "sbt": "sbt dependency", "clojure": "Clojure dependency", "nuget": "NuGet package",
+    "dotnet-project": ".NET project reference", "paket": "Paket git dependency", "registry": "package registry",
 }
 
 

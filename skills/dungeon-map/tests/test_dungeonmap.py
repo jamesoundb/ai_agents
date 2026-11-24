@@ -29,6 +29,17 @@ PLANTED = {
     ("infra-live", "service-chart", "helm"), ("infra-live", "terraform-google-network", "terraform"),
     # ui-kit and design-tokens depend on each other (a cycle); design-tokens' CI uses ci-actions
     ("ui-kit", "design-tokens", "npm"), ("design-tokens", "ui-kit", "npm"), ("design-tokens", "ci-actions", "action"),
+    # JVM: a BOM import through a parent property, a managed dependency, a version catalog, platform(),
+    # an included build and a catalog plugin alias, archivesName + subprojects group, sbt and Clojure
+    ("billing-core", "java-bom", "maven"), ("java-bom", "billing-core", "maven"),
+    ("orders-service", "billing-core", "gradle"), ("orders-service", "java-bom", "gradle"),
+    ("orders-service", "gradle-conventions", "gradle-build"), ("orders-service", "gradle-conventions", "gradle-plugin"),
+    ("inventory-scala", "orders-service", "sbt"), ("inventory-scala", "billing-core", "sbt"),
+    ("clj-tools", "inventory-scala", "clojure"),
+    # .NET: central package management, a ProjectReference to a sibling checkout, packages.config, paket
+    ("ledger-dotnet", "invoicing-dotnet", "nuget"), ("ledger-dotnet", "shared-dotnet", "dotnet-project"),
+    ("ledger-dotnet", "shared-dotnet", "nuget"), ("invoicing-dotnet", "shared-dotnet", "nuget"),
+    ("invoicing-dotnet", "shared-dotnet", "paket"),
 }
 
 # The org's own references that no repository provides (src, ident): each must be reported by `gaps`.
@@ -40,6 +51,7 @@ PLANTED = {
 UNRESOLVED = {
     ("checkout-web", "@dmtest/analytics"), ("payments-api", "localhost/dmtest/billing-sdk"),
     ("infra-live", "dmtest/dns/google"),
+    ("ledger-dotnet", "dmtest.audit"),  # NuGet prefix Dmtest. is the org's
 }
 
 
@@ -78,7 +90,7 @@ class GiteaFixture(Tmp):
     def test_every_planted_edge_and_no_decoy(self):
         rc, out = self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("15 repos (15 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("24 repos (24 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
         m = dm.load_map(self.cache)
         self.assertEqual(edges(m), PLANTED)
 
@@ -102,10 +114,10 @@ class GiteaFixture(Tmp):
                 r["updated_at"] = "2030-01-01T00:00:00Z"
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("15 repos (1 scanned, 14 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("24 repos (1 scanned, 23 unchanged, 0 failed, 1 incomplete)", out)
         self.assertEqual(edges(dm.load_map(self.cache)), PLANTED)  # reused rows keep their edges
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
-        self.assertIn("(0 scanned, 15 unchanged", out)
+        self.assertIn("(0 scanned, 24 unchanged", out)
 
     def test_no_credentials_in_the_map(self):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
@@ -120,7 +132,7 @@ class GiteaFixture(Tmp):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         rc, out = run("--cache", self.cache, "maps")
         self.assertEqual(rc, 0)
-        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+15 repos\s+11 edges out.*gaps: 1 incomplete, 3 unresolved")
+        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+24 repos\s+25 edges out.*gaps: 1 incomplete, 4 unresolved")
 
 
 def gh_repo(name, **kw):
@@ -286,7 +298,7 @@ class Completeness(Tmp):
     def test_internal_references_with_no_repository_and_no_decoy(self):
         rc, out = self.build()
         self.assertEqual(rc, 0, out)
-        self.assertIn("gaps: 1 repositories read incompletely, 3 internal references with no repository", out)
+        self.assertIn("gaps: 1 repositories read incompletely, 4 internal references with no repository", out)
         m = dm.load_map(self.cache)
         self.assertEqual({(u["src"].rsplit("/", 1)[1], u["ident"]) for u in m.unresolved}, UNRESOLVED)
         self.assertEqual(edges(m), PLANTED)  # the new references and decoys add no edge
@@ -353,7 +365,7 @@ class Completeness(Tmp):
     def test_scanner_version_change_rescans_every_repository(self):
         self.build()
         rc, out = self.build()
-        self.assertIn("(0 scanned, 15 unchanged", out)
+        self.assertIn("(0 scanned, 24 unchanged", out)
         old = dm.SCANNER
         try:
             dm.SCANNER = old + 1
@@ -361,7 +373,7 @@ class Completeness(Tmp):
         finally:
             dm.SCANNER = old
         self.assertIn(f"scanner {old} -> {old + 1}: rescanning every repository", out)
-        self.assertIn("(15 scanned, 0 unchanged", out)
+        self.assertIn("(24 scanned, 0 unchanged", out)
 
     def test_a_map_from_before_scanner_versions_is_rescanned(self):
         self.build()
@@ -373,7 +385,7 @@ class Completeness(Tmp):
         self.assertEqual(dm.load_map(self.cache).repos["localhost:3300/dmtest/big-monorepo"]["gaps"], [])
         rc, out = self.build()
         self.assertIn(f"scanner 1 -> {dm.SCANNER}", out)
-        self.assertIn("(15 scanned, 0 unchanged", out)
+        self.assertIn("(24 scanned, 0 unchanged", out)
 
     def test_reused_repositories_keep_their_gaps(self):
         self.build()
@@ -382,11 +394,11 @@ class Completeness(Tmp):
 
     def test_internal_prefixes_are_stored_and_kept(self):
         rc, out = self.build("--internal", "npm:dmtest-")
-        self.assertIn("4 internal references", out)  # dmtest-analytics is now the org's
+        self.assertIn("5 internal references", out)  # dmtest-analytics is now the org's
         self.build()
         self.assertIn(("checkout-web", "dmtest-analytics"),
                       {(u["src"].rsplit("/", 1)[1], u["ident"]) for u in dm.load_map(self.cache).unresolved})
-        rc, out = self.build("--internal", "nuget:Acme.")
+        rc, out = self.build("--internal", "nosuchns:acme-")
         self.assertEqual(rc, 2)
         self.assertIn("--internal takes NS:PREFIX", out)
 
@@ -540,14 +552,14 @@ class Extractors(unittest.TestCase):
         pom = ('<project xmlns="http://maven.apache.org/POM/4.0.0"><groupId>com.acme</groupId><artifactId>svc</artifactId>'
                '<dependencies><dependency><groupId>com.acme</groupId><artifactId>core</artifactId></dependency>'
                '</dependencies></project>')
-        prov, req = dm.x_pom("pom.xml", pom, self.ctx)
+        prov, req = dm.extract({"pom.xml": pom}, dict(self.ctx))
         self.assertEqual(prov, [("maven", "com.acme:svc")])
         self.assertEqual([r[2] for r in req], ["com.acme:core"])
-        ctx = dict(self.ctx)
-        dm.x_gradle("settings.gradle", "rootProject.name = 'core'\n", ctx)
-        _, req = dm.x_gradle("build.gradle", "group = 'com.acme'\ndependencies {\n  implementation 'com.acme:util:1.0'\n}\n", ctx)
-        self.assertEqual([(r[2], r[3]) for r in req], [("com.acme:util", 3)])
-        self.assertEqual(dm.gradle_provides(ctx, "core-repo"), [("maven", "com.acme:core")])
+        prov, req = dm.extract({"settings.gradle": "rootProject.name = 'core'\n",
+                                "build.gradle": "group = 'com.acme'\ndependencies {\n  implementation 'com.acme:util:1.0'\n}\n"},
+                               dict(self.ctx))
+        self.assertEqual([(r[2], r[4]) for r in req], [("com.acme:util", 3)])
+        self.assertEqual(prov, [("maven", "com.acme:core")])
 
     def test_go_module_drops_the_port(self):
         prov, req = dm.x_go_mod("go.mod", "module localhost:3300/acme/a\nrequire localhost:3300/acme/b v1.0.0\n", self.ctx)
@@ -590,6 +602,234 @@ class Extractors(unittest.TestCase):
         self.assertEqual(dm.readme_summary("Ends with a colon but nothing after it:\n"),
                          "Ends with a colon but nothing after it:")
 
+
+
+def reqs(files, **ctx):
+    """{(via, ns, ident): (file, line, detail)} and the provides, for these files of one repository."""
+    c = {"host": "github.com", "path": "acme/repo", "name": "repo", "git": "github.com/acme/repo", **ctx}
+    prov, req = dm.extract(files, c)
+    out = {}
+    for r in req:  # the first file:line of each, as scan_repo keeps it
+        out.setdefault(r[:3], r[3:])
+    return out, sorted(set(prov))
+
+
+class Jvm(unittest.TestCase):
+    POM = '<project xmlns="http://maven.apache.org/POM/4.0.0">{}</project>'
+
+    def test_maven_properties_come_from_the_parent_in_the_repository(self):
+        parent = self.POM.format("<groupId>com.acme</groupId><artifactId>parent</artifactId><version>1</version>"
+                                 "<properties><plat>com.acme.platform</plat></properties>")
+        child = self.POM.format(
+            "<parent><groupId>com.acme</groupId><artifactId>parent</artifactId><version>1</version></parent>"
+            "<artifactId>impl</artifactId><dependencyManagement><dependencies><dependency><groupId>${plat}</groupId>"
+            "<artifactId>bom</artifactId><type>pom</type><scope>import</scope></dependency></dependencies>"
+            "</dependencyManagement><dependencies><dependency><groupId>${project.groupId}</groupId>"
+            "<artifactId>api</artifactId></dependency><dependency><groupId>${undefined}</groupId>"
+            "<artifactId>skipped</artifactId></dependency></dependencies>"
+            "<build><plugins><plugin><artifactId>maven-shade-plugin</artifactId></plugin></plugins></build>")
+        r, prov = reqs({"pom.xml": parent, "impl/pom.xml": child})
+        self.assertIn(("maven", "com.acme:impl"), prov)
+        self.assertEqual(r[("maven", "maven", "com.acme.platform:bom")][2], "BOM import")
+        self.assertIn(("maven", "maven", "com.acme:api"), r)
+        self.assertIn(("maven", "maven", "org.apache.maven.plugins:maven-shade-plugin"), r)
+        self.assertFalse([k for k in r if "skipped" in k[2]])  # an unresolved ${property} is not guessed
+
+    def test_registry_urls_never_keep_credentials(self):
+        pom = self.POM.format("<groupId>g</groupId><artifactId>a</artifactId><repositories><repository>"
+                              "<url>https://user:p4ss@repo.acme.example/maven/?token=x</url></repository></repositories>")
+        r, _ = reqs({"pom.xml": pom})
+        self.assertIn(("registry", "registry", "https://repo.acme.example/maven"), r)
+        self.assertIsNone(dm.registry_url("${env.REPO_URL}"))
+
+    def test_gradle_group_only_from_project_scope(self):
+        """Found on opentelemetry-java: `tasks.register("x") { group = "publishing" }` before
+        `subprojects { group = "io.opentelemetry" }` made every module publishing:*."""
+        r, prov = reqs({"settings.gradle.kts": 'rootProject.name = "otel"\ninclude(":api:all")\n',
+                        "build.gradle.kts": 'tasks.register("x") {\n  group = "publishing"\n}\n'
+                                            'subprojects {\n  group = "io.opentelemetry"\n}\n',
+                        "api/all/build.gradle.kts": 'base.archivesName.set("opentelemetry-api")\n'})
+        self.assertIn(("maven", "io.opentelemetry:opentelemetry-api"), prov)
+        self.assertFalse([p for p in prov if p[1].startswith("publishing:")])
+
+    def test_gradle_convention_plugin_and_parent_templates(self):
+        """opentelemetry-java: sdk/build.gradle.kts names its children opentelemetry-sdk-<name>, the
+        convention plugin publishes them under io.opentelemetry, and a name that already has the
+        prefix keeps it."""
+        conv = "buildSrc/src/main/kotlin/otel.java-conventions.gradle.kts"
+        r, prov = reqs({
+            "settings.gradle.kts": 'include(":sdk:testing")\ninclude(":opentelemetry-shim")\n',
+            "build.gradle.kts": 'subprojects {\n  group = "io.opentelemetry"\n}\n',
+            "sdk/build.gradle.kts": 'subprojects {\n  group = "io.opentelemetry.sdk"\n'
+                                    '  base { archivesName.set("opentelemetry-sdk-${proj.name}") }\n}\n',
+            "sdk/testing/build.gradle.kts": 'plugins {\n  id("otel.java-conventions")\n}\n',
+            "opentelemetry-shim/build.gradle.kts": 'plugins {\n  id("otel.java-conventions")\n}\n',
+            conv: 'base {\n  archivesName.set("opentelemetry-$name")\n}\npublishing {\n  publications {\n'
+                  '    register<MavenPublication>("m") {\n      groupId = "io.opentelemetry"\n    }\n  }\n}\n'})
+        self.assertIn(("maven", "io.opentelemetry:opentelemetry-sdk-testing"), prov)
+        self.assertIn(("maven", "io.opentelemetry:opentelemetry-shim"), prov)
+        self.assertIn(("gradle-plugin", "otel.java-conventions"), prov)
+
+    def test_gradle_build_file_named_after_the_project(self):
+        """spring-framework / spring-security: settings set project.buildFileName, modules keep
+        core/spring-security-core.gradle, and take the root project's group through conventions."""
+        r, prov = reqs({
+            "settings.gradle": "buildFiles.each { f ->\n  project.buildFileName = f.name\n}\n",
+            "build.gradle": "group = 'org.springframework.security'\n",
+            "core/spring-security-core.gradle": "dependencies {\n  api 'org.springframework:spring-core'\n}\n",
+            "bom/spring-framework-bom.gradle": "publishing {\n  publications {\n    mavenJava(MavenPublication) {\n"
+                                               "      artifactId = 'spring-bom'\n    }\n  }\n}\n",
+            "gradle/publications.gradle": "apply plugin: 'maven-publish'\n"})
+        self.assertIn(("maven", "org.springframework.security:spring-security-core"), prov)
+        self.assertIn(("maven", "org.springframework.security:spring-bom"), prov)
+        self.assertFalse([p for p in prov if p[1].endswith(":publications")])  # an applied script is not a project
+
+    def test_gradle_projects_from_root_project_blocks_and_settings_renames(self):
+        """spring-amqp / spring-kafka configure modules in `project ('spring-rabbit') { }` blocks of the
+        root script; spring-ldap renames every child in settings ("spring-ldap-" + name) and one by
+        findProject(...).name."""
+        r, prov = reqs({"settings.gradle": 'include ":${dir.name}"\n',
+                        "build.gradle": "allprojects {\n  group = 'org.springframework.amqp'\n}\n"
+                                        "project ('spring-rabbit') {\n  dependencies {\n"
+                                        "    api 'com.rabbitmq:amqp-client:5'\n  }\n}\n"})
+        self.assertIn(("maven", "org.springframework.amqp:spring-rabbit"), prov)
+        self.assertEqual(r[("gradle", "maven", "com.rabbitmq:amqp-client")][:2], ("build.gradle", 6))
+        _, prov = reqs({"settings.gradle": "include 'core'\ninclude 'test-support'\n"
+                                           "rootProject.children.each { p ->\n  p.name = \"spring-ldap-\" + p.name\n}\n"
+                                           'findProject(":spring-ldap-test-support").name = "spring-ldap-test"\n',
+                        "build.gradle": "allprojects {\n  group = 'org.springframework.ldap'\n}\n"})
+        self.assertIn(("maven", "org.springframework.ldap:spring-ldap-core"), prov)
+        self.assertIn(("maven", "org.springframework.ldap:spring-ldap-test"), prov)
+
+    def test_plugin_modules_and_annotation_processors(self):
+        """spring-graphql resolves a plugin through settings' useModule(...); spring-modulith's
+        configuration processor is an annotationProcessorPaths <path>, not a <dependency>."""
+        r, _ = reqs({"settings.gradle": "pluginManagement {\n  resolutionStrategy {\n    eachPlugin {\n"
+                                        '      useModule("org.springframework.boot:spring-boot-gradle-plugin:${v}")\n'
+                                        "    }\n  }\n}\n"})
+        self.assertEqual(r[("gradle", "maven", "org.springframework.boot:spring-boot-gradle-plugin")][:2], ("settings.gradle", 4))
+        pom = self.POM.format("<groupId>g</groupId><artifactId>a</artifactId><build><plugins><plugin>"
+                              "<artifactId>maven-compiler-plugin</artifactId><configuration><annotationProcessorPaths>"
+                              "<path><groupId>org.springframework.boot</groupId>"
+                              "<artifactId>spring-boot-configuration-processor</artifactId></path>"
+                              "</annotationProcessorPaths></configuration></plugin></plugins></build>")
+        r, _ = reqs({"pom.xml": pom})
+        self.assertEqual(r[("maven", "maven", "org.springframework.boot:spring-boot-configuration-processor")][2],
+                         "annotation processor")
+
+    def test_test_source_sets_are_not_read(self):
+        """spring-boot keeps 304 fixture projects under src/intTest/ and src/test/: none is its own build."""
+        picked = [p for p, _ in dm.select_files([("pom.xml", 1), ("plugin/src/intTest/projects/a/pom.xml", 1),
+                                                 ("plugin/src/test/resources/b/build.gradle", 1),
+                                                 ("plugin/src/it/c/pom.xml", 1), ("plugin/build.gradle", 1)])]
+        self.assertEqual(picked, ["pom.xml", "plugin/build.gradle"])
+
+    def test_gradle_version_catalog(self):
+        toml = ('[libraries]\nacme-core = { module = "com.acme:core", version = "1" }\n'
+                'acme-util = { group = "com.acme", name = "util", version.ref = "u" }\n'
+                'guava = "com.google.guava:guava:33.0"\nunused-lib = "com.acme:unused:1"\n'
+                '[bundles]\nacme = ["acme-core", "acme-util"]\n'
+                '[plugins]\nacme-conv = { id = "com.acme.conventions", version = "1" }\n')
+        build = ('plugins {\n  alias(libs.plugins.acme.conv)\n  kotlin("jvm")\n  id("java-library")\n}\n'
+                 'dependencies {\n  implementation(libs.bundles.acme)\n  implementation(libs.guava)\n'
+                 '  implementation(project(":other"))\n  api(platform("com.acme:bom:1"))\n'
+                 "  testImplementation group: 'com.acme', name: 'testkit', version: '1'\n}\n")
+        r, _ = reqs({"gradle/libs.versions.toml": toml, "build.gradle.kts": build})
+        self.assertEqual(r[("gradle", "maven", "com.acme:core")][:2], ("build.gradle.kts", 7))
+        self.assertIn(("gradle", "maven", "com.acme:util"), r)
+        self.assertEqual(r[("gradle-plugin", "gradle-plugin", "com.acme.conventions")][:2], ("build.gradle.kts", 2))
+        self.assertTrue(r[("gradle", "maven", "com.acme:bom")][2].startswith("platform"))
+        self.assertIn(("gradle", "maven", "com.acme:testkit"), r)
+        # declared in the catalog but not referenced by a script that was read: still a dependency
+        self.assertEqual(r[("gradle", "maven", "com.acme:unused")][:2], ("gradle/libs.versions.toml", 5))
+        self.assertFalse([k for k in r if k[2] in ("java-library", "other") or "kotlin" in k[2]])
+
+    def test_gradle_composite_builds(self):
+        r, _ = reqs({"settings.gradle.kts": 'pluginManagement {\n  includeBuild("../build-logic")\n}\n'
+                                            'includeBuild("tools/inner")\nsourceControl {\n'
+                                            '  gitRepository(uri("https://gitlab.acme.example/libs/util.git")) {}\n}\n'})
+        self.assertEqual(r[("gradle-build", "git", "github.com/acme/build-logic")][:2], ("settings.gradle.kts", 2))
+        self.assertIn(("gradle-build", "git", "gitlab.acme.example/libs/util"), r)
+        self.assertEqual(len(r), 2)  # a build inside the repository is not another repository
+
+    def test_sbt(self):
+        r, prov = reqs({"build.sbt": 'ThisBuild / organization := "com.acme"\nname := "inventory"\n'
+                                     'libraryDependencies += "org.typelevel" %% "cats-core" % "2.10.0"\n'
+                                     '.dependsOn(RootProject(uri("https://github.com/acme/core.git#v1")))\n',
+                        "project/plugins.sbt": 'addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.9")\n'})
+        self.assertIn(("maven", "com.acme:inventory"), prov)
+        self.assertIn(("sbt", "maven", "org.typelevel:cats-core"), r)  # no _2.13 suffix
+        self.assertIn(("sbt", "git", "github.com/acme/core"), r)
+        self.assertTrue(r[("sbt", "maven", "com.github.sbt:sbt-native-packager")][2].startswith("sbt plugin"))
+        self.assertEqual(dm.maven_id("org.typelevel", "cats-core_2.13"), "org.typelevel:cats-core")
+
+    def test_clojure(self):
+        r, prov = reqs({"deps.edn": '{:deps {org.clojure/clojure {:mvn/version "1.11.1"}\n'
+                                    ' io.github.acme/util {:git/sha "abc"}\n'
+                                    ' acme/tools {:git/url "https://gitlab.com/acme/tools.git" :git/sha "1"}}}\n',
+                        "sub/project.clj": '(defproject com.acme/app "1.0"\n  :dependencies [[ring "1.9.0"]])\n'})
+        self.assertIn(("clojure", "maven", "org.clojure:clojure"), r)
+        self.assertIn(("clojure", "git", "github.com/acme/util"), r)
+        self.assertIn(("clojure", "git", "gitlab.com/acme/tools"), r)
+        self.assertIn(("clojure", "maven", "ring:ring"), r)
+        self.assertIn(("maven", "com.acme:app"), prov)
+
+
+class DotNet(unittest.TestCase):
+    def test_project_files(self):
+        csproj = ('<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><AssemblyName>Acme.Core</AssemblyName></PropertyGroup>'
+                  '<ItemGroup><PackageReference Include="Newtonsoft.Json" Version="13.0.3" />'
+                  '<PackageReference Update="Ignored.Update" />'
+                  '<ProjectReference Include="..\\Inner\\Inner.csproj" />'
+                  '<ProjectReference Include="..\\..\\..\\shared\\src\\S.csproj" /></ItemGroup></Project>')
+        props = ('<Project><ItemGroup><PackageVersion Include="Acme.Pinned" Version="1" />'
+                 '<GlobalPackageReference Include="Acme.Analyzers" Version="2" /></ItemGroup></Project>')
+        r, prov = reqs({"src/Core/Core.csproj": csproj, "Directory.Packages.props": props,
+                        "src/Other/Other.fsproj": "<Project />"})
+        self.assertEqual(prov, [("nuget", "acme.core"), ("nuget", "other")])
+        self.assertIn(("nuget", "nuget", "newtonsoft.json"), r)
+        self.assertIn(("nuget", "nuget", "acme.analyzers"), r)
+        self.assertNotIn(("nuget", "nuget", "acme.pinned"), r)  # a central version, not a dependency
+        self.assertNotIn(("nuget", "nuget", "ignored.update"), r)
+        self.assertEqual(r[("dotnet-project", "git", "github.com/acme/shared")][2],
+                         "ProjectReference ../../../shared/src/S.csproj")
+        self.assertEqual(len([k for k in r if k[0] == "dotnet-project"]), 1)  # ../Inner stays inside
+
+    def test_packages_config_paket_and_sources(self):
+        r, _ = reqs({"packages.config": '<packages><package id="Acme.Old" version="1" /></packages>',
+                     "paket.dependencies": "// a comment\nsource https://nuget.acme.example/v3/index.json\n"
+                                           "nuget Acme.New ~> 2\ngithub acme/scripts:main src/a.fs\n"
+                                           "git https://gitlab.com/acme/lib.git master\n",
+                     "src/paket.references": "Acme.Ref\ngroup Build\n",
+                     "NuGet.Config": '<configuration><packageSources><add key="a" '
+                                     'value="https://u:p@pkgs.dev.azure.com/acme/_packaging/feed/nuget/v3/index.json" />'
+                                     '</packageSources></configuration>'})
+        for k in (("nuget", "nuget", "acme.old"), ("nuget", "nuget", "acme.new"), ("nuget", "nuget", "acme.ref"),
+                  ("paket", "git", "github.com/acme/scripts"), ("paket", "git", "gitlab.com/acme/lib"),
+                  ("registry", "registry", "https://nuget.acme.example/v3/index.json"),
+                  ("registry", "registry", "https://pkgs.dev.azure.com/acme/_packaging/feed/nuget/v3/index.json")):
+            self.assertIn(k, r)
+
+    def test_nuget_prefix_is_internal_only_when_it_is_the_orgs_name(self):
+        m = dm.Map()
+        m.graphs["github.com/acme"] = {"host": "github.com", "org": "acme"}
+        m.repos["github.com/acme/a"] = {"fork": False}
+        f, _ = dm.internal_rules(m, {("nuget", "acme.core"): {"github.com/acme/a"},
+                                     ("nuget", "newtonsoft.json.acme"): {"github.com/acme/a"},
+                                     ("maven", "com.acme:core"): {"github.com/acme/a"}})
+        self.assertTrue(f("nuget", "acme.audit"))
+        self.assertFalse(f("nuget", "newtonsoft.json"))
+        self.assertTrue(f("gradle-plugin", "com.acme.conventions"))
+        self.assertFalse(f("gradle-plugin", "org.jetbrains.kotlin.jvm"))
+
+    def test_extractor_for_the_new_files(self):
+        for path, x in (("a/b.csproj", dm.x_msbuild), ("Directory.Build.props", dm.x_msbuild),
+                        ("x/packages.config", dm.x_packages_config), ("paket.dependencies", dm.x_paket),
+                        ("nuget.config", dm.x_nuget_config), ("gradle/libs.versions.toml", dm.x_gradle_catalog),
+                        ("buildSrc/src/main/kotlin/a.b.gradle.kts", dm.x_gradle), ("gradle.properties", dm.x_gradle),
+                        ("project/Dependencies.scala", dm.x_sbt), ("build.sbt", dm.x_sbt), ("deps.edn", dm.x_deps_edn),
+                        ("src/main/scala/App.scala", None), ("global.json", None)):
+            self.assertIs(dm.extractor_for(path), x, path)
 
 class CliTransportErrors(unittest.TestCase):
     """A stand-in `gh` on PATH: errors are classified and the login hint names the right command."""

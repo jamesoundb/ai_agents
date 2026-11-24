@@ -56,14 +56,17 @@ All commands take `--cache DIR` before the command name (default `~/.cache/dunge
   - a Go vanity domain (`go.acme.dev/`);
   - an npm scope (`@acme/`);
   - a Maven groupId and its children (`com.acme`, `com.acme.billing`);
-  - a Terraform registry namespace.
+  - a Terraform registry namespace;
+  - a NuGet ID prefix that is the org's name (`Acme.*` for the `acme` org; NuGet reserves
+    prefixes for their owners);
+  - a Gradle plugin id under one of the org's Maven groups (`com.acme.conventions`).
 
   A shared leading name is not a namespace. On PyPI and unscoped npm anyone can publish
   `opentelemetry-instrumentation-foo`, and Traceloop publishes 34 such packages that
   open-telemetry's own repositories depend on, so it's only suggested. When two or more of the
   org's packages start with the org's name, `gaps` prints `note: ... rebuild with --internal
   pypi:opentelemetry-`. `--internal NS:PREFIX` adds a namespace (NS: git, go, npm, pypi, maven,
-  image, tfreg, helm). The list is stored in the map, later builds keep it, and passing
+  image, tfreg, helm, nuget, gradle-plugin). The list is stored in the map, later builds keep it, and passing
   `--internal` again replaces it. Public packages outside these namespaces are never reported.
 - Incremental: a repository whose last activity (GitHub `pushed_at`, GitLab `last_activity_at`,
   Gitea `updated_at`) and default branch match the previous build keeps its rows. Repositories
@@ -110,13 +113,27 @@ A page shorter than `per_page` ends the list only once a full page proved the se
 | `package.json` | `npm` name | `npm` each dependency (all four sections); `git` for git / `github:` / `gitlab:` versions |
 | `go.mod` | `go` module path | `go` each `require` |
 | `pyproject.toml`, `setup.cfg`, `requirements*.txt` | `pypi` name (PEP 503 normalized) | `pypi` each dependency; `git` for `x @ git+...` and `git+` URLs (python) |
-| `pom.xml` | `maven` groupId:artifactId | `maven` parent and each dependency |
-| `build.gradle[.kts]`, `settings.gradle[.kts]` | `maven` group:rootProject.name, group:subdir per subproject | `maven` each `implementation 'g:a:v'`-style string (gradle) |
+| `pom.xml` (every one in the repository, read together) | `maven` groupId:artifactId of each module, `${property}` resolved through the parent chain inside the repository | `maven` the parent, each dependency (managed ones and `<scope>import</scope>` BOMs marked), plugins and extensions; `registry` repository / distributionManagement URLs |
+| `*.gradle[.kts]`, `gradle.properties`, `gradle/*.versions.toml` (read together) | `maven` group:artifact per project; `gradle-plugin` ids of `gradlePlugin { }` and precompiled script plugins | `maven` dependency strings, map notation, `platform()`, catalog accessors (`libs.x.y`, bundles) and catalog entries no read script references (gradle); `gradle-plugin` applied plugin ids with a dot, catalog plugin aliases; `git` for `includeBuild` outside the repository and `sourceControl` repositories (gradle-build) |
+| `*.sbt`, `project/*.scala` | `maven` organization:name for each name / project | `maven` `"g" %% "a" % v` and `addSbtPlugin` (sbt, Scala suffix dropped); `git` for `RootProject` / `ProjectRef` URIs |
+| `deps.edn`, `project.clj` | `maven` defproject group/artifact | `maven` `:mvn/version` and project.clj dependencies; `git` for `:git/url`, and `io.github.ORG/REPO` with only a sha (clojure) |
+| `*.csproj`, `*.fsproj`, `*.vbproj`, `Directory.Build.props/.targets`, `Directory.Packages.props` | `nuget` PackageId, else AssemblyName, else the project file name | `nuget` each PackageReference and GlobalPackageReference (central PackageVersion entries are versions, not dependencies); `git` for a ProjectReference that leaves the repository, as the sibling repository (dotnet-project) |
+| `packages.config`, `paket.dependencies`, `paket.references`, `nuget.config` | | `nuget` each package; `git` for paket `github` / `git` lines (paket); `registry` paket `source` and nuget.config package sources |
 | `Chart.yaml` | `helm` chart name | `helm` each dependency not from `file://` |
 | `*.tf` | `tfreg` owner/name/provider for a repository named `terraform-<provider>-<name>` | `git` for git / `github.com/...` sources, `tfreg` for registry sources (terraform) |
 | `.gitlab-ci.yml`, `.gitlab/**/*.yml` | | `git` for `include: project:` and `remote: .../-/raw/...` (ci-include), `trigger:` (ci-trigger), `component:` (ci-component); `$CI_PROJECT_NAMESPACE`, `$CI_SERVER_HOST`/`FQDN` expanded, other variables skipped |
 | `.github/workflows/*`, `.gitea/workflows/*`, `action.yml` | | `git` for `uses: o/r/.github/workflows/x.yml@v` (workflow) and `uses: o/r[/path]@v` (action), on the repository's own host; full URLs as written; `docker://` as `image` |
 | `Dockerfile*`, `*.dockerfile`, `Containerfile` | `image` the repository's path | `image` each `FROM` without registry host and tag; `ARG` defaults substituted; stage aliases, `scratch` and unresolved variables skipped |
+
+Gradle coordinates are worked out the way Gradle evaluates them. The group comes from
+`gradle.properties`, then each ancestor's `allprojects` / `subprojects` block (root first), then
+an applied convention plugin, then the project's own script. A `group = ` inside any other block,
+such as `tasks.register { group = "publishing" }`, is not the project's. The artifact is the
+project's own `archivesName`, else an ancestor's `subprojects` template
+(`"opentelemetry-sdk-${proj.name}"`), else the convention plugin's template, else the project
+name. A publication's `groupId` / `artifactId` wins. Maven artifactIds drop a Scala suffix
+(`_2.13`, `_3`). Registry URLs are stored without credentials or query. `global.json` and the
+Gradle wrapper aren't read.
 
 Identities are lowercase and carry no port (`localhost:3300/acme/x` and `git@localhost:acme/x`
 are the same repository). Skipped directories: `node_modules`, `vendor`, `third_party`,

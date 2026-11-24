@@ -1,0 +1,5 @@
+source https://api.nuget.org/v3/index.json
+
+nuget {ORGTITLE}.Shared
+nuget Serilog 3.1.1
+git http://{HOST}/{ORG}/shared-dotnet.git main

@@ -1,0 +1,20 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.{ORG}</groupId>
+  <artifactId>billing-parent</artifactId>
+  <version>2.1.0</version>
+  <packaging>pom</packaging>
+  <properties>
+    <platform.group>com.{ORG}.platform</platform.group>
+  </properties>
+  <modules>
+    <module>api</module>
+    <module>impl</module>
+  </modules>
+  <repositories>
+    <repository>
+      <id>internal</id>
+      <url>https://deploy:not-a-secret@repo.{ORG}.example/maven/releases</url>
+    </repository>
+  </repositories>
+</project>

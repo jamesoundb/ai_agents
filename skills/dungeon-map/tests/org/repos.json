@@ -101,5 +101,62 @@
    "frontend",
    "design"
   ]
+ },
+ "java-bom": {
+  "description": "Platform bill of materials for the Java libraries",
+  "topics": [
+   "java",
+   "maven"
+  ]
+ },
+ "billing-core": {
+  "description": "Invoices and ledgers for the Java services",
+  "topics": [
+   "java",
+   "maven"
+  ]
+ },
+ "gradle-conventions": {
+  "description": "Gradle convention plugin for every JVM build",
+  "topics": [
+   "gradle"
+  ]
+ },
+ "orders-service": {
+  "description": "Order intake service",
+  "topics": [
+   "java",
+   "gradle"
+  ]
+ },
+ "inventory-scala": {
+  "description": "Stock levels service in Scala",
+  "topics": [
+   "scala"
+  ]
+ },
+ "shared-dotnet": {
+  "description": "Shared .NET primitives",
+  "topics": [
+   "dotnet"
+  ]
+ },
+ "invoicing-dotnet": {
+  "description": "Invoice generation on .NET",
+  "topics": [
+   "dotnet"
+  ]
+ },
+ "ledger-dotnet": {
+  "description": "Ledger service on .NET",
+  "topics": [
+   "dotnet"
+  ]
+ },
+ "clj-tools": {
+  "description": "Clojure tools for the data team",
+  "topics": [
+   "clojure"
+  ]
  }
 }

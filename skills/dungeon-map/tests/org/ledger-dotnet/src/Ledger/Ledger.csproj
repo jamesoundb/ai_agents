@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>{ORGTITLE}.Ledger</PackageId>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="{ORGTITLE}.Invoicing.Client" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="{ORGTITLE}.Audit" Version="0.3.0" />
+    <ProjectReference Include="..\..\..\shared-dotnet\src\Shared\Shared.csproj" />
+  </ItemGroup>
+</Project>
