@@ -213,8 +213,9 @@ def workspace_state(m, root, keys, ssh=False):
     return out
 
 
-def print_handoff(m, root, keys, slug, ssh, cwd_root):
-    """Workspace section and the next commands, one per line (the agent runs one per call)."""
+def print_handoff(m, root, keys, slug, ssh, cwd_root, cache=None):
+    """Workspace section and the next commands, one per line (the agent runs one per call). cache:
+    the --cache the map was read from, repeated in the seed command so it reads the same map."""
     st = workspace_state(m, root, keys, ssh)
     ai = ".ai/bin/ai-task" if cwd_root else os.path.join(root, ".ai", "bin", "ai-task")
     print(f"\nworkspace {root}:")
@@ -236,6 +237,8 @@ def print_handoff(m, root, keys, slug, ssh, cwd_root):
         print(f"  {ai} clone {spec}")
     if missing:
         run = shown(RUN) if cwd_root else RUN  # the commands run from the root, so no cwd-relative path
+        if cache:
+            run += f" --cache {os.path.abspath(cache)}"
         print(f"  {run} seed {' '.join(short(m, k) for k, *_ in missing)}")
     print(f"  {ai} start {slug or '<slug>'} {' '.join(names)}")
     if not slug:
@@ -366,7 +369,7 @@ def cmd_plan(a):
         print("\nalso matched (weaker): " + ", ".join(f"{short(m, k)} ({s})" for s, k, _ in others))
     root = find_workspace(a.workspace)
     if root:
-        print_handoff(m, root, [k for _, k, _ in seeds], a.slug, a.ssh, os.path.abspath(os.getcwd()) == root)
+        print_handoff(m, root, [k for _, k, _ in seeds], a.slug, a.ssh, os.path.abspath(os.getcwd()) == root, a.cache)
     else:
         print("\nno ai-task workspace here (.ai/ in this or a parent directory); create one with the ai-task skill's init, "
               "then: compass handoff REPO...")
@@ -389,8 +392,195 @@ def cmd_handoff(a):
         return 1
     for line in stale_lines(m, a.max_age_days):
         print(line)
-    print_handoff(m, root, list(dict.fromkeys(keys)), a.slug, a.ssh, os.path.abspath(os.getcwd()) == root)
+    print_handoff(m, root, list(dict.fromkeys(keys)), a.slug, a.ssh, os.path.abspath(os.getcwd()) == root, a.cache)
     return 0
+
+
+# --------------------------------------------------------------------------------- deps
+def closure(m, roots, kinds, depth=None):
+    """Everything the roots need, breadth first over edges of these kinds.
+
+    Returns (order, via, cut): order lists the repositories pulled in (roots excluded) by distance;
+    via[key] is the edge that first reached it, so following via back to a root gives the shortest
+    chain of evidence; cut holds the edges --depth stopped at."""
+    out_by = {}
+    for e in m.edges:
+        out_by.setdefault(e["src"], []).append(e)
+    level = {k: 0 for k in roots}
+    via, order, cut, queue = {}, [], [], list(roots)
+    while queue:
+        k = queue.pop(0)
+        for e in out_by.get(k, []):
+            d = e["dst"]
+            if e["kind"] not in kinds or d in level:
+                continue
+            if depth is not None and level[k] >= depth:
+                cut.append(e)
+                continue
+            level[d] = level[k] + 1
+            via[d], order = e, order + [d]
+            queue.append(d)
+    return order, via, cut
+
+
+def chain(m, via, k):
+    """root -> A (evidence) -> ... -> k (evidence): the edges that pulled k in."""
+    steps = []
+    while k in via:
+        steps.append(via[k])
+        k = via[k]["src"]
+    return " -> ".join([short(m, k)] + [edge_text(m, e, True) for e in reversed(steps)])
+
+
+def cycles(m, keys, kinds):
+    """Each dependency cycle among keys once, as a list of edges (strongly connected components)."""
+    adj = {k: [] for k in keys}
+    for e in m.edges:
+        if e["src"] in adj and e["dst"] in adj and e["kind"] in kinds:
+            adj[e["src"]].append(e)
+    index, low, on, stack, comps, n = {}, {}, set(), [], [], [0]
+    for start in sorted(adj):  # iterative Tarjan
+        if start in index:
+            continue
+        work = [(start, 0)]
+        while work:
+            v, i = work.pop()
+            if i == 0:
+                index[v] = low[v] = n[0]
+                n[0] += 1
+                stack.append(v)
+                on.add(v)
+            if i < len(adj[v]):
+                work.append((v, i + 1))
+                w = adj[v][i]["dst"]
+                if w not in index:
+                    work.append((w, 0))
+                elif w in on:
+                    low[v] = min(low[v], index[w])
+                continue
+            if low[v] == index[v]:
+                comp = set()
+                while True:
+                    w = stack.pop()
+                    on.discard(w)
+                    comp.add(w)
+                    if w == v:
+                        break
+                if len(comp) > 1:
+                    comps.append(comp)
+            if work:
+                low[work[-1][0]] = min(low[work[-1][0]], low[v])
+    out = []
+    for comp in comps:  # one loop through the component's first repository, shortest first
+        first = min(comp)
+        prev, queue = {first: None}, [first]
+        while queue:
+            v = queue.pop(0)
+            for e in adj[v]:
+                if e["dst"] == first:
+                    path = [e]
+                    while prev[path[0]["src"]]:
+                        path.insert(0, prev[path[0]["src"]])
+                    out.append(path)
+                    queue = []
+                    break
+                if e["dst"] in comp and e["dst"] not in prev:
+                    prev[e["dst"]] = e
+                    queue.append(e["dst"])
+    return out
+
+
+def verdict_gaps(m, keys, kinds, cut, depth, max_days):
+    """Every reason the closure may be missing something: [(kind, text)]."""
+    gaps = []
+    for k in keys:
+        r = m.repos[k]
+        for g in r.get("gaps") or []:
+            gaps.append(("read-incompletely", f"{short(m, k)}: {dm.gap_text(g)}"))
+        if r["archived"]:
+            gaps.append(("archived", f"{short(m, k)} is archived: check the build still uses it, and which "
+                                      f"repository replaced it"))
+    for u in m.unresolved:
+        if u["src"] in keys and u["kind"] in kinds:
+            gaps.append(("no-repository", f"{short(m, u['src'])} -> {dm.unresolved_text(u)}: no repository in the "
+                                          f"map provides it"))
+    groups = {}
+    for o in m.outside:
+        if o["src"] in keys and o["kind"] in kinds:
+            groups.setdefault((o["host"], o["group"], o["provider"]), []).append(o)
+    for (host, group, prov), os_ in sorted(groups.items()):
+        refs = "; ".join(f"{short(m, o['src'])} -> {o['ident']} ({o['via']}, {o['file']}:{o['line']})" for o in os_)
+        gaps.append(("not-in-map", f"{host}/{group} is not in the map ({refs}); add it: "
+                                   f"{dm.build_command(host, group, prov, shown(DM_RUN))}"))
+    if cut:
+        gaps.append(("depth", f"--depth {depth}: {len(cut)} dependencies past it not followed "
+                              f"({', '.join(sorted({short(m, e['dst']) for e in cut})[:5])})"))
+    graphs = {m.repos[k]["graph"] for k in keys}
+    for line in stale_lines(m, max_days):
+        if line.split()[1] in graphs:
+            gaps.append(("stale", line.removeprefix("stale: ")))
+    return gaps
+
+
+def cmd_deps(a):
+    m = load(a)
+    if not m:
+        return 1
+    kinds = [k.strip() for k in (a.kinds or ",".join(dm.EDGE_KINDS)).split(",") if k.strip()]
+    bad = [k for k in kinds if k not in dm.EDGE_KINDS]
+    if bad:
+        print(f"compass: --kinds takes {', '.join(dm.EDGE_KINDS)}: {', '.join(bad)}", file=sys.stderr)
+        return 2
+    roots = []
+    for name in a.repos:
+        k = need_one(m, name)
+        if not k:
+            return 1
+        roots.append(k)
+    roots = list(dict.fromkeys(roots))
+    order, via, cut = closure(m, roots, set(kinds), a.depth)
+    keys = roots + order
+    depth = "" if a.depth is None else f", depth {a.depth}"
+    print(f"closure of {', '.join(short(m, k) for k in roots)} (kinds: {', '.join(kinds)}{depth}): "
+          f"{len(order)} repositories" + ("" if order else " (nothing in the map)"))
+    for k in order:
+        print(f"  {short(m, k)}{flags(m.repos[k])}  [{via[k]['kind']}]")
+        print(f"      {chain(m, via, k)}")
+    loops = cycles(m, keys, set(kinds))
+    if loops:
+        print(f"\ncycles ({len(loops)}):")
+        for path in loops:
+            print("  " + " -> ".join([short(m, path[0]["src"])] + [edge_text(m, e, True) for e in path]))
+    gaps = verdict_gaps(m, keys, set(kinds), cut, a.depth, a.max_age_days)
+    if gaps:
+        print(f"\nverdict: incomplete ({len(gaps)} gaps); the closure may be missing repositories until each is "
+              f"resolved or accepted:")
+        for _, text in gaps:
+            print(f"  - {text}")
+    else:
+        print("\nverdict: complete (every repository read in full, every internal reference resolved, nothing "
+              "outside the map)")
+    rc = 0
+    if a.check or a.handoff:
+        root = find_workspace(a.workspace)
+        if not root:
+            print("compass: no ai-task workspace (.ai/) in the working directory or a parent; run the ai-task skill's "
+                  "init first")
+            return 1
+        if a.check:
+            st = workspace_state(m, root, keys, a.ssh)
+            missing = [x for x in st if x[1] != "have"]
+            if missing:
+                print(f"\nworkspace {root} is missing {len(missing)} of {len(keys)} repositories:")
+                for k, s, _name, _ in missing:
+                    print(f"  {'missing' if s == 'missing' else 'CLASH  '}  {short(m, k)}"
+                          + (f" ({chain(m, via, k)})" if k in via else ""))
+                rc = 1
+            else:
+                print(f"\nworkspace {root} has all {len(keys)} repositories")
+        if a.handoff:
+            print_handoff(m, root, keys, a.slug, a.ssh, os.path.abspath(os.getcwd()) == root, a.cache)
+    return rc
 
 
 def reference_block(m, k):
@@ -474,11 +664,20 @@ def main(argv=None):
     h = sub.add_parser("handoff", parents=[common, ws], help="clone commands for these repositories, then ai-task start")
     h.add_argument("repos", nargs="+")
     h.add_argument("--slug")
+    d = sub.add_parser("deps", parents=[common, ws], help="everything these repositories need, at any depth, with "
+                                                         "the evidence and a completeness verdict")
+    d.add_argument("repos", nargs="+")
+    d.add_argument("--depth", type=int, help="follow dependencies at most N levels (default: all)")
+    d.add_argument("--kinds", help=f"edge kinds to follow, comma-separated: {', '.join(dm.EDGE_KINDS)} (default all)")
+    d.add_argument("--check", action="store_true", help="list the closure repositories the workspace does not have "
+                                                        "(exit 1 if any)")
+    d.add_argument("--handoff", action="store_true", help="clone / seed / start commands for the whole closure")
+    d.add_argument("--slug", help="ai-task slug for the start command")
     sd = sub.add_parser("seed", parents=[common, ws], help="write map facts into the repositories' reference files")
     sd.add_argument("repos", nargs="+")
     a = ap.parse_args(argv)
     return {"status": cmd_status, "find": cmd_find, "show": cmd_show, "plan": cmd_plan,
-            "handoff": cmd_handoff, "seed": cmd_seed}[a.cmd](a)
+            "handoff": cmd_handoff, "deps": cmd_deps, "seed": cmd_seed}[a.cmd](a)
 
 
 if __name__ == "__main__":

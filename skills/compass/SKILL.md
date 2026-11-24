@@ -1,9 +1,10 @@
 ---
 name: compass
 description: >
-  Use when a problem needs repositories the workspace does not have yet, or to find which
-  repositories in the org do X, depend on Y or are used by Z: queries the dungeon map, proposes
-  the minimal set to clone with a reason each, and hands off to ai-task clone / start.
+  Use when a problem needs repositories the workspace does not have yet, to set up or verify the
+  build / test environment of an application (every repository it needs, at any depth), or to find
+  which repositories in the org do X, depend on Y or are used by Z: queries the dungeon map and
+  hands off to ai-task clone / start.
 allowed-tools: Bash(*/compass/scripts/run.sh *), Bash(.ai/bin/ai-task *), Read
 ---
 
@@ -26,6 +27,7 @@ Call it by its full path, one command per call, nothing piped or chained after i
    | the repositories a problem needs, and the next commands | `plan "the problem in its own words"` (`--slug S`) |
    | repositories by keyword, topic or language | `find WORDS` (`--topic T`, `--language L`) |
    | one repository: metadata, what it depends on, what uses it | `show REPO` (several at once) |
+   | everything an application's build / test environment needs, at any depth | `deps APP --kinds build,ci` (`--handoff --slug S`, `--check`) |
    | clone commands for repositories you already chose | `handoff REPO... --slug S` |
    | which maps exist and how old they are | `status` |
 
@@ -36,7 +38,29 @@ Call it by its full path, one command per call, nothing piped or chained after i
    Add a related repository only when the change crosses into it (an interface, a shared type, a
    version bump); otherwise leave it out. When the developer's words do not match, `find` with
    other words or ask which repository they mean. Do not clone by guessing.
-3. **Hand off.** Run the `next` commands as printed, one per call, from the workspace root:
+3. **Build or test environment of an application** ("set up everything I need to build A",
+   "why does my local build of A miss something"): `deps A`, not `plan`. A code change needs the
+   repositories it touches; an environment needs all of them.
+   - Pick the kinds:
+     - `build`: package managers, submodules, Terraform modules, base images;
+     - `ci`: includes, components, actions, reusable workflows;
+     - `deploy`: Helm charts.
+     A local build is `--kinds build`; a CI-like run adds `ci`. Leave the flag off for everything.
+   - Every repository comes with the chain of evidence that pulls it in. A cycle is listed once
+     under `cycles`.
+   - **Read the verdict and report it.** `verdict: incomplete` lists every gap on the way:
+     - repositories read in part;
+     - internal references no repository provides;
+     - groups the map doesn't have, each with the `dungeon-map build` command that adds it;
+     - archived dependencies;
+     - `--depth` cut-offs;
+     - stale maps.
+     Never tell the developer the environment is complete while the verdict says `incomplete`:
+     name each gap. Build the missing groups first when the developer can reach them, then run
+     `deps` again.
+   - `--check` in an existing workspace lists the closure repositories it does not have (exit 1).
+     `--handoff --slug S` prints the commands for the whole closure; hand off as in step 4.
+4. **Hand off.** Run the `next` commands as printed, one per call, from the workspace root:
    `.ai/bin/ai-task clone <spec>` for each missing repository (owner/name on github.com, the full
    URL elsewhere), then `run.sh seed REPO...` (writes the map's facts into
    `.ai/instructions/reference/<repo>.md`, between markers, next to the developer's own notes),

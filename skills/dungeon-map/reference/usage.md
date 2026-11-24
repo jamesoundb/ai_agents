@@ -131,11 +131,27 @@ are the same repository). Skipped directories: `node_modules`, `vendor`, `third_
   a repository's `git` identity. These edges are marked `prefix` (compass: `name match`).
 - A renamed repository has a new identity: references to its old path (a `FROM` image, a
   submodule URL) stop matching until their files are changed, even where the provider redirects.
+- When one identity is provided by several repositories, archived repositories and forks are
+  dropped from the match, unless only they provide it. An old home that is now archived
+  (open-telemetry's `opentelemetry-js-api` still declares `@opentelemetry/api`), or a mirror,
+  would otherwise pull its stale tree into every closure.
 - An edge to the repository itself is dropped; each (from, to, via) appears once, with the first
   file:line that produced it.
 - Package-name matches (`npm`, `pypi`, `maven`, `helm`, `tfreg`) are by name only: a public package
   of the same name as an org repository's package would match. The detail column keeps the
   version / repository URL so this can be checked.
+- Each edge has a kind, the environment it is needed in (`VIA_KIND`; compass `deps --kinds`):
+  `build` (submodule, npm, go, python, maven, gradle, terraform, image), `ci` (ci-include,
+  ci-component, ci-trigger, workflow, action), `deploy` (helm). `dev` and `runtime` are reserved
+  for later extractors. A new via must be added to `VIA_KIND` and to compass's `VIA_TEXT`; a test
+  checks both.
+- References into groups / orgs that are not in the map (`Map.outside`, listed by `gaps` with the
+  `build` command that adds them): a `git` or `go` reference that resolves to nothing, on a
+  self-hosted host that has a graph in the map, outside every built graph. github.com, gitlab.com
+  and the other shared hosts are left out, because a reference to another owner there is usually a
+  public dependency; use `--internal git:github.com/sister-org/` for a sister org. So is a short
+  `uses: owner/repo@v`, which Gitea fetches from its `DEFAULT_ACTIONS_URL` (github.com unless
+  configured).
 
 ## Cache layout
 
@@ -163,10 +179,12 @@ skills/dungeon-map/scripts/run.sh build localhost:3300/dmtest --provider gitea -
 skills/dungeon-map/tests/gitea.sh down                # logs gt out, removes the container
 ```
 
-`tests/org/` is the test org: 14 repositories with one planted edge of each kind and decoys that
+`tests/org/` is the test org: 15 repositories with one planted edge of each kind and decoys that
 must not match (public packages, public base images, a public registry module). It also holds four
 internal references with no repository (an npm scope, a `dmtest-*` PyPI name, a Go module under
-host/org, a Terraform namespace) and their look-alike decoys. `dmtest-metrics` is reported only
+host/org, a Terraform namespace) and their look-alike decoys. `design-tokens` adds depth and a cycle
+(`checkout-web -> ui-kit -> design-tokens -> ci-actions`, and `design-tokens -> ui-kit`), and a
+submodule in the `brand` group, which is not built. `dmtest-metrics` is reported only
 with `--internal pypi:dmtest-`. `big-monorepo` hits every limit:
 6 npm and 2 PyPI manifests (`--max-files 4`), a 21-entry tree (`--max-tree-entries 5`), and a
 600 KB `package.json` that `seed_gitea.py` generates (`oversized` in `repos.json`). `gitea.sh up`

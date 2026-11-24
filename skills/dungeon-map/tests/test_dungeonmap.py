@@ -27,6 +27,8 @@ PLANTED = {
     ("payments-api", "base-image", "image"), ("payments-api", "ci-actions", "action"),
     ("checkout-web", "ui-kit", "npm"), ("ml-pipeline", "feature-store-client", "python"),
     ("infra-live", "service-chart", "helm"), ("infra-live", "terraform-google-network", "terraform"),
+    # ui-kit and design-tokens depend on each other (a cycle); design-tokens' CI uses ci-actions
+    ("ui-kit", "design-tokens", "npm"), ("design-tokens", "ui-kit", "npm"), ("design-tokens", "ci-actions", "action"),
 }
 
 # The org's own references that no repository provides (src, ident): each must be reported by `gaps`.
@@ -76,7 +78,7 @@ class GiteaFixture(Tmp):
     def test_every_planted_edge_and_no_decoy(self):
         rc, out = self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("14 repos (14 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("15 repos (15 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
         m = dm.load_map(self.cache)
         self.assertEqual(edges(m), PLANTED)
 
@@ -100,10 +102,10 @@ class GiteaFixture(Tmp):
                 r["updated_at"] = "2030-01-01T00:00:00Z"
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("14 repos (1 scanned, 13 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("15 repos (1 scanned, 14 unchanged, 0 failed, 1 incomplete)", out)
         self.assertEqual(edges(dm.load_map(self.cache)), PLANTED)  # reused rows keep their edges
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
-        self.assertIn("(0 scanned, 14 unchanged", out)
+        self.assertIn("(0 scanned, 15 unchanged", out)
 
     def test_no_credentials_in_the_map(self):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
@@ -118,7 +120,7 @@ class GiteaFixture(Tmp):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         rc, out = run("--cache", self.cache, "maps")
         self.assertEqual(rc, 0)
-        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+14 repos\s+8 edges out.*gaps: 1 incomplete, 3 unresolved")
+        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+15 repos\s+11 edges out.*gaps: 1 incomplete, 3 unresolved")
 
 
 def gh_repo(name, **kw):
@@ -219,6 +221,35 @@ class GitLabShape(Tmp):
         self.assertIn("1 subgroups not built (--no-subgroups): acme/platform", out)
         self.assertEqual(set(dm.load_map(self.cache).graphs), {"gitlab.example.com/acme"})
 
+
+class SeveralProviders(Tmp):
+    """Found live on open-telemetry: the archived opentelemetry-js-api still declares
+    @opentelemetry/api, so every closure through the API pulled in the archived repository."""
+
+    def responses(self, old_archived=True, new=True):
+        names = ["app", "lib-old"] + (["lib"] if new else [])
+        r = {"json orgs/acme/repos?type=all&per_page=100&page=1":
+             [gh_repo("app"), gh_repo("lib-old", archived=old_archived)] + ([gh_repo("lib")] if new else []),
+             "json orgs/acme/repos?type=all&per_page=100&page=2": []}
+        for n in names:
+            r[f"json repos/acme/{n}/git/trees/main?recursive=1"] = {
+                "tree": [{"path": "package.json", "type": "blob", "size": 50}], "truncated": False}
+        r["raw repos/acme/app/contents/package.json?ref=main"] = '{"name": "app", "dependencies": {"@acme/lib": "1"}}'
+        for n in names[1:]:
+            r[f"raw repos/acme/{n}/contents/package.json?ref=main"] = '{"name": "@acme/lib"}'
+        return r
+
+    def test_an_archived_provider_gives_way_to_a_live_one(self):
+        self.replay(self.responses(), "https://github.com/acme", "github")
+        self.assertEqual(edges(dm.load_map(self.cache)), {("app", "lib", "npm")})
+
+    def test_an_archived_sole_provider_is_kept(self):
+        self.replay(self.responses(new=False), "https://github.com/acme", "github")
+        self.assertEqual(edges(dm.load_map(self.cache)), {("app", "lib-old", "npm")})
+
+    def test_two_live_providers_are_both_kept(self):
+        self.replay(self.responses(old_archived=False), "https://github.com/acme", "github")
+        self.assertEqual(edges(dm.load_map(self.cache)), {("app", "lib", "npm"), ("app", "lib-old", "npm")})
 
 class CrossGraph(Tmp):
     def test_edge_between_two_providers(self):
@@ -322,7 +353,7 @@ class Completeness(Tmp):
     def test_scanner_version_change_rescans_every_repository(self):
         self.build()
         rc, out = self.build()
-        self.assertIn("(0 scanned, 14 unchanged", out)
+        self.assertIn("(0 scanned, 15 unchanged", out)
         old = dm.SCANNER
         try:
             dm.SCANNER = old + 1
@@ -330,7 +361,7 @@ class Completeness(Tmp):
         finally:
             dm.SCANNER = old
         self.assertIn(f"scanner {old} -> {old + 1}: rescanning every repository", out)
-        self.assertIn("(14 scanned, 0 unchanged", out)
+        self.assertIn("(15 scanned, 0 unchanged", out)
 
     def test_a_map_from_before_scanner_versions_is_rescanned(self):
         self.build()
@@ -342,7 +373,7 @@ class Completeness(Tmp):
         self.assertEqual(dm.load_map(self.cache).repos["localhost:3300/dmtest/big-monorepo"]["gaps"], [])
         rc, out = self.build()
         self.assertIn(f"scanner 1 -> {dm.SCANNER}", out)
-        self.assertIn("(14 scanned, 0 unchanged", out)
+        self.assertIn("(15 scanned, 0 unchanged", out)
 
     def test_reused_repositories_keep_their_gaps(self):
         self.build()
@@ -358,6 +389,20 @@ class Completeness(Tmp):
         rc, out = self.build("--internal", "nuget:Acme.")
         self.assertEqual(rc, 2)
         self.assertIn("--internal takes NS:PREFIX", out)
+
+    def test_references_into_a_group_that_is_not_built(self):
+        self.build()
+        m = dm.load_map(self.cache)
+        self.assertEqual([(o["src"].rsplit("/", 1)[1], o["ident"], o["host"], o["group"]) for o in m.outside],
+                         [("design-tokens", "localhost/brand/fonts", "localhost:3300", "brand")])
+        rc, out = run("--cache", self.cache, "gaps", "design-tokens")
+        self.assertIn("dmtest/design-tokens -> localhost/brand/fonts (submodule, .gitmodules:3): localhost:3300/brand "
+                      "is not in the map; add it: run.sh build localhost:3300/brand --provider gitea", out)
+
+    def test_public_hosts_are_never_outside_the_map(self):
+        """github.com/google/uuid is someone else's module, not a group to build."""
+        self.build()
+        self.assertFalse([o for o in dm.load_map(self.cache).outside if o["ident"].startswith("github.com/")])
 
     def test_gaps_command(self):
         self.build("--max-files", "4")

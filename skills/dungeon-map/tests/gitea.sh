@@ -47,6 +47,21 @@ up() {
     --password "dm-$(date +%s)-throwaway" --email dmadmin@example.invalid --must-change-password=false >/dev/null
   login all
   python3 "$HERE/seed_gitea.py" --host "$HOST" --org "$ORG"
+  settle
+}
+
+# Gitea computes repository languages asynchronously after a push: a build (or --save) made
+# right after seeding can miss some. Wait until the listing's languages stop changing.
+settle() {
+  local prev="" cur
+  for _ in $(seq 1 30); do
+    cur="$(gt --no-input --host "$HOST" api "orgs/$ORG/repos?limit=50" \
+      | python3 -c 'import json,sys; print(sorted((r["name"], r.get("language") or "") for r in json.load(sys.stdin)))')"
+    [ -n "$prev" ] && [ "$cur" = "$prev" ] && { echo "languages settled"; return; }
+    prev="$cur"
+    sleep 3
+  done
+  echo "languages still changing after 90s; record again later" >&2
 }
 
 down() {
