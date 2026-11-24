@@ -12,7 +12,8 @@ Manifests get reviewed; admission gets enforced. `scripts/guardrails.py` renders
 in `templates/` (edit them to change company defaults) into per-namespace YAML that GitOps can
 apply. This skill never applies anything itself.
 
-Run the scripts by their installed path from the working directory (for example
+Run the scripts by their installed path, the folder your harness named when it loaded the skill
+(Claude Code: "Base directory for this skill"), from the working directory (for example
 `.claude/skills/k8s-guardrails/scripts/...` or `.agents/skills/k8s-guardrails/scripts/...`), one
 command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after it.
 Permission rules match the literal command; Antigravity denies a chain if any part lacks a grant,
