@@ -42,6 +42,10 @@ bump rather than by drift.
 3. Fix at the right layer: chart defaults (small, explicit resources; pinned image tag via
    appVersion; `IfNotPresent`), environment values (sizes, replicas within test caps), GitOps
    object (pinned revision, project, prune/selfHeal, TTL annotation for test environments).
+   On an environment that already runs, two of those delete: kube-janitor counts `janitor/ttl`
+   from the annotated object's creation, so once the annotation syncs, its next pass deletes a
+   live environment already older than the TTL; `prune: true` deletes the Application's live
+   objects that are no longer rendered from Git. Name each delete in the answer.
 4. `helm-chart-review` already rendered the base and the `--env-values` file and reviewed both
    with `k8s-manifest-review` (the `HR-*` rows; test-like environments against the build tiers;
    low and info left out on purpose). Do not render or review again by hand; `helm template` +
@@ -83,7 +87,8 @@ The job is getting it to deploy again, not a chart review:
 - **Promotion**: the version bump diff for the GitOps object, the rendered diff of what changes
   in the cluster, and rollback path (previous pinned version).
 - **Environment right-sizing**: per environment old vs new replicaCount and resources, tier
-  compliance, TTL, and the discovery evidence used.
+  compliance, TTL, the discovery evidence used, and the `helm-chart-review` rule id behind each
+  change and follow-up.
 - End with "Evidence" and "Limits".
 
 ## Target environment (assumptions; adjust to the organization)

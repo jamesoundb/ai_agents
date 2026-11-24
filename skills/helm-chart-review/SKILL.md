@@ -8,7 +8,8 @@ allowed-tools: Bash(python3 */helm-chart-review/scripts/helmreview.py *), Bash(*
 
 # helm-chart-review: chart, values and delivery in one pass
 
-Run the scripts by their installed path from the working directory (for example
+Run the scripts by their installed path, the folder your harness named when it loaded the skill
+(Claude Code: "Base directory for this skill"), from the working directory (for example
 `.claude/skills/helm-chart-review/scripts/...` or `.agents/skills/helm-chart-review/scripts/...`),
 one command per call: no `cd` into a skill folder, no shell variable, nothing piped or chained after
 it. Permission rules match the literal command; Antigravity denies a chain if any part lacks a
