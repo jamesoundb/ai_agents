@@ -16,7 +16,10 @@ scripts/run.sh snapshot --from DIR [--db PATH]        # offline: saved `kubectl 
   `podtemplates`, `csistoragecapacities`. `--include` brings one back; `--exclude` drops one more
   (e.g. `--exclude secrets` where listing Secrets is not allowed).
 - `pods.metrics.k8s.io` / `nodes.metrics.k8s.io` (metrics-server) become current usage on Pods and Nodes.
-- Stored in `~/.cache/kubegraph/<context>.db` (`KUBEGRAPH_DIR`, `--db`), written atomically. Queries
+- Stored in `~/.cache/kubegraph/<context>.db` (`KUBEGRAPH_DIR`, `--db`), written atomically; where
+  `~/.cache` is read-only (a Claude Code sandbox) in `$TMPDIR/kubegraph/`, else `./.kubegraph/` in the
+  working directory (never bare `/tmp`, which a sandbox may give each command fresh). Every command
+  resolves the same way, so queries need no `--db`; `snapshot` prints the path it wrote. Queries
   re-snapshot a live snapshot older than `--max-age` (default 300 s, `KUBEGRAPH_MAX_AGE`) with the same
   scope; `--refresh` forces it, `--no-refresh` never does. `--from` snapshots are never refreshed.
 - `--save DIR` writes the sanitized lists, `api-resources.json` and `meta.json`: the input for `--from`,

@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "last_message"
+focus: "last_message"
 criteria: >
   PASS only if the answer names design-tokens among the repositories checkout-web's build needs,
   reports that @dmtest/analytics (an internal npm package) has no repository in the map, reports

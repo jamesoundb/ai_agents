@@ -80,6 +80,20 @@ def build_plugin(dest):
     return plugin
 
 
+def override_max_turns(plugin, cases, n):
+    """Set max_turns: n in the build's copy of each case (the checkout is untouched). For measuring
+    how many turns a case needs: `claude plugin eval` has no flag for it and enforces the case's
+    value, so a run measured under the current cap is cut where the cap is too low."""
+    for c in cases:
+        p = os.path.join(plugin, "evals", c, "prompt.md")
+        text = open(p, encoding="utf-8").read()
+        head, sep, body = text.partition("\n---\n")
+        lines = [ln for ln in head.split("\n") if not ln.startswith("max_turns:")]
+        lines.insert(1, f"max_turns: {n}")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + sep + body)
+
+
 def set_agent(plugin, agent):
     """Point the plugin's settings.json at agent (None: no main-thread agent)."""
     path = os.path.join(plugin, "settings.json")
@@ -111,6 +125,8 @@ def run_claude(args, rest):
     os.makedirs(out_dir, exist_ok=True)
     build = tempfile.mkdtemp(prefix="claude-evals-plugin-")
     plugin = build_plugin(build)
+    if args.max_turns:
+        override_max_turns(plugin, cases, args.max_turns)
     summary, worst = [], 0
     try:
         # One plugin build, one settings.json per agent: group the cases by their agent.
@@ -179,6 +195,9 @@ def main():
     ap.add_argument("--keep-temp", action="store_true", help="keep the run workspaces for inspection")
     ap.add_argument("--output-dir", help="claude: where the per-case result JSON goes")
     ap.add_argument("--claude-bin", help="claude: path to the claude CLI")
+    ap.add_argument("--max-turns", type=int,
+                    help="claude: run every selected case with this max_turns instead of its own "
+                         "(measuring the turns a case needs)")
     args, rest = ap.parse_known_args()
     if args.harness == "antigravity":
         # run_agy.py owns this harness; pass the shared options through unchanged.

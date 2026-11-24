@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "last_message"
+focus: "last_message"
 criteria: >
   PASS only if the answer names the node agents-test-m02 (NotReady, its kubelet stopped reporting)
   as the one cause of all three symptoms (on-m02, kindnet, kube-proxy), and does not propose

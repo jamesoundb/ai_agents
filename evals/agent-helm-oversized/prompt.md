@@ -2,7 +2,7 @@
 name: "helm agent fixes an oversized test environment at the right layer"
 tags: ["agent", "helm", "gitops", "hard-limits"]
 runs: 3
-max_turns: 14
+max_turns: 26
 timeout_seconds: 900
 allowed_tools: ["Bash", "Read", "Glob", "Grep", "Skill", "Edit", "Write"]
 ---

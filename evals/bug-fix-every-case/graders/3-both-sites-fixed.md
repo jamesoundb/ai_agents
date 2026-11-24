@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "trace"
+focus: "trace"
 criteria: |
   The report names two failing cases (the cart total and the invoice total for 3 x 0.335, both
   expected 1.01) and one constraint (whole-cent totals such as 5.00 unchanged). Cart.total rounds

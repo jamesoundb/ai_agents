@@ -360,7 +360,8 @@ def parse_trace(stdout):
 
 # ---------------------------------------------------------------- grading
 def target_text(g, run):
-    t = g.get("target", "last_message")
+    # regex graders name their text with `target`, llm graders with `focus` (claude plugin eval keys)
+    t = g.get("target") or g.get("focus") or "last_message"
     if t == "last_message":
         return run["last_message"]
     if t == "trace":

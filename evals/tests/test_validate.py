@@ -89,6 +89,20 @@ class CaseFormat(unittest.TestCase):
         self.grader("type: regex\npattern: '(?P<x>a)\\Z'")
         self.assertError("JavaScript")
 
+    # graders: "graders.5: Unrecognized key(s) in object: 'target'" -- an llm grader takes focus:.
+    def test_target_on_a_non_regex_grader_is_an_error(self):
+        self.grader('type: llm\ntarget: "last_message"\ncriteria: "PASS if the reply names both callers; FAIL otherwise."')
+        self.assertError("target")
+        validate.errors.clear()
+        self.grader('type: tool_used\ntool: Bash\ntarget: "trace"')
+        self.assertError("target")
+
+    def test_documented_grader_keys_are_clean(self):
+        self.grader('type: llm\nfocus: "trace"\nweight: 2\ncriteria: "PASS if the reply names both callers; FAIL otherwise."')
+        self.grader('type: regex\ntarget: "last_message"\npattern: "a"\narm: both')
+        self.grader('type: file_exists\npath: "out/*.txt"\nexists: false')
+        self.assertClean()
+
     # case.yaml: 'path "../scaffold/prepare.sh" escapes the case directory'.
     def test_paths_outside_the_case_dir_are_an_error(self):
         self.case_yaml('  scaffold_script: "../scaffold.sh"')

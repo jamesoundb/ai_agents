@@ -38,11 +38,46 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 
 VERSION = "1"
 KUBECTL = os.environ.get("KUBEGRAPH_KUBECTL", "kubectl")
-DB_DIR = os.environ.get("KUBEGRAPH_DIR", os.path.join(os.path.expanduser("~"), ".cache", "kubegraph"))
+
+
+def _writable_dir(d):
+    """True when a file can be created in d (made if missing). Creating one is the only test a
+    sandbox answers truthfully: os.access() can call a directory writable that the sandbox refuses."""
+    try:
+        os.makedirs(d, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=d):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def default_db_dir():
+    """Where snapshots live: KUBEGRAPH_DIR, else the first writable of ~/.cache/kubegraph,
+    $TMPDIR/kubegraph and ./.kubegraph (the working directory).
+
+    A Claude Code sandbox makes ~/.cache read-only: snapshot failed there, and an agent spent five
+    calls finding a writable --db. $TMPDIR is the sandbox's own writable temp dir in a normal
+    session, but read-only under `claude plugin eval`, whose /tmp is private to each Bash call: a
+    snapshot written to /tmp/kubegraph was gone by the next query, so bare /tmp (where
+    tempfile.gettempdir() falls through to) is never used. Every command resolves the same way, so
+    a query finds the snapshot without --db."""
+    if os.environ.get("KUBEGRAPH_DIR"):
+        return os.environ["KUBEGRAPH_DIR"]
+    home = os.path.join(os.path.expanduser("~"), ".cache", "kubegraph")
+    candidates = [home]
+    if os.environ.get("TMPDIR"):
+        candidates.append(os.path.join(os.environ["TMPDIR"], "kubegraph"))
+    candidates.append(os.path.join(os.getcwd(), ".kubegraph"))
+    return next((d for d in candidates if _writable_dir(d)), home)
+
+
+DB_DIR = default_db_dir()
 MAX_AGE = int(os.environ.get("KUBEGRAPH_MAX_AGE", "300"))   # seconds before a query re-snapshots
 
 # Resource types not worth a list call: duplicates of another type (events.k8s.io, endpoints and
