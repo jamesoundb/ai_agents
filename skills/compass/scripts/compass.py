@@ -403,8 +403,13 @@ def cmd_handoff(a):
 
 
 # --------------------------------------------------------------------------------- deps
-def closure(m, roots, kinds, depth=None):
+def closure(m, roots, kinds, depth=None, all_ecosystems=False, other=None):
     """Everything the roots need, breadth first over edges of these kinds.
+
+    A repository reached through an ecosystem's edge (a Maven artifact) is followed only through
+    that ecosystem's edges and language-neutral ones (dm.VIA_FAMILY), unless all_ecosystems: a
+    polyglot repository's other parts are not what pulled it in. Those edges are counted in
+    other[repo] when a dict is given.
 
     Returns (order, via, cut): order lists the repositories pulled in (roots excluded) by distance;
     via[key] is the edge that first reached it, so following via back to a root gives the shortest
@@ -416,9 +421,15 @@ def closure(m, roots, kinds, depth=None):
     via, order, cut, queue = {}, [], [], list(roots)
     while queue:
         k = queue.pop(0)
+        came = dm.VIA_FAMILY.get(via[k]["via"]) if k in via else None
         for e in out_by.get(k, []):
             d = e["dst"]
             if e["kind"] not in kinds or d in level:
+                continue
+            fam = dm.VIA_FAMILY.get(e["via"])
+            if not all_ecosystems and came and fam and fam != came:
+                if other is not None:
+                    other.setdefault(k, set()).add(fam)
                 continue
             if depth is not None and level[k] >= depth:
                 cut.append(e)
@@ -544,7 +555,8 @@ def cmd_deps(a):
             return 1
         roots.append(k)
     roots = list(dict.fromkeys(roots))
-    order, via, cut = closure(m, roots, set(kinds), a.depth)
+    other = {}
+    order, via, cut = closure(m, roots, set(kinds), a.depth, a.all_ecosystems, other)
     keys = roots + order
     depth = "" if a.depth is None else f", depth {a.depth}"
     print(f"closure of {', '.join(short(m, k) for k in roots)} (kinds: {', '.join(kinds)}{depth}): "
@@ -552,6 +564,13 @@ def cmd_deps(a):
     for k in order:
         print(f"  {short(m, k)}{flags(m.repos[k])}  [{via[k]['kind']}]")
         print(f"      {chain(m, via, k)}")
+    skipped = {k: fams for k, fams in other.items() if k in keys}
+    if skipped:
+        print(f"\nnot followed: dependencies of other ecosystems in {len(skipped)} polyglot repositories, which "
+              f"the closure reached through one ecosystem (--all-ecosystems follows them):")
+        for k in sorted(skipped, key=lambda x: short(m, x)):
+            print(f"  {short(m, k)}: {', '.join(sorted(skipped[k]))} (reached through "
+                  f"{dm.VIA_FAMILY.get(via[k]['via'], via[k]['via'])})")
     loops = cycles(m, keys, set(kinds))
     if loops:
         print(f"\ncycles ({len(loops)}):")
@@ -674,6 +693,8 @@ def main(argv=None):
                                                          "the evidence and a completeness verdict")
     d.add_argument("repos", nargs="+")
     d.add_argument("--depth", type=int, help="follow dependencies at most N levels (default: all)")
+    d.add_argument("--all-ecosystems", action="store_true",
+                   help="follow every edge of a repository reached through one ecosystem (a polyglot monorepo)")
     d.add_argument("--kinds", help=f"edge kinds to follow, comma-separated: {', '.join(dm.EDGE_KINDS)} (default all)")
     d.add_argument("--check", action="store_true", help="list the closure repositories the workspace does not have "
                                                         "(exit 1 if any)")

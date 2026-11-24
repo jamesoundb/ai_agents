@@ -207,12 +207,12 @@ class GitLabShape(Tmp):
             f"json groups/{q('acme')}/projects?include_subgroups=false&with_shared=false&per_page=100&page=1":
                 [gl_project(1, "acme/app")],
             f"json groups/{q('acme')}/projects?include_subgroups=false&with_shared=false&per_page=100&page=2": [],
-            f"json groups/{q('acme')}/subgroups?per_page=100&page=1": [{"full_path": "acme/platform"}],
-            f"json groups/{q('acme')}/subgroups?per_page=100&page=2": [],
+            f"json groups/{q('acme')}/subgroups?all_available=true&per_page=100&page=1": [{"full_path": "acme/platform"}],
+            f"json groups/{q('acme')}/subgroups?all_available=true&per_page=100&page=2": [],
             f"json groups/{q('acme/platform')}/projects?include_subgroups=false&with_shared=false&per_page=100&page=1":
                 [gl_project(2, "acme/platform/ci-templates"), gl_project(3, "acme/platform/deploy")],
             f"json groups/{q('acme/platform')}/projects?include_subgroups=false&with_shared=false&per_page=100&page=2": [],
-            f"json groups/{q('acme/platform')}/subgroups?per_page=100&page=1": [],
+            f"json groups/{q('acme/platform')}/subgroups?all_available=true&per_page=100&page=1": [],
             "json projects/1/languages": {"Python": 70.0, "Shell": 30.0},
             "json projects/2/languages": {},
             "json projects/3/languages": {"Go": 100.0},

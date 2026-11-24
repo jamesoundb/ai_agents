@@ -48,6 +48,10 @@ Call it by its full path, one command per call, nothing piped or chained after i
      A local build is `--kinds build`; a CI-like run adds `ci`. Leave the flag off for everything.
    - Every repository comes with the chain of evidence that pulls it in. A cycle is listed once
      under `cycles`.
+   - A polyglot repository reached through one ecosystem (a Java app using a monorepo's Maven
+     artifact) is followed only through that ecosystem's edges and language-neutral ones
+     (submodules, images, Terraform, Helm, CI, Bazel). `not followed:` names the ecosystems left
+     out; `--all-ecosystems` follows them when the environment really builds the other parts.
    - **Read the verdict and report it.** `verdict: incomplete` lists every gap on the way:
      - repositories read in part;
      - internal references no repository provides;

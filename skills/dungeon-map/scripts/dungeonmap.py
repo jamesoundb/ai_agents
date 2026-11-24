@@ -69,6 +69,18 @@ VIA_KIND = {
     "ci-include": "ci", "ci-component": "ci", "ci-trigger": "ci", "workflow": "ci", "action": "ci",
     "helm": "deploy",
 }
+# The ecosystem of each via. compass deps follows a repository it reached through one ecosystem only
+# through that ecosystem's edges and language-neutral ones (None: submodules, images, Terraform,
+# Helm, CI, Bazel), so a Java build that uses a polyglot monorepo's Java part does not pull in
+# everything its Go / Python / JS parts depend on.
+VIA_FAMILY = {
+    "maven": "jvm", "gradle": "jvm", "gradle-plugin": "jvm", "gradle-build": "jvm", "sbt": "jvm", "clojure": "jvm",
+    "go": "go", "python": "python", "npm": "js",
+    "nuget": "dotnet", "dotnet-project": "dotnet", "paket": "dotnet",
+    "cargo": "rust", "swiftpm": "swift", "cocoapods": "swift", "carthage": "swift",
+    "cmake": "native", "cmake-fetch": "native", "conan": "native", "vcpkg": "native", "meson": "native",
+    "cabal": "haskell", "zig": "zig", "mix": "beam", "rebar": "beam",
+}
 # Code hosts shared by many owners: a Go module path on one is internal only under host/org/.
 SHARED_GO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitea.com", "codeberg.org", "gopkg.in"}
 CACHE = os.environ.get("DUNGEONMAP_DIR") or os.path.join(os.path.expanduser("~"), ".cache", "dungeon-map")
@@ -331,8 +343,10 @@ class GitLab:
         return out
 
     def subgroups(self, group):
+        # all_available: without it GitLab lists only the subgroups the user is a member of, so a
+        # developer without direct membership saw none (found on gitlab.com/inkscape: 0 of 7)
         try:
-            return [g["full_path"] for g in pages(self.t, f"groups/{q(group)}/subgroups")]
+            return [g["full_path"] for g in pages(self.t, f"groups/{q(group)}/subgroups?all_available=true")]
         except NotFound:
             return []
 

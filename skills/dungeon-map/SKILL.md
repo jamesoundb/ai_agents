@@ -79,7 +79,8 @@ holds no credentials.
   name (`opentelemetry-*`). Ask the developer before adding it: anyone can publish under such a
   name.
 - Edges come only from files the map read (up to 300 manifests per repository, `--max-files`;
-  `node_modules/`, `vendor/`, `testdata/`, `fixtures/`, `examples/` skipped). A public package or
+  `node_modules/`, `vendor/`, `testdata/`, `fixtures/`, `examples/`, `samples/` and test source sets
+  such as `src/test/` skipped). A public package or
   image that no repository of a cached org provides is neither an edge nor a gap.
 
 Options, the file types and identities per edge, matching rules, the cache layout and the test
