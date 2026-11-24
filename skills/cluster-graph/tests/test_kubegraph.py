@@ -471,5 +471,39 @@ class OfflineContext(unittest.TestCase):
         self.assertIn("agents-test", str(rc))
 
 
+class ReadOnlyCache(unittest.TestCase):
+    """In a Claude Code sandbox ~/.cache is read-only (`claude plugin eval`, 2026-11-24): `snapshot`
+    died on the default ~/.cache/kubegraph and an agent spent five calls finding a writable --db.
+    The default falls back to the temp dir; queries resolve the same directory, so no --db is needed."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="kubegraph-rocache-")
+        self.home, self.tmpdir = os.path.join(self.tmp, "home"), os.path.join(self.tmp, "tmp")
+        os.makedirs(self.home)
+        os.makedirs(self.tmpdir)
+        # ~/.cache as a plain file: nothing can be created under it, root included (CI runs as root,
+        # where a read-only mode would not stop the write).
+        open(os.path.join(self.home, ".cache"), "w").close()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def cli(self, *argv):
+        # A fresh process: the database directory is resolved when kubegraph is imported.
+        import subprocess
+        env = {k: v for k, v in os.environ.items() if k != "KUBEGRAPH_DIR"}
+        env.update(HOME=self.home, TMPDIR=self.tmpdir, KUBECONFIG=os.path.join(self.tmp, "none"))
+        return subprocess.run([sys.executable, os.path.join(HERE, "..", "scripts", "kubegraph.py"), *argv],
+                              capture_output=True, text=True, env=env)
+
+    def test_snapshot_and_query_without_db_when_cache_is_read_only(self):
+        r = self.cli("snapshot", "--from", FIXTURE)
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertTrue(os.path.isfile(os.path.join(self.tmpdir, "kubegraph", "agents-test.db")),
+                        r.stdout + r.stderr)
+        q = self.cli("--context", "agents-test", "--no-refresh", "health", "-n", "kg-faults")
+        self.assertEqual(q.returncode, 0, q.stderr[-800:])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

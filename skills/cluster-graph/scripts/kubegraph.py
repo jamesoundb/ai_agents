@@ -38,11 +38,41 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 
 VERSION = "1"
 KUBECTL = os.environ.get("KUBEGRAPH_KUBECTL", "kubectl")
-DB_DIR = os.environ.get("KUBEGRAPH_DIR", os.path.join(os.path.expanduser("~"), ".cache", "kubegraph"))
+
+
+def _writable_dir(d):
+    """True when a file can be created in d (made if missing). Creating one is the only test a
+    sandbox answers truthfully: os.access() can call a directory writable that the sandbox refuses."""
+    try:
+        os.makedirs(d, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=d):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def default_db_dir():
+    """Where snapshots live: KUBEGRAPH_DIR, else ~/.cache/kubegraph, else <temp dir>/kubegraph.
+
+    A Claude Code sandbox makes ~/.cache read-only (seen in `claude plugin eval` runs): snapshot
+    failed there, and an agent spent five calls finding a writable --db. Every command resolves the
+    same way, so a query finds the snapshot without --db."""
+    if os.environ.get("KUBEGRAPH_DIR"):
+        return os.environ["KUBEGRAPH_DIR"]
+    home = os.path.join(os.path.expanduser("~"), ".cache", "kubegraph")
+    if _writable_dir(home):
+        return home
+    tmp = os.path.join(tempfile.gettempdir(), "kubegraph")
+    return tmp if _writable_dir(tmp) else home
+
+
+DB_DIR = default_db_dir()
 MAX_AGE = int(os.environ.get("KUBEGRAPH_MAX_AGE", "300"))   # seconds before a query re-snapshots
 
 # Resource types not worth a list call: duplicates of another type (events.k8s.io, endpoints and

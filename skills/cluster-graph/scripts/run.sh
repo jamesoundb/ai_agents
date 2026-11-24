@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # run.sh -- launcher for kubegraph.py (stdlib only): picks a Python 3.10+ and runs it. Read-only
-# against the cluster; the snapshot goes to ~/.cache/kubegraph/<context>.db (KUBEGRAPH_DIR).
+# against the cluster; the snapshot goes to ~/.cache/kubegraph/<context>.db (KUBEGRAPH_DIR), or to
+# <temp dir>/kubegraph/ where ~/.cache is read-only (sandboxes).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=""
