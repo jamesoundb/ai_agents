@@ -89,6 +89,14 @@ class Compass(unittest.TestCase):
         self.assertIn("used by (1):\n    dmtest/checkout-web (npm dependency: package.json:5 in dmtest/checkout-web)", out)
         self.assertIn("used by (1):\n    dmtest/payments-api (Go module: go.mod:6 in dmtest/payments-api)", out)
 
+    def test_show_lists_gaps_and_internal_references_with_no_repository(self):
+        rc, out = self.c("show", "checkout-web", "big-monorepo")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("internal references with no repository in the map (1):\n"
+                      "    @dmtest/analytics (npm, package.json:6; npm scope @dmtest is the org's)", out)
+        self.assertIn("localhost:3300/dmtest/big-monorepo [read incompletely]", out)
+        self.assertIn("  gap: 1 manifest(s) over 512 KB not read: packages/huge/package.json", out)
+
     def test_find_by_topic_and_language(self):
         rc, out = self.c("find", "--topic", "helm")
         self.assertEqual([l.split(" ")[0] for l in out.splitlines()], ["dmtest/infra-live", "dmtest/service-chart"])

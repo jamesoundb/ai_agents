@@ -3,6 +3,9 @@
   "private": true,
   "dependencies": {
     "@{ORG}/ui-kit": "^2.0.0",
+    "@{ORG}/analytics": "^1.0.0",
+    "@{ORG}-labs/analytics": "^1.0.0",
+    "{ORG}-analytics": "^1.0.0",
     "react": "^18.3.1"
   }
 }

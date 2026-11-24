@@ -29,6 +29,17 @@ PLANTED = {
     ("infra-live", "service-chart", "helm"), ("infra-live", "terraform-google-network", "terraform"),
 }
 
+# The org's own references that no repository provides (src, ident): each must be reported by `gaps`.
+# Look-alike decoys that must not be: @dmtest-labs/analytics (another npm scope), dmtest-analytics
+# (unscoped npm: the org publishes none), github.com/dmtest/billing-sdk (the same path on another
+# host), and the public packages and images above. dmtest-metrics shares the dmtest- name of two of
+# the org's PyPI packages: PyPI has no namespaces, so it is reported only with --internal pypi:dmtest-
+# (which `gaps` suggests), and dmtestlib never is.
+UNRESOLVED = {
+    ("checkout-web", "@dmtest/analytics"), ("payments-api", "localhost/dmtest/billing-sdk"),
+    ("infra-live", "dmtest/dns/google"),
+}
+
 
 def run(*argv):
     buf = io.StringIO()
@@ -65,7 +76,7 @@ class GiteaFixture(Tmp):
     def test_every_planted_edge_and_no_decoy(self):
         rc, out = self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("13 repos (13 scanned, 0 unchanged, 0 failed)", out)
+        self.assertIn("14 repos (14 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
         m = dm.load_map(self.cache)
         self.assertEqual(edges(m), PLANTED)
 
@@ -89,10 +100,10 @@ class GiteaFixture(Tmp):
                 r["updated_at"] = "2030-01-01T00:00:00Z"
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("13 repos (1 scanned, 12 unchanged, 0 failed)", out)
+        self.assertIn("14 repos (1 scanned, 13 unchanged, 0 failed, 1 incomplete)", out)
         self.assertEqual(edges(dm.load_map(self.cache)), PLANTED)  # reused rows keep their edges
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
-        self.assertIn("(0 scanned, 13 unchanged", out)
+        self.assertIn("(0 scanned, 14 unchanged", out)
 
     def test_no_credentials_in_the_map(self):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
@@ -107,7 +118,7 @@ class GiteaFixture(Tmp):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         rc, out = run("--cache", self.cache, "maps")
         self.assertEqual(rc, 0)
-        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+13 repos\s+8 edges out")
+        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+14 repos\s+8 edges out.*gaps: 1 incomplete, 3 unresolved")
 
 
 def gh_repo(name, **kw):
@@ -224,6 +235,203 @@ class CrossGraph(Tmp):
         e = [e for e in m.edges if e["src"] == "github.com/acme/api"]
         self.assertEqual([(x["dst"], x["via"], x["match"]) for x in e],
                          [("gitlab.example.com/acme/platform/deploy", "go", "prefix")])
+
+
+def gaps_of(m, name, host="localhost:3300/dmtest"):
+    return {g["kind"]: g for g in m.repos[f"{host}/{name}"]["gaps"]}
+
+
+class Completeness(Tmp):
+    """Nothing the scan left out may go unreported: every limit is a gap, and every reference in the
+    org's own namespaces that resolves to no repository is listed with its file:line."""
+
+    def build(self, *extra, responses=None):
+        d = os.path.join(self.tmp, "rec")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "responses.json"), "w") as f:
+            json.dump(responses or GITEA, f)
+        return run("--cache", self.cache, "build", "localhost:3300/dmtest", "--provider", "gitea", "--from", d, *extra)
+
+    def test_internal_references_with_no_repository_and_no_decoy(self):
+        rc, out = self.build()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("gaps: 1 repositories read incompletely, 3 internal references with no repository", out)
+        m = dm.load_map(self.cache)
+        self.assertEqual({(u["src"].rsplit("/", 1)[1], u["ident"]) for u in m.unresolved}, UNRESOLVED)
+        self.assertEqual(edges(m), PLANTED)  # the new references and decoys add no edge
+        self.assertEqual(m.internal_hints, [("pypi", "dmtest-", 2)])
+
+    def test_a_shared_package_name_is_internal_only_when_declared(self):
+        self.build()
+        rc, out = run("--cache", self.cache, "gaps")
+        self.assertIn("note: 2 of the org's pypi packages are named dmtest-*", out)
+        self.assertIn("rebuild with --internal pypi:dmtest-", out)
+        self.build("--internal", "pypi:dmtest-")
+        m = dm.load_map(self.cache)
+        got = {(u["src"].rsplit("/", 1)[1], u["ident"]) for u in m.unresolved}
+        self.assertEqual(got, UNRESOLVED | {("ml-pipeline", "dmtest-metrics")})  # not dmtestlib
+        u = [u for u in m.unresolved if u["ident"] == "dmtest-metrics"][0]
+        self.assertEqual((u["file"], u["line"], u["why"]), ("pyproject.toml", 5, "internal prefix dmtest- (build --internal)"))
+        self.assertEqual(m.internal_hints, [])
+
+    def test_oversized_manifest_is_a_gap(self):
+        self.build()
+        g = gaps_of(dm.load_map(self.cache), "big-monorepo")
+        self.assertEqual(set(g), {"file-too-large"})
+        self.assertEqual(g["file-too-large"]["detail"], "packages/huge/package.json")
+
+    def test_manifest_cap_is_a_gap_with_the_counts(self):
+        rc, out = self.build("--max-files", "4")
+        self.assertEqual(rc, 0, out)
+        g = gaps_of(dm.load_map(self.cache), "big-monorepo")["manifest-cap"]
+        self.assertEqual((g["found"], g["read"]), (8, 4))
+        self.assertEqual(dm.gap_text(g), "read 4 of 8 manifests (--max-files 4)")
+
+    def test_tree_page_limit_is_a_gap(self):
+        # recorded with DM_GITEA_TREE_PAGE=5: big-monorepo's 21 entries take 5 pages
+        self.build("--max-tree-entries", "5")
+        g = gaps_of(dm.load_map(self.cache), "big-monorepo")["tree-truncated"]
+        self.assertEqual(g["detail"], "tree listing stopped at 5 of 21 entries (--max-tree-entries 5)")
+        rc, out = self.build()  # the default reads all 5 pages
+        self.assertNotIn("tree-truncated", gaps_of(dm.load_map(self.cache), "big-monorepo"))
+
+    def test_github_truncated_tree_is_a_gap(self):
+        r = GitHubShape.responses(None)
+        r["json repos/acme/api/git/trees/main?recursive=1"]["truncated"] = True
+        self.replay(r, "https://github.com/acme", "github")
+        g = gaps_of(dm.load_map(self.cache), "api", host="github.com/acme")["tree-truncated"]
+        self.assertIn("GitHub truncated the tree listing", dm.gap_text(g))
+
+    def test_gitlab_tree_page_limit_is_a_gap(self):
+        class T:
+            calls = 0
+
+            def json(self, endpoint):
+                return [{"path": f"f{i}", "type": "blob"} for i in range(100)]
+        files, cut = dm.GitLab(T(), "gitlab.example.com").tree({"_id": 1, "default_branch": "main"}, max_entries=200)
+        self.assertEqual((len(files), cut), (200, "tree listing stopped at 200 entries (--max-tree-entries 200)"))
+
+    def test_failed_scan_is_a_gap(self):
+        r = copy.deepcopy(GITEA)
+        del r["json repos/dmtest/ui-kit/git/trees/main?recursive=true&per_page=1000&page=1"]
+        r["json repos/dmtest/ui-kit/git/trees/main?recursive=true&per_page=1000&page=1"] = None
+        rc, out = self.build(responses=r)
+        self.assertIn("1 failed", out)
+        self.assertEqual(set(gaps_of(dm.load_map(self.cache), "ui-kit")), {"scan-failed"})
+
+    def test_scanner_version_change_rescans_every_repository(self):
+        self.build()
+        rc, out = self.build()
+        self.assertIn("(0 scanned, 14 unchanged", out)
+        old = dm.SCANNER
+        try:
+            dm.SCANNER = old + 1
+            rc, out = self.build()
+        finally:
+            dm.SCANNER = old
+        self.assertIn(f"scanner {old} -> {old + 1}: rescanning every repository", out)
+        self.assertIn("(14 scanned, 0 unchanged", out)
+
+    def test_a_map_from_before_scanner_versions_is_rescanned(self):
+        self.build()
+        db = sqlite3.connect(dm.graph_path("localhost:3300", "dmtest", self.cache))
+        db.execute("DELETE FROM meta WHERE key='scanner'")
+        db.execute("DROP TABLE gaps")
+        db.commit()
+        db.close()
+        self.assertEqual(dm.load_map(self.cache).repos["localhost:3300/dmtest/big-monorepo"]["gaps"], [])
+        rc, out = self.build()
+        self.assertIn(f"scanner 1 -> {dm.SCANNER}", out)
+        self.assertIn("(14 scanned, 0 unchanged", out)
+
+    def test_reused_repositories_keep_their_gaps(self):
+        self.build()
+        self.build()
+        self.assertIn("file-too-large", gaps_of(dm.load_map(self.cache), "big-monorepo"))
+
+    def test_internal_prefixes_are_stored_and_kept(self):
+        rc, out = self.build("--internal", "npm:dmtest-")
+        self.assertIn("4 internal references", out)  # dmtest-analytics is now the org's
+        self.build()
+        self.assertIn(("checkout-web", "dmtest-analytics"),
+                      {(u["src"].rsplit("/", 1)[1], u["ident"]) for u in dm.load_map(self.cache).unresolved})
+        rc, out = self.build("--internal", "nuget:Acme.")
+        self.assertEqual(rc, 2)
+        self.assertIn("--internal takes NS:PREFIX", out)
+
+    def test_gaps_command(self):
+        self.build("--max-files", "4")
+        rc, out = run("--cache", self.cache, "gaps")
+        self.assertEqual(rc, 0)
+        self.assertIn("dmtest/big-monorepo: read 4 of 8 manifests (--max-files 4)", out)
+        self.assertIn("dmtest/payments-api -> localhost/dmtest/billing-sdk (go, go.mod:7; under localhost/dmtest/)", out)
+        rc, out = run("--cache", self.cache, "gaps", "ui-kit")
+        self.assertIn("no gaps", out)
+        rc, out = run("--cache", self.cache, "gaps", "nope")
+        self.assertEqual(rc, 1)
+
+
+class InternalRules(unittest.TestCase):
+    def rules(self, provides, forks=(), org="acme"):
+        m = dm.Map()
+        m.graphs[f"github.com/{org}"] = {"host": "github.com", "org": org}
+        prov = {}
+        for key, ns, ident in provides:
+            m.repos[key] = {"fork": key in forks}
+            prov.setdefault((ns, ident), set()).add(key)
+        return dm.internal_rules(m, prov)
+
+    def test_namespaces_from_what_the_org_provides(self):
+        f, hints = self.rules([("github.com/acme/a", "go", "go.acme.dev/a"), ("github.com/acme/b", "maven", "com.acme:b"),
+                               ("github.com/acme/c", "npm", "@acme/c"), ("github.com/acme/d", "pypi", "acme-d"),
+                               ("github.com/acme/e", "pypi", "acme-e"), ("github.com/acme/f", "go", "github.com/acme/f")])
+        for ns, ident in (("go", "go.acme.dev/x"), ("go", "github.com/acme/x"), ("git", "github.com/acme/x"),
+                          ("maven", "com.acme:x"), ("maven", "com.acme.billing:x"), ("npm", "@acme/x"),
+                          ("image", "acme/x")):
+            self.assertTrue(f(ns, ident), (ns, ident))
+        for ns, ident in (("go", "github.com/acmecorp/x"), ("go", "github.com/other/x"), ("maven", "com.acmex:y"),
+                          ("npm", "@acme-labs/x"), ("npm", "acme-x"), ("pypi", "acme_x"), ("pypi", "acmex"),
+                          ("image", "library/acme")):
+            self.assertFalse(f(ns, ident), (ns, ident))
+        self.assertEqual(hints, [("pypi", "acme-", 2)])
+
+    def test_shared_names_are_suggested_only_when_they_are_the_orgs_name(self):
+        """Found live on open-telemetry: a conformance repository's google-adk-* and llama-index-*
+        packages made google-genai and llama-index-core look internal."""
+        provides = [("github.com/open-telemetry/c", "pypi", n) for n in
+                    ("google-adk-conformance", "google-genai-conformance", "opentelemetry-sdk", "opentelemetry-api")]
+        f, hints = self.rules(provides, org="open-telemetry")
+        self.assertEqual(hints, [("pypi", "opentelemetry-", 2)])
+        self.assertFalse(f("pypi", "google-genai"))
+        self.assertFalse(f("pypi", "opentelemetry-instrumentation-openai"))  # traceloop's, on PyPI
+
+    def test_a_fork_does_not_make_its_upstream_internal(self):
+        f, _ = self.rules([("github.com/acme/k8s", "go", "k8s.io/kubernetes")], forks={"github.com/acme/k8s"})
+        self.assertFalse(f("go", "k8s.io/client-go"))
+
+
+class FilePlan(unittest.TestCase):
+    def test_kinds_take_turns_under_the_cap(self):
+        """700 build.gradle files cannot crowd out the Dockerfile and the workflow."""
+        files = [(f"instrumentation/m{i:03}/build.gradle.kts", 10) for i in range(700)]
+        files += [(".github/workflows/ci.yml", 10), ("deploy/docker/app/Dockerfile", 10),
+                  ("instrumentation/m000/sub/build.gradle.kts", 10)]
+        picked, found, large = dm.plan_files(files, max_files=10)
+        paths = [p for p, _ in picked]
+        self.assertEqual((found, len(picked), large), (703, 10, []))
+        self.assertIn(".github/workflows/ci.yml", paths)
+        self.assertIn("deploy/docker/app/Dockerfile", paths)
+        self.assertEqual(paths, sorted(paths, key=lambda p: (p.count("/"), p)))  # read shallowest first
+
+    def test_one_of_each_kind_and_directory_before_a_second(self):
+        files = [("svc/Dockerfile", 1), ("svc/Dockerfile.dev", 1), ("svc/Dockerfile.test", 1), ("api/Dockerfile", 1)]
+        picked = [p for p, _ in dm.plan_files(files, max_files=2)[0]]
+        self.assertEqual(picked, ["api/Dockerfile", "svc/Dockerfile"])
+
+    def test_oversized_manifests_are_counted_not_read(self):
+        picked, found, large = dm.plan_files([("package.json", dm.MAX_FILE_BYTES + 1), ("go.mod", 10),
+                                              ("big.bin", dm.MAX_FILE_BYTES * 4)])
+        self.assertEqual(([p for p, _ in picked], found, large), (["go.mod"], 1, ["package.json"]))
 
 
 class Pagination(unittest.TestCase):

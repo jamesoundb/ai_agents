@@ -43,6 +43,17 @@ except ImportError:  # pragma: no cover - exercised only on 3.10
     tomllib = None
 
 SCHEMA = 1
+# What the extractors and select_files read. Bump it whenever either changes: the next build then
+# rescans every repository, so the fix reaches repositories that have not changed since.
+SCANNER = 2
+# Manifests read per repository. 300 reads all but 3 of open-telemetry's 113 repositories completely
+# (4,032 file reads for the org; reading all of them would take ~4,600, close to GitHub's 5,000 calls
+# an hour). What the cap leaves out is reported as a gap, never dropped silently.
+MAX_FILES = 300
+# Tree entries listed per repository on GitLab (100 a page) and Gitea (the server's page size).
+MAX_TREE_ENTRIES = 20000
+# Code hosts shared by many owners: a Go module path on one is internal only under host/org/.
+SHARED_GO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitea.com", "codeberg.org", "gopkg.in"}
 CACHE = os.environ.get("DUNGEONMAP_DIR") or os.path.join(os.path.expanduser("~"), ".cache", "dungeon-map")
 PROVIDERS = ("github", "gitlab", "gitea")
 KNOWN_HOSTS = {"github.com": "github", "gitlab.com": "gitlab", "gitea.com": "gitea"}
@@ -267,10 +278,13 @@ class GitHub:
     def subgroups(self, org):
         return []
 
-    def tree(self, repo):
+    def tree(self, repo, max_entries=MAX_TREE_ENTRIES):
+        """([(path, size)], why the listing is incomplete or ""). One call; GitHub cuts it itself."""
         d = self.t.json(f"repos/{repo['path']}/git/trees/{q(repo['default_branch'])}?recursive=1") or {}
         files = [(e["path"], e.get("size")) for e in d.get("tree", []) if e.get("type") == "blob"]
-        return files, bool(d.get("truncated"))
+        cut = ("GitHub truncated the tree listing (over 100,000 entries or 7 MB): "
+               f"{len(d.get('tree', []))} entries listed") if d.get("truncated") else ""
+        return files, cut
 
     def read(self, repo, path):
         return self.t.raw(f"repos/{repo['path']}/contents/{urllib.parse.quote(path)}?ref={q(repo['default_branch'])}")
@@ -312,14 +326,16 @@ class GitLab:
             return ""
         return max(langs, key=langs.get) if langs else ""
 
-    def tree(self, repo, max_pages=30):
-        files, n = [], 0
+    def tree(self, repo, max_entries=MAX_TREE_ENTRIES):
+        """([(path, None)], why the listing is incomplete or ""): 100 entries a call, up to max_entries."""
+        files, n, max_pages = [], 0, max(1, -(-max_entries // 100))
         for e in pages(self.t, f"projects/{repo['_id']}/repository/tree?recursive=true&ref={q(repo['default_branch'])}",
                        max_pages=max_pages):
             n += 1
             if e.get("type") == "blob":
                 files.append((e["path"], None))
-        return files, n >= 100 * max_pages
+        cut = f"tree listing stopped at {n} entries (--max-tree-entries {max_entries})" if n >= 100 * max_pages else ""
+        return files, cut
 
     def read(self, repo, path):
         return self.t.raw(f"projects/{repo['_id']}/repository/files/{q(path)}/raw?ref={q(repo['default_branch'])}")
@@ -357,18 +373,22 @@ class Gitea:
         except NotFound:
             return []
 
-    def tree(self, repo, max_pages=10):
-        files, total, page = [], None, 1
-        while page <= max_pages:
+    def tree(self, repo, max_entries=MAX_TREE_ENTRIES):
+        """([(path, size)], why the listing is incomplete or ""): pages of the server's size (up to
+        1000, DEFAULT_GIT_TREES_PER_PAGE) until total_count is listed or max_entries is reached."""
+        files, seen, page = [], 0, 1
+        while True:
             d = self.t.json(f"repos/{repo['path']}/git/trees/{q(repo['default_branch'])}"
                             f"?recursive=true&per_page=1000&page={page}") or {}
             ents = d.get("tree") or []
+            seen += len(ents)
             files += [(e["path"], e.get("size")) for e in ents if e.get("type") == "blob"]
             total = d.get("total_count") or 0
-            if not ents or not d.get("truncated") and page * 1000 >= total:
-                return files, False
+            if not ents or not d.get("truncated") and seen >= total:
+                return files, ""
+            if seen >= max_entries:
+                return files, f"tree listing stopped at {seen} of {total} entries (--max-tree-entries {max_entries})"
             page += 1
-        return files, True
 
     def read(self, repo, path):
         return self.t.raw(f"repos/{repo['path']}/raw/{urllib.parse.quote(path)}?ref={q(repo['default_branch'])}")
@@ -866,45 +886,74 @@ def x_dockerfile(path, text, ctx):
     return [], req
 
 
-def select_files(files, max_files=80, max_tf=40):
-    """Pick the manifest files worth reading from a repository's tree: [(path, extractor)]."""
-    skip = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?)/")
-    picked, tf = [], 0
+SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?)/")
+
+
+def extractor_for(path):
+    """The extractor that reads this path, or None when it is not a manifest."""
+    b = os.path.basename(path)
+    bl = b.lower()
+    if path == ".gitmodules":
+        return x_gitmodules
+    if b == "package.json":
+        return x_package_json
+    if b == "go.mod":
+        return x_go_mod
+    if b == "pyproject.toml":
+        return x_pyproject
+    if b == "setup.cfg":
+        return x_setup_cfg
+    if bl.startswith("requirements") and bl.endswith(".txt"):
+        return x_requirements
+    if b == "pom.xml":
+        return x_pom
+    if b in ("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"):
+        return x_gradle
+    if b == "Chart.yaml":
+        return x_chart
+    if b.endswith(".tf"):
+        return x_terraform
+    if path == ".gitlab-ci.yml" or (path.startswith(".gitlab/") and bl.endswith((".yml", ".yaml"))):
+        return x_gitlab_ci
+    if re.match(r"^\.(github|gitea)/workflows/[^/]+\.ya?ml$", path) or b in ("action.yml", "action.yaml"):
+        return x_workflow
+    if bl in ("dockerfile", "containerfile") or bl.startswith("dockerfile.") or bl.endswith(".dockerfile"):
+        return x_dockerfile
+    return None
+
+
+def plan_files(files, max_files=MAX_FILES):
+    """The manifests to read from a tree: ([(path, extractor)], manifests found, [paths too large]).
+
+    Under the cap, the first manifest of each kind in a directory comes before a second one of that
+    kind there, and the kinds take turns, so 700 build.gradle files cannot crowd out a repository's
+    Dockerfiles and workflows. The picked files are returned shallowest first (the order they are read).
+    """
+    found, large = [], []
     for path, size in sorted(files, key=lambda f: (f[0].count("/"), f[0])):
-        if skip.search(path) or (size or 0) > MAX_FILE_BYTES:
+        if SKIP_DIRS.search(path):
             continue
-        b = os.path.basename(path)
-        bl = b.lower()
-        x = None
-        if path == ".gitmodules":
-            x = x_gitmodules
-        elif b == "package.json":
-            x = x_package_json
-        elif b == "go.mod":
-            x = x_go_mod
-        elif b == "pyproject.toml":
-            x = x_pyproject
-        elif b == "setup.cfg":
-            x = x_setup_cfg
-        elif bl.startswith("requirements") and bl.endswith(".txt"):
-            x = x_requirements
-        elif b == "pom.xml":
-            x = x_pom
-        elif b in ("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"):
-            x = x_gradle
-        elif b == "Chart.yaml":
-            x = x_chart
-        elif b.endswith(".tf") and tf < max_tf:
-            x, tf = x_terraform, tf + 1
-        elif path == ".gitlab-ci.yml" or (path.startswith(".gitlab/") and bl.endswith((".yml", ".yaml"))):
-            x = x_gitlab_ci
-        elif re.match(r"^\.(github|gitea)/workflows/[^/]+\.ya?ml$", path) or b in ("action.yml", "action.yaml"):
-            x = x_workflow
-        elif bl in ("dockerfile", "containerfile") or bl.startswith("dockerfile.") or bl.endswith(".dockerfile"):
-            x = x_dockerfile
-        if x:
-            picked.append((path, x))
-    return picked[:max_files]
+        x = extractor_for(path)
+        if not x:
+            continue
+        if (size or 0) > MAX_FILE_BYTES:
+            large.append(path)
+            continue
+        found.append((path, x))
+    in_dir, in_kind, keyed = {}, {}, []
+    for path, x in found:
+        d = (x, os.path.dirname(path))
+        in_dir[d] = in_dir.get(d, -1) + 1
+        in_kind[x] = in_kind.get(x, -1) + 1
+        keyed.append(((in_dir[d], in_kind[x], path.count("/"), path), path, x))
+    picked = [(p, x) for _, p, x in sorted(keyed, key=lambda k: k[0])[:max(0, max_files)]]
+    picked.sort(key=lambda px: (px[0].count("/"), px[0]))
+    return picked, len(found), large
+
+
+def select_files(files, max_files=MAX_FILES):
+    """Pick the manifest files worth reading from a repository's tree: [(path, extractor)]."""
+    return plan_files(files, max_files)[0]
 
 
 TABLE_OR_LIST = re.compile(r"^\s*(?:\||[*+-]\s|\d+\.\s)")
@@ -986,9 +1035,22 @@ CREATE TABLE repos(path TEXT PRIMARY KEY, name TEXT, description TEXT, topics TE
 CREATE TABLE provides(repo TEXT, ns TEXT, ident TEXT);
 CREATE TABLE requires(repo TEXT, via TEXT, ns TEXT, ident TEXT, file TEXT, line INT, detail TEXT);
 CREATE TABLE subgroups(path TEXT PRIMARY KEY);
+CREATE TABLE gaps(repo TEXT, kind TEXT, found INT, read INT, detail TEXT);
 CREATE INDEX provides_ident ON provides(ns, ident);
 CREATE INDEX requires_repo ON requires(repo);
 """
+
+# Why a repository's scan is incomplete. found / read are counts where the kind has them.
+GAP_KINDS = {
+    "manifest-cap": "read {read} of {found} manifests ({detail})",
+    "tree-truncated": "{detail}; deeper files not seen",
+    "file-too-large": "{found} manifest(s) over 512 KB not read: {detail}",
+    "scan-failed": "scan failed: {detail}",
+}
+
+
+def gap_text(g):
+    return GAP_KINDS.get(g["kind"], "{kind}: {detail}").format(**g)
 
 
 def graph_dir(host, org, cache=None):
@@ -1000,25 +1062,32 @@ def graph_path(host, org, cache=None):
     return os.path.join(graph_dir(host, org, cache), "map.db")
 
 
-def scan_repo(prov, repo, max_files):
-    """Read a repository's tree and manifest files: (provides, requires, readme, files, note)."""
+def scan_repo(prov, repo, max_files=MAX_FILES, max_tree_entries=MAX_TREE_ENTRIES):
+    """Read a repository's tree and manifest files: (provides, requires, readme, files, note, gaps).
+
+    gaps: [(kind, found, read, detail)], everything that left the scan incomplete (GAP_KINDS)."""
     host = prov.host
     # identities never carry a port (https and ssh ports differ for the same repository)
     ctx = {"host": host.lower().split(":", 1)[0], "path": repo["path"], "provider": prov.name,
            "git": git_ident(repo["clone_https"]) or norm_path(f"{host}/{repo['path']}")}
     provides = [("git", ctx["git"])] + tf_provides(repo)
     if repo.get("empty") or not repo.get("default_branch"):
-        return provides, [], "", [], "empty repository"
-    files, truncated = prov.tree(repo)
-    note = "tree truncated; deeper files not read" if truncated else ""
-    requires, readme, read = [], "", []
+        return provides, [], "", [], "empty repository", []
+    files, cut = prov.tree(repo, max_tree_entries)
+    gaps = [("tree-truncated", len(files), None, cut)] if cut else []
+    note, requires, readme, read = "", [], "", []
     rd = next((p for p, _ in files if "/" not in p and re.match(r"(?i)^readme(\.(md|markdown|rst|txt))?$", p)), None)
     if rd:
         try:
             readme = readme_summary(prov.read(repo, rd))
         except NotFound:
             pass
-    picked = select_files(files, max_files)
+    picked, found, large = plan_files(files, max_files)
+    if found > len(picked):
+        gaps.append(("manifest-cap", found, len(picked), f"--max-files {max_files}"))
+    if large:
+        more = f" (+{len(large) - 5} more)" if len(large) > 5 else ""
+        gaps.append(("file-too-large", len(large), 0, ", ".join(large[:5]) + more))
     ctx["_gradle_dirs"] = [os.path.dirname(p) for p, x in picked if x is x_gradle]
     has_image = False
     for path, x in picked:
@@ -1041,27 +1110,43 @@ def scan_repo(prov, repo, max_files):
         if k not in seen:
             seen.add(k)
             req.append(row)
-    return sorted(set(provides)), req, readme, read, note
+    return sorted(set(provides)), req, readme, read, note, gaps
 
 
-def build_graph(t, provider, host, org, cache=None, jobs=8, max_files=80, full=False, parent="", log=print):
-    """Build (or incrementally refresh) one graph; returns (path, stats, subgroup paths)."""
+def build_graph(t, provider, host, org, cache=None, jobs=8, max_files=MAX_FILES, full=False, parent="",
+                log=print, max_tree_entries=MAX_TREE_ENTRIES, internal=None):
+    """Build (or incrementally refresh) one graph; returns (path, stats, subgroup paths).
+
+    A repository is rescanned when it changed, when its last scan failed, and every repository is
+    when the scanner version or the limits differ from the last build's. internal: ["ns:prefix"]
+    replaces the stored list; None keeps it."""
     prov = PROVIDER_CLASS[provider](t, host)
     t0 = time.time()
     repos = prov.list_repos(org)
     subs = prov.subgroups(org)
     dbp = graph_path(host, org, cache)
-    old = {}
-    if os.path.exists(dbp) and not full:
+    limits = {"scanner": str(SCANNER), "max_files": str(max_files), "max_tree_entries": str(max_tree_entries)}
+    old, ometa = {}, {}
+    if os.path.exists(dbp):
         try:
             odb = sqlite3.connect(dbp)
-            if dict(odb.execute("SELECT key, value FROM meta")).get("schema") == str(SCHEMA):
+            ometa = dict(odb.execute("SELECT key, value FROM meta"))
+            changed = [f"{k} {ometa.get(k, '1' if k == 'scanner' else '?')} -> {v}" for k, v in limits.items()
+                       if ometa.get(k) != v]
+            if ometa.get("schema") != str(SCHEMA) or full:
+                odb.close()
+            elif changed:
+                log(f"{host}/{org}: {', '.join(changed)}: rescanning every repository")
+                odb.close()
+            else:
                 for row in odb.execute("SELECT path, last_activity, default_branch, note FROM repos"):
                     old[row[0]] = row[1:]
                 old["__db__"] = odb
         except sqlite3.Error:
             old = {}
-    stats = {"repos": len(repos), "scanned": 0, "reused": 0, "failed": 0, "requires": 0}
+    if internal is None:
+        internal = json.loads(ometa.get("internal") or "[]")
+    stats = {"repos": len(repos), "scanned": 0, "reused": 0, "failed": 0, "requires": 0, "incomplete": 0}
     results = {}
 
     def work(r):
@@ -1073,11 +1158,13 @@ def build_graph(t, provider, host, org, cache=None, jobs=8, max_files=80, full=F
         if provider == "gitlab":
             r["language"] = prov.language(r)
         try:
-            return r, scan_repo(prov, r, max_files)
+            return r, scan_repo(prov, r, max_files, max_tree_entries)
         except ApiError as e:
             if isinstance(e, AuthError):
                 raise
-            return r, ([("git", git_ident(r["clone_https"]) or "")], [], "", [], f"error: {e}"[:300])
+            err = str(e)[:300]
+            return r, ([("git", git_ident(r["clone_https"]) or "")], [], "", [], f"error: {err}",
+                       [("scan-failed", None, None, err)])
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
         for r, res in ex.map(work, repos):
@@ -1098,23 +1185,27 @@ def build_graph(t, provider, host, org, cache=None, jobs=8, max_files=80, full=F
                 r["language"] = lang
             if r.get("topics") is None:
                 r["topics"] = json.loads(orow[5] or "[]")
-            db.executemany("INSERT INTO provides VALUES (?,?,?)", odb.execute("SELECT * FROM provides WHERE repo=?", (path,)))
-            db.executemany("INSERT INTO requires VALUES (?,?,?,?,?,?,?)", odb.execute("SELECT * FROM requires WHERE repo=?", (path,)))
+            for table, cols in (("provides", 3), ("requires", 7), ("gaps", 5)):
+                db.executemany(f"INSERT INTO {table} VALUES ({','.join('?' * cols)})",
+                               odb.execute(f"SELECT * FROM {table} WHERE repo=?", (path,)))
             stats["reused"] += 1
         else:
-            provides, requires, readme, files, note = res
+            provides, requires, readme, files, note, gaps = res
             files, scanned = json.dumps(files), stamp
             db.executemany("INSERT INTO provides VALUES (?,?,?)", [(path, ns, i) for ns, i in provides if i])
             db.executemany("INSERT INTO requires VALUES (?,?,?,?,?,?,?)", [(path,) + row for row in requires])
+            db.executemany("INSERT INTO gaps VALUES (?,?,?,?,?)", [(path,) + g for g in gaps])
             stats["failed" if note.startswith("error") else "scanned"] += 1
         db.execute("INSERT INTO repos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
             path, r["name"], r["description"], json.dumps(sorted(r.get("topics") or [])), r["language"],
             r["default_branch"], int(r["archived"]), int(r["fork"]), r["last_activity"], r["web_url"],
             r["clone_https"], r["clone_ssh"], readme, files, note, scanned))
     stats["requires"] = db.execute("SELECT COUNT(*) FROM requires").fetchone()[0]
+    stats["incomplete"] = db.execute("SELECT COUNT(DISTINCT repo) FROM gaps").fetchone()[0]
     db.executemany("INSERT INTO subgroups VALUES (?)", [(s,) for s in subs])
     meta = {"schema": str(SCHEMA), "provider": provider, "host": host, "org": org, "parent": parent,
-            "built_at": stamp, "seconds": f"{time.time() - t0:.1f}", "api_calls": str(t.calls)}
+            "built_at": stamp, "seconds": f"{time.time() - t0:.1f}", "api_calls": str(t.calls),
+            "internal": json.dumps(sorted(set(internal))), **limits}
     db.executemany("INSERT INTO meta VALUES (?,?)", meta.items())
     db.commit()
     db.close()
@@ -1145,7 +1236,15 @@ def parse_target(target, provider=None):
     return provider, host, org
 
 
+INTERNAL_NS = ("git", "go", "npm", "pypi", "maven", "image", "tfreg", "helm")
+
+
 def cmd_build(a):
+    bad = [e for e in a.internal or [] if e.partition(":")[0] not in INTERNAL_NS or not e.partition(":")[2]]
+    if bad:
+        print(f"dungeon-map: --internal takes NS:PREFIX with NS one of {', '.join(INTERNAL_NS)}: {', '.join(bad)}",
+              file=sys.stderr)
+        return 2
     provider, host, org = parse_target(a.target, a.provider)
     cache = a.cache
     if a.from_dir:
@@ -1160,10 +1259,12 @@ def cmd_build(a):
         while todo:
             o, parent = todo.pop(0)
             dbp, st, subs = build_graph(t, provider, host, o, cache=cache, jobs=a.jobs, max_files=a.max_files,
-                                        full=a.full, parent=parent)
+                                        full=a.full, parent=parent, max_tree_entries=a.max_tree_entries,
+                                        internal=a.internal)
             built.append(o)
+            inc = f", {st['incomplete']} incomplete" if st["incomplete"] else ""
             print(f"{host}/{o}: {st['repos']} repos ({st['scanned']} scanned, {st['reused']} unchanged, "
-                  f"{st['failed']} failed), {st['requires']} references -> {dbp}")
+                  f"{st['failed']} failed{inc}), {st['requires']} references -> {dbp}")
             if subs and a.subgroups:
                 todo += [(s, o) for s in subs]
             elif subs:
@@ -1183,9 +1284,15 @@ def cmd_build(a):
             with open(os.path.join(a.save, "responses.json"), "w", encoding="utf-8") as f:
                 json.dump(t.saved, f, indent=1, sort_keys=True)
     m = load_map(cache)
-    n_edges = sum(1 for e in m.edges if e["src_graph"] in {f"{host}/{o}" for o in built})
+    gks = {f"{host.lower()}/{o}" for o in built}
+    n_edges = sum(1 for e in m.edges if e["src_graph"] in gks)
     print(f"map: {len(m.graphs)} graphs, {len(m.repos)} repos, {len(m.edges)} cross-repository edges "
           f"({n_edges} from what was just built)")
+    n_inc = sum(1 for r in m.repos.values() if r["graph"] in gks and r["gaps"])
+    n_unr = sum(1 for u in m.unresolved if u["src_graph"] in gks)
+    if n_inc or n_unr:
+        print(f"gaps: {n_inc} repositories read incompletely, {n_unr} internal references with no "
+              f"repository in the map; list them: run.sh gaps")
     if m.unresolved_hint:
         print(m.unresolved_hint)
     return 0
@@ -1200,12 +1307,17 @@ class Map:
         self.repos = {}    # "host/path" -> repo dict (+ graph)
         self.edges = []    # {src, dst, via, ns, ident, file, line, detail, match, src_graph}
         self.unresolved_hint = ""
+        self.unresolved = []  # internal requires that resolve to no repository (internal_rules)
+        self.internal_hints = []  # [(ns, prefix, packages)]: shared names worth --internal
 
     def out_edges(self, key):
         return [e for e in self.edges if e["src"] == key]
 
     def in_edges(self, key):
         return [e for e in self.edges if e["dst"] == key]
+
+    def unresolved_from(self, key):
+        return [u for u in self.unresolved if u["src"] == key]
 
     def resolve(self, name):
         """A repository key from 'host/path', 'path', a URL, or a bare name -> [keys]."""
@@ -1235,6 +1347,7 @@ def load_map(cache=None, hosts=None):
     m = Map()
     provides = {}  # (ns, ident) -> {repo keys}
     requires = []
+    extra = []     # the per-map internal prefixes (build --internal NS:PREFIX)
     for p in find_graphs(cache):
         try:
             db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
@@ -1260,6 +1373,14 @@ def load_map(cache=None, hosts=None):
             n += 1
         meta["repos"] = n
         m.graphs[gk] = meta
+        for r in m.repos.values():
+            r.setdefault("gaps", [])
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='gaps'").fetchone():
+            for repo, kind, found, read, detail in db.execute("SELECT * FROM gaps"):
+                r = m.repos.get(f"{host}/{repo.lower()}")
+                if r is not None:
+                    r["gaps"].append({"kind": kind, "found": found, "read": read, "detail": detail})
+        extra += json.loads(meta.get("internal") or "[]")
         for repo, ns, ident in db.execute("SELECT repo, ns, ident FROM provides"):
             provides.setdefault((ns, ident), set()).add(f"{host}/{repo.lower()}")
         for repo, via, ns, ident, f, line, detail in db.execute("SELECT * FROM requires"):
@@ -1287,8 +1408,14 @@ def load_map(cache=None, hosts=None):
         return set(), ""
 
     seen = set()
+    internal, m.internal_hints = internal_rules(m, provides, extra)
     for src, via, ns, ident, f, line, detail, gk in requires:
         dsts, how = lookup(ns, ident)
+        why = "" if dsts else internal(ns, ident)
+        if why and (src, ns, ident) not in seen:
+            seen.add((src, ns, ident))
+            m.unresolved.append({"src": src, "via": via, "ns": ns, "ident": ident, "file": f, "line": line,
+                                 "detail": detail, "why": why, "src_graph": gk})
         for dst in sorted(dsts):
             if dst == src or (src, dst, via) in seen:
                 continue
@@ -1296,6 +1423,72 @@ def load_map(cache=None, hosts=None):
             m.edges.append({"src": src, "dst": dst, "via": via, "ns": ns, "ident": ident, "file": f,
                             "line": line, "detail": detail, "match": how, "src_graph": gk})
     return m
+
+
+def name_token(name):
+    """The leading word of a package name: opentelemetry-sdk -> opentelemetry."""
+    return re.split(r"[-_.]", name, maxsplit=1)[0] if re.search(r"[-_.]", name) else ""
+
+
+def internal_rules(m, provides, extra=()):
+    """(internal, hints): internal(ns, ident) says why ident is the org's own ("" when it is not);
+    hints are --internal prefixes worth suggesting.
+
+    The org's namespaces come from what its non-fork repositories provide (a fork carries its
+    upstream's names): the host/org path of each graph (git, go), the org path as an image path,
+    Go vanity domains, npm scopes, Maven groupIds (and their children), Terraform registry owners,
+    and extra ("ns:prefix", from build --internal). A shared leading name is not a namespace: on
+    PyPI or unscoped npm anyone can publish opentelemetry-instrumentation-foo (traceloop publishes
+    34 of them), so it is only suggested, as ("pypi", "opentelemetry-", packages), when it matches
+    the org's name and two or more of the org's packages carry it."""
+    rules = {}  # ns -> {prefix: why}
+
+    def add(ns, prefix, why):
+        rules.setdefault(ns, {}).setdefault(prefix, why)
+
+    org_words = set()
+    for meta in m.graphs.values():
+        h, org = meta["host"].lower().split(":", 1)[0], meta["org"].lower()
+        for ns in ("git", "go"):
+            add(ns, f"{h}/{org}/", f"under {h}/{org}/")
+        add("image", f"{org}/", f"image path {org}/")
+        for seg in org.split("/"):
+            org_words |= {re.sub(r"[-_.]", "", seg), re.split(r"[-_.]", seg)[0]}
+    shared = SHARED_GO_HOSTS | {g["host"].lower().split(":", 1)[0] for g in m.graphs.values()}
+    tokens = {}  # (ns, token) -> {names}
+    for (ns, ident), keys in provides.items():
+        if all(m.repos.get(k, {}).get("fork") for k in keys):
+            continue
+        if ns == "go" and "/" in ident and ident.split("/", 1)[0] not in shared:
+            d = ident.split("/", 1)[0]
+            add("go", f"{d}/", f"Go modules under {d}/ are the org's")
+        elif ns == "npm" and ident.startswith("@") and "/" in ident:
+            sc = ident.split("/", 1)[0]
+            add("npm", f"{sc}/", f"npm scope {sc} is the org's")
+        elif ns == "maven" and ":" in ident:
+            g = ident.split(":", 1)[0]
+            add("maven", f"{g}:", f"Maven group {g} is the org's")
+            add("maven", f"{g}.", f"Maven group {g} is the org's")
+        elif ns == "tfreg" and "/" in ident:
+            o = ident.split("/", 1)[0]
+            add("tfreg", f"{o}/", f"Terraform registry namespace {o} is the org's")
+        elif ns in ("npm", "pypi") and name_token(ident) in org_words:
+            tokens.setdefault((ns, name_token(ident)), set()).add(ident)
+    for e in extra:
+        ns, _, pre = e.partition(":")
+        if pre:
+            add(ns, pre.lower(), f"internal prefix {pre} (build --internal)")
+    hints = sorted((ns, f"{tok}-", len(names)) for (ns, tok), names in tokens.items()
+                   if len(names) >= 2 and f"{tok}-" not in rules.get(ns, {}))
+
+    def internal(ns, ident):
+        if ns == "pypi":
+            ident = pypi_norm(ident)
+        for pre, why in rules.get(ns, {}).items():
+            if ident.startswith(pre):
+                return why
+        return ""
+    return internal, hints
 
 
 def age_text(stamp):
@@ -1310,6 +1503,51 @@ def age_text(stamp):
     return f"{int(s // 86400)} days ago"
 
 
+def unresolved_text(u):
+    return f"{u['ident']} ({u['via']}, {u['file']}:{u['line']}; {u['why']})"
+
+
+def cmd_gaps(a):
+    """Everything that makes the map incomplete: repositories read in part, and the org's own
+    references that no repository in the map provides."""
+    m = load_map(a.cache)
+    if not m.graphs:
+        print(f"no dungeon map in {a.cache or CACHE}; build one: run.sh build https://github.com/ORG")
+        return 1
+    want = [n.lower().rstrip("/") for n in a.names]
+    keys = set()
+    for n in want:
+        hit = [k for k, r in m.repos.items() if n in (k, r["graph"].lower(), r["graph"].split("/", 1)[1].lower())]
+        hit = hit or m.resolve(n)
+        if not hit:
+            print(f"no graph or repository {n} in the map (run.sh maps lists the graphs)")
+            return 1
+        keys.update(hit)
+    total = 0
+    for gk in sorted(m.graphs):
+        repos = sorted(k for k, r in m.repos.items() if r["graph"] == gk and (not keys or k in keys))
+        inc = [k for k in repos if m.repos[k]["gaps"]]
+        unr = [u for u in m.unresolved if u["src"] in repos]
+        if not inc and not unr:
+            continue
+        total += len(inc) + len(unr)
+        print(f"{gk}: {len(inc)} repositories read incompletely, {len(unr)} internal references with no repository")
+        for k in inc:
+            for g in m.repos[k]["gaps"]:
+                print(f"  {k.split('/', 1)[1]}: {gap_text(g)}")
+        if unr:
+            print("  internal references that resolve to no repository in the map:")
+            for u in sorted(unr, key=lambda u: (u["src"], u["ident"])):
+                print(f"    {u['src'].split('/', 1)[1]} -> {unresolved_text(u)}")
+    if not total:
+        print("no gaps: every repository was read completely and every internal reference resolves")
+    for ns, pre, n in m.internal_hints:
+        print(f"note: {n} of the org's {ns} packages are named {pre}*; {ns} has no namespaces, so "
+              f"references to other {pre}* packages are not reported. If only the org publishes "
+              f"that prefix, rebuild with --internal {ns}:{pre}")
+    return 0
+
+
 def cmd_maps(a):
     m = load_map(a.cache)
     if not m.graphs:
@@ -1320,8 +1558,11 @@ def cmd_maps(a):
         par = f", subgroup of {meta['host']}/{meta['parent']}" if meta.get("parent") else ""
         subs = f", {len(meta['subgroups'])} subgroups" if meta["subgroups"] else ""
         out = sum(1 for e in m.edges if e["src_graph"] == gk)
+        inc = sum(1 for r in m.repos.values() if r["graph"] == gk and r["gaps"])
+        unr = sum(1 for u in m.unresolved if u["src_graph"] == gk)
+        gaps = f", gaps: {inc} incomplete, {unr} unresolved" if inc or unr else ""
         print(f"  {gk:<40} {meta['provider']:<6} {meta['repos']:>4} repos  {out:>4} edges out  "
-              f"built {meta['built_at']} ({age_text(meta['built_at'])}){par}{subs}")
+              f"built {meta['built_at']} ({age_text(meta['built_at'])}){par}{subs}{gaps}")
     return 0
 
 
@@ -1336,13 +1577,23 @@ def main(argv=None):
     b.add_argument("--full", action="store_true", help="rescan every repository, not only changed ones")
     b.add_argument("--no-subgroups", dest="subgroups", action="store_false", help="GitLab: only this group")
     b.add_argument("--jobs", type=int, default=8, help="repositories scanned in parallel (default 8)")
-    b.add_argument("--max-files", type=int, default=80, help="manifest files read per repository (default 80)")
+    b.add_argument("--max-files", type=int, default=MAX_FILES,
+                   help=f"manifest files read per repository (default {MAX_FILES}); the rest is reported by gaps")
+    b.add_argument("--max-tree-entries", type=int, default=MAX_TREE_ENTRIES,
+                   help=f"GitLab / Gitea: tree entries listed per repository (default {MAX_TREE_ENTRIES})")
+    b.add_argument("--internal", action="append", metavar="NS:PREFIX",
+                   help="also treat references under PREFIX as the org's own (npm:@acme-, pypi:acme-, "
+                        "maven:com.acme, go:go.acme.dev/); repeatable; replaces the stored list, which "
+                        "later builds keep")
     b.add_argument("--timeout", type=int, default=60, help="seconds per API call (default 60)")
     b.add_argument("--save", metavar="DIR", help="also write every API response to DIR/responses.json")
     b.add_argument("--from", dest="from_dir", metavar="DIR", help="replay DIR/responses.json instead of the API")
-    sub.add_parser("maps", help="list the graphs in the cache: repos, edges, age")
+    sub.add_parser("maps", help="list the graphs in the cache: repos, edges, age, gaps")
+    g = sub.add_parser("gaps", help="what the map is missing: repositories read in part, internal "
+                                    "references with no repository")
+    g.add_argument("names", nargs="*", help="graphs (host/org) or repositories; default all")
     a = ap.parse_args(argv)
-    return {"build": cmd_build, "maps": cmd_maps}[a.cmd](a)
+    return {"build": cmd_build, "maps": cmd_maps, "gaps": cmd_gaps}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,8 @@ invoke the agents. If skills are unavailable in your harness, run
   in CI. Executing the cases spends model tokens: `python3 evals/run_agy.py` drives Antigravity
   (`agy`), `claude plugin eval .` drives Claude Code, from the same case files. Verify a new
   grader's assertion against real tool output before committing it -- see `evals/README.md`.
+- `skills/dungeon-map`: bump `SCANNER` in `scripts/dungeonmap.py` with every change to an
+  extractor or to the file selection (`plan_files`), so cached maps rescan every repository.
 - Architecture reference lives in `docs/architecture.md`. Task worklogs are not kept in this
   repository: they live in the developer's workspace (`.ai/ai_work_logs/`, see
   `skills/ai-task/README.md`).
