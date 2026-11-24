@@ -1,5 +1,6 @@
 schema_version: "1.1"
 name: "install-agents in an agy session installs for antigravity, not gemini"
 context:
-  scaffold_script: "../scaffold/clone-repo.sh"
+  scaffold_script: "scaffold.sh"
   fresh_home: true
+  harnesses: [antigravity]

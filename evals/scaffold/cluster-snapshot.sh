@@ -3,7 +3,8 @@
 # with planted failures) into the eval workspace as cluster-snapshot/: the agent troubleshoots a
 # cluster it cannot reach, from the state a teammate saved. Also warms the code-graph venv.
 set -euo pipefail
-REPO="${EVAL_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=/dev/null  # scaffold/repo-root.sh, linted on its own
+. "$(dirname "${BASH_SOURCE[0]}")/repo-root.sh"
 cp -r "$REPO/skills/cluster-graph/tests/fixture" cluster-snapshot
 "$(dirname "${BASH_SOURCE[0]}")/prepare.sh"
 echo "scaffold: cluster snapshot copied ($(find cluster-snapshot -mindepth 1 -maxdepth 1 | wc -l) files)"

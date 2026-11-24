@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*pending[- ]upgrade)(?=.*(\brollback\b|sh\.helm\.release))'
+pattern: '(?=.*pending[- ]upgrade)(?=.*(\brollback\b|sh\.helm\.release))'
+flags: "is"
 match: "contains"
 ---
 kg-cart's revision 2 is `pending-upgrade`: an interrupted upgrade left Helm's lock, and Flux cannot

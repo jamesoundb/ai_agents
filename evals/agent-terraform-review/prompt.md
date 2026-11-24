@@ -1,6 +1,5 @@
 ---
 name: "terraform agent gates a merge on the deterministic review"
-agent: terraform
 tags: ["agent", "terraform", "review"]
 runs: 3
 max_turns: 12

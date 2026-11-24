@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*\bdns\b)(?=.*\b53\b)'
+pattern: '(?=.*\bdns\b)(?=.*\b53\b)'
+flags: "is"
 match: "contains"
 ---
 The trap. `api -> db` is allowed on 5432 by both policies, but `api-egress` selects api for Egress

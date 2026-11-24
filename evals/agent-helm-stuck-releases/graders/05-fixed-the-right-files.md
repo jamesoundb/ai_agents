@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*releases/kg-shop\.yaml)(?=.*cart-helmrelease\.yaml)'
+pattern: '(?=.*releases/kg-shop\.yaml)(?=.*cart-helmrelease\.yaml)'
+flags: "is"
 match: "contains"
 ---
 Each image comes from a different layer: kg-shop's from the CI values file, kg-cart's from the Flux

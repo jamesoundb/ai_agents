@@ -5,15 +5,16 @@
 # ~/.cache/astgraph/venv is not there and run.sh would pip-install it on every run
 # (~30s, needs network). Pre-warm it once here instead.
 #
-# To skip the install entirely, point ASTGRAPH_VENV at a venv that already has the
-# deps before invoking `claude plugin eval`, e.g.
-#   ASTGRAPH_VENV="$HOME/.cache/astgraph/venv" claude plugin eval .
+# run_agy.py links ~/.cache/astgraph into the run's HOME, so this is instant there;
+# `claude plugin eval` passes the run no ASTGRAPH_VENV, so there it builds the venv.
 set -euo pipefail
-REPO="${EVAL_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=/dev/null  # scaffold/repo-root.sh, linted on its own
+. "$(dirname "${BASH_SOURCE[0]}")/repo-root.sh"
 RUN="$REPO/skills/code-graph/scripts/run.sh"
 [ -x "$RUN" ] || { echo "scaffold: engine launcher not found at $RUN" >&2; exit 2; }
-# One trivial invocation forces the dependency check/install and warms the venv.
-printf 'x = 1\n' > /tmp/astgraph-warm.py
-"$RUN" skeleton /tmp/astgraph-warm.py --no-stats >/dev/null
-rm -f /tmp/astgraph-warm.py
-echo "scaffold: code-graph engine ready"
+# --setup builds the venv and downloads every grammar the engines load (yaml, hcl, ...), as
+# install.sh does. Warming with one Python file fetched only the Python grammar: under
+# `claude plugin eval` the run's ~/.cache is read-only and the network closed, so
+# k8s-manifest-review then failed to parse every manifest (COR000, 0 objects reviewed).
+"$RUN" --setup >/dev/null
+echo "scaffold: code-graph engine and grammars ready"

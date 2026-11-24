@@ -1,6 +1,5 @@
 ---
 name: "ast-treesitter resolves Python callers that text search cannot see"
-agent: ast-treesitter
 tags: ["agent", "python", "resolution"]
 runs: 3
 max_turns: 10

@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(no (measured |usage |p95 )*(usage|data|evidence)|without (a )?(discovery|usage|measure)|discovery report|tier (cap|default|ceiling)|p95)'
+pattern: '(no (measured |usage |p95 )*(usage|data|evidence)|without (a )?(discovery|usage|measure)|discovery report|tier (cap|default|ceiling)|p95)'
+flags: "i"
 match: "contains"
 ---
 The kubernetes persona's signature claim: "every recommendation you make cites a number from

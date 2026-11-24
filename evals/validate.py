@@ -9,10 +9,16 @@ be checked without the CLI:
     passes, which is worse than no case at all)
   - frontmatter is valid YAML and its fields have the right types
   - every grader `type` is one the runner implements, with its required fields
-  - every regex actually compiles, and `target` is a value the runner recognizes
-  - paths referenced by case.yaml (scaffold_script, add_dirs) exist on disk
+  - every regex compiles and uses only syntax JavaScript accepts (`claude plugin eval` matches
+    with JavaScript regular expressions: no inline `(?i)`, flags go in `flags:`), and `target`
+    is a value the runner recognizes
+  - prompt.md uses only the keys the CLI accepts (an unknown key stops the case loading)
+  - paths referenced by case.yaml (scaffold_script, add_dirs) exist and stay inside the case
+    directory (the CLI refuses `..` and absolute paths); `context.agent` names an agent in
+    agents/ and `context.harnesses` known harnesses
 
-It does NOT verify the schema against a running CLI -- see README.md.
+The schema follows `claude plugin eval` 2.1.331 as run on 2026-11-24 and its documentation
+(https://code.claude.com/docs/en/plugin-evals.md); see README.md.
 
 Exit code 0 = clean, 1 = errors found. Warnings alone do not fail the run.
 """
@@ -26,6 +32,8 @@ except ImportError:                                    # pragma: no cover - envi
     sys.exit("evals/validate.py needs PyYAML to parse case frontmatter: pip install pyyaml")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+NOT_CASES = {"fixtures", "scaffold", "results", "tests", "__pycache__"}   # evals/ dirs that hold no case
 
 GRADER_TYPES = {
     "regex": {"required": {"pattern"}, "optional": {"target", "flags", "match"}},
@@ -37,11 +45,24 @@ GRADER_TYPES = {
 }
 TARGETS = {"last_message", "trace", "files", "mock_calls"}
 MATCH_MODES = {"contains", "not_contains"}          # plus "count:N"
+# The keys `claude plugin eval` accepts in prompt.md; any other key is a load error.
 PROMPT_FIELDS = {
-    "name": str, "agent": str, "tags": list, "plugins": list, "runs": int, "max_turns": int,
-    "timeout_seconds": int, "allowed_tools": list, "model": str,
-    "append_system_prompt": str, "env": dict,
+    "schema_version": str, "name": str, "description": str, "tags": list, "plugins": list,
+    "runs": int, "expected_outcome": str, "model": str, "max_turns": int, "timeout_seconds": int,
+    "allowed_tools": list, "disallowed_tools": list, "artifact_publish": (bool, dict),
+    "growthbook_overrides": dict, "append_system_prompt": str, "env": dict,
 }
+# case.yaml `context:` keys: the CLI's own, plus the ones this repo's runners read.
+CONTEXT_KEYS = {"scaffold_script", "history_file", "add_dirs",   # claude plugin eval
+                "agent",       # main-thread agent: run_evals.py (plugin settings), run_agy.py (--agent)
+                "harnesses",   # the harnesses a case runs on (default: all)
+                "fresh_home"}  # run_agy.py: start from an empty HOME
+HARNESSES = {"antigravity", "claude"}
+REGEX_FLAGS = set("ims")          # what both runners apply (run_agy.py: re.I / re.M / re.S)
+# Regex syntax Python accepts and JavaScript rejects: inline flag groups, named groups and
+# backreferences in Python's spelling, and Python's string anchors.
+INLINE_FLAGS_RE = re.compile(r"\(\?[a-zA-Z]+(?:-[a-zA-Z]+)?[:)]")
+PYTHON_ONLY_RE = re.compile(r"\(\?P[<=]|\\[AZ]")
 
 errors, warnings = [], []
 
@@ -80,8 +101,11 @@ def check_prompt(case, path):
     if not body.strip():
         err(rel, "prompt body is empty -- the agent would receive no instruction")
     for k, v in fm.items():
-        if k not in PROMPT_FIELDS:
-            warn(rel, f"unknown frontmatter field {k!r}")
+        if k == "agent":
+            err(rel, "'agent' is not a prompt.md key (claude plugin eval refuses to load the case); "
+                     "name the agent in case.yaml `context.agent`")
+        elif k not in PROMPT_FIELDS:
+            err(rel, f"unknown frontmatter key {k!r} (claude plugin eval refuses to load the case)")
         elif not isinstance(v, PROMPT_FIELDS[k]):
             err(rel, f"field {k!r} is {type(v).__name__}, expected {PROMPT_FIELDS[k].__name__}")
     if "name" not in fm:
@@ -126,10 +150,21 @@ def check_grader(case, path):
 
     for field in ("pattern", "input_match"):
         if field in fm:
+            rx = str(fm[field])
             try:
-                re.compile(fm[field])
+                re.compile(rx)
             except re.error as e:
                 err(rel, f"{field} is not a valid regex: {e}")
+            if INLINE_FLAGS_RE.search(rx):
+                err(rel, f"{field} uses an inline flag group; JavaScript regex has none: "
+                         f"put the flags in `flags:` (e.g. flags: \"is\")")
+            if PYTHON_ONLY_RE.search(rx):
+                err(rel, f"{field} uses Python-only regex syntax ((?P<..>, (?P=..), \\A, \\Z); "
+                         f"graders are matched as JavaScript")
+    bad = set(str(fm.get("flags", ""))) - REGEX_FLAGS
+    if bad:
+        err(rel, f"flags {fm.get('flags')!r}: {''.join(sorted(bad))!r} is not one of "
+                 f"{''.join(sorted(REGEX_FLAGS))}")
 
     match = fm.get("match")
     if match is not None and match not in MATCH_MODES and not str(match).startswith("count:"):
@@ -154,6 +189,20 @@ def check_case_yaml(case, path):
     if not isinstance(ctx, dict):
         err(rel, "'context' must be a mapping")
         return
+    for k in ctx:
+        if k not in CONTEXT_KEYS:
+            warn(rel, f"context key {k!r} is read by neither claude plugin eval nor this repo's runners")
+    for key, val in [("scaffold_script", ctx.get("scaffold_script"))] + \
+                    [("add_dirs", d) for d in ctx.get("add_dirs", []) or []]:
+        if val and (os.path.isabs(val) or ".." in os.path.normpath(val).split(os.sep)):
+            err(rel, f"{key} {val!r} escapes the case directory; claude plugin eval refuses "
+                     f"paths outside it (lay shared files in from scaffold.sh)")
+    agent = ctx.get("agent")
+    if agent and not os.path.isfile(os.path.join(REPO, "agents", str(agent), "AGENT.md")):
+        err(rel, f"context.agent {agent!r} is not an agent in agents/")
+    for h in ctx.get("harnesses", []) or []:
+        if h not in HARNESSES:
+            err(rel, f"context.harnesses: {h!r} is not one of {', '.join(sorted(HARNESSES))}")
     script = ctx.get("scaffold_script")
     if script:
         resolved = os.path.normpath(os.path.join(os.path.dirname(path), script))
@@ -172,7 +221,7 @@ def check_case_yaml(case, path):
 def main():
     cases = sorted(
         d for d in os.listdir(HERE)
-        if os.path.isdir(os.path.join(HERE, d)) and d not in {"fixtures", "scaffold", "results", "__pycache__"}
+        if os.path.isdir(os.path.join(HERE, d)) and d not in NOT_CASES
     )
     if not cases:
         print("no eval cases found", file=sys.stderr)

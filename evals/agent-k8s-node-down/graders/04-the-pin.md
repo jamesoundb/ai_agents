@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?i)(nodeSelector|kubernetes\.io/hostname)'
+pattern: '(nodeSelector|kubernetes\.io/hostname)'
+flags: "i"
 match: "contains"
 ---
 The part that is ours to fix: `manifests/kg-faults.yaml` pins `on-m02` with

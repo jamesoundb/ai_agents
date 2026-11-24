@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*shop:2\.0)(?=.*cart:2\.0)'
+pattern: '(?=.*shop:2\.0)(?=.*cart:2\.0)'
+flags: "is"
 match: "contains"
 ---
 Both revision-2 pods are `ImagePullBackOff` on images that do not exist

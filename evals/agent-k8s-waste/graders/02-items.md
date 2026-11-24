@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)(?=.*preview-app)(?=.*orphan-data)(?=.*kg-retained)(?=.*preview-lb)(?=.*seed-data)'
+pattern: '(?=.*preview-app)(?=.*orphan-data)(?=.*kg-retained)(?=.*preview-lb)(?=.*seed-data)'
+flags: "is"
 match: "contains"
 ---
 The waste this snapshot holds beyond broken pods, verified with `waste` (2026-10-15):

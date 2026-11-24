@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)gradle-cache.{0,500}(janitor|expire|ttl|deleted|forever|persistentvolumeclaim|pvc)'
+pattern: 'gradle-cache.{0,500}(janitor|expire|ttl|deleted|forever|persistentvolumeclaim|pvc)'
+flags: "is"
 match: "contains"
 ---
 `gradle-cache.yaml` is the namespace's one long-lived object: a Deployment without `janitor/ttl`
