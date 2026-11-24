@@ -1,4 +1,4 @@
 schema_version: "1.1"
 name: "A problem in chat becomes the right clones through compass and ai-task"
 context:
-  scaffold_script: "../scaffold/dungeon-map.sh"
+  scaffold_script: "scaffold.sh"

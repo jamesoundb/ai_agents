@@ -4,7 +4,8 @@
 # run_agy.py gives the agent (<workspace>/home). The scaffold itself runs under the real HOME, so
 # the cache path is set explicitly and the operator's ~/.cache/dungeon-map is never touched.
 set -euo pipefail
-REPO="${EVAL_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=/dev/null  # scaffold/repo-root.sh, linted on its own
+. "$(dirname "${BASH_SOURCE[0]}")/repo-root.sh"
 "$REPO/skills/ai-task/scripts/ai-task" init >/dev/null
 "$REPO/skills/dungeon-map/scripts/run.sh" --cache "$PWD/home/.cache/dungeon-map" build localhost:3300/dmtest \
   --provider gitea --from "$REPO/skills/dungeon-map/tests/fixture/gitea" >/dev/null

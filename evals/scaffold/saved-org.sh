@@ -3,7 +3,8 @@
 # skills/dungeon-map/tests/gitea.sh's throwaway instance) as org-snapshot/, as a teammate would share
 # them. The server is not running, so only `build --from` can read it.
 set -euo pipefail
-REPO="${EVAL_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=/dev/null  # scaffold/repo-root.sh, linted on its own
+. "$(dirname "${BASH_SOURCE[0]}")/repo-root.sh"
 mkdir -p org-snapshot
 cp "$REPO/skills/dungeon-map/tests/fixture/gitea/responses.json" org-snapshot/
 echo "scaffold: org-snapshot/responses.json copied"

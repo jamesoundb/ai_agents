@@ -1,7 +1,8 @@
 ---
 type: regex
 target: "last_message"
-pattern: '(?is)platform-lib.{0,400}payments-api|payments-api.{0,400}platform-lib'
+pattern: 'platform-lib.{0,400}payments-api|payments-api.{0,400}platform-lib'
+flags: "is"
 match: "contains"
 ---
 `compass show platform-lib` after the build (verified 2026-11-23):
