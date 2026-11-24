@@ -1,6 +1,6 @@
 ---
 type: llm
-target: "last_message"
+focus: "last_message"
 criteria: >
   PASS only if the answer lists all four dependencies of payments-api: proto (git submodule),
   base-image (Dockerfile base image), platform-lib (Go module) and ci-actions (CI action), and
