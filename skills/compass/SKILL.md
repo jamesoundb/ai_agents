@@ -48,7 +48,11 @@ Call it by its full path, one command per call, nothing piped or chained after i
 - `have`: already cloned (origin matches); `missing`: to clone; `CLASH`: a clone with that
   directory name holds another repository. ai-task names clones by basename, so tell the
   developer; do not clone it under the same name.
-- `[archived]`, `[fork]`, `[not scanned]` after a name; archived repositories are never proposed.
+- `[archived]`, `[fork]`, `[not scanned]`, `[read incompletely]` after a name; archived
+  repositories are never proposed. `show` lists a repository's `gap:` lines and its
+  `internal references with no repository in the map`. Tell the developer both: those are the
+  dependencies the map can't name a repository for (`dungeon-map gaps` lists them for the whole
+  org).
 - `name match` on an edge: the dependency was matched by path prefix (a Go package inside a module,
   an image under a project path), not exactly.
 - `no dungeon map` or `stale: ... built N days ago`: build or refresh it with the printed

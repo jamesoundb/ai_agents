@@ -85,5 +85,14 @@
    "billing"
   ],
   "archived": true
+ },
+ "big-monorepo": {
+  "description": "Front-end packages and Python services in one repository",
+  "topics": [
+   "monorepo"
+  ],
+  "oversized": {
+   "packages/huge/package.json": 600000
+  }
  }
 }

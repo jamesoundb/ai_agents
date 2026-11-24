@@ -57,6 +57,12 @@ def main():
                 text = open(p, encoding="utf-8").read().replace("{HOST}", a.host).replace("{ORG}", a.org)
                 files.append({"operation": "create", "path": os.path.relpath(p, root),
                               "content": base64.b64encode(text.encode()).decode()})
+        # "oversized": {path: bytes} -- a valid manifest padded past dungeon-map's read limit,
+        # generated here so the fixture folder stays small
+        for path, size in sorted((m.get("oversized") or {}).items()):
+            pad = "x" * max(0, size - 64)
+            text = json.dumps({"name": f"@{a.org}/{path.split('/')[-2]}", "description": pad})
+            files.append({"operation": "create", "path": path, "content": base64.b64encode(text.encode()).decode()})
         gt(a.host, "POST", f"repos/{a.org}/{repo}/contents", {"branch": "main", "message": "initial", "files": files})
         gt(a.host, "PUT", f"repos/{a.org}/{repo}/topics", {"topics": m["topics"]})
         if m.get("archived"):

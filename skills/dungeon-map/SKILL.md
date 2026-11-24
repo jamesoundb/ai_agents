@@ -46,21 +46,37 @@ holds no credentials.
    | self-hosted GitLab / Gitea / GitHub Enterprise | `run.sh build HOST/ORG --provider gitlab\|gitea\|github` |
 
    A 100-repository org takes about a minute. Rebuilding is incremental: repositories whose last
-   activity and default branch are unchanged keep their rows (`--full` rescans all). Run the same
-   command to refresh a stale map.
-3. **Check it**: `run.sh maps` lists every cached graph with repositories, edges and age. Then
-   hand over to the `compass` skill to find repositories and clone them.
+   activity and default branch are unchanged keep their rows (`--full` rescans all; a newer
+   scanner version or other limits rescan all by themselves). Run the same command to refresh a
+   stale map.
+3. **Check it**: `run.sh maps` lists every cached graph with repositories, edges, age and gaps.
+   When it shows gaps, `run.sh gaps` lists them; tell the developer, since the map is missing
+   exactly what they list. Then hand over to the `compass` skill to find repositories and clone
+   them.
 
 ## Reading the output
 
-- `N repos (S scanned, U unchanged, F failed)`: a failed repository keeps its metadata and has
-  `note: error ...` (compass marks it `not scanned`); rebuilding retries it.
+- `N repos (S scanned, U unchanged, F failed, I incomplete)`: a failed repository keeps its
+  metadata and has `note: error ...` (compass marks it `not scanned`); rebuilding retries it.
+  `incomplete`: repositories the scan read only in part (see `gaps`).
 - `rate limited by HOST; waiting Ns`: the build pauses and continues by itself; let it run
   (gitlab.com's free plan: about 8 repositories a minute on a first build).
-- `tree truncated`: a very large repository; files deeper than the API returned were not read.
-- Edges come only from files the map read (at most 80 manifests per repository, `--max-files`;
-  `node_modules/`, `vendor/`, `testdata/`, `fixtures/`, `examples/` skipped). A dependency on a package or
-  image no repository of a cached org provides is not an edge.
+- `gaps: R repositories read incompletely, N internal references with no repository`: run
+  `run.sh gaps [GRAPH|REPO...]`. It lists each repository read in part, and why:
+  - `read 300 of 707 manifests`: raise `--max-files`;
+  - `tree listing stopped` / `GitHub truncated the tree listing`;
+  - `manifest(s) over 512 KB not read`;
+  - `scan failed`.
+  It also lists every reference in the org's own namespaces (its host/org path, npm scope, Maven
+  group, Go vanity domain, Terraform namespace) that no repository in the map provides, with
+  file:line. That is usually a repository the map is missing: private, in
+  another group not built yet, or renamed. Add namespaces the map can't infer with
+  `build --internal NS:PREFIX`. `gaps` suggests one when the org's PyPI or npm packages share its
+  name (`opentelemetry-*`). Ask the developer before adding it: anyone can publish under such a
+  name.
+- Edges come only from files the map read (up to 300 manifests per repository, `--max-files`;
+  `node_modules/`, `vendor/`, `testdata/`, `fixtures/`, `examples/` skipped). A public package or
+  image that no repository of a cached org provides is neither an edge nor a gap.
 
 Options, the file types and identities per edge, matching rules, the cache layout and the test
 setup (a throwaway Gitea in Docker): `reference/usage.md`.

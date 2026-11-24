@@ -118,6 +118,8 @@ def flags(r):
         f.append("fork")
     if (r.get("note") or "").startswith("error"):
         f.append("not scanned")
+    elif r.get("gaps"):
+        f.append("read incompletely")
     return f" [{', '.join(f)}]" if f else ""
 
 
@@ -306,6 +308,14 @@ def cmd_show(a):
         print(f"  used by ({len(inc)}):" + ("" if inc else " nothing in the map"))
         for e in inc:
             print(f"    {edge_text(m, e, False)}")
+        unr = m.unresolved_from(k)
+        if unr:
+            print(f"  internal references with no repository in the map ({len(unr)}):")
+            for u in unr:
+                print(f"    {dm.unresolved_text(u)}")
+        for g in r.get("gaps") or []:
+            if g["kind"] != "scan-failed":  # the note says it
+                print(f"  gap: {dm.gap_text(g)}")
         if r.get("note"):
             print(f"  note: {r['note']}")
     for line in stale_lines(m, a.max_age_days):
