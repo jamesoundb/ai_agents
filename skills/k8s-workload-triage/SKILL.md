@@ -43,8 +43,8 @@ cluster: the fix goes into the manifest or Helm values for the developer or GitO
    | Release `PendingOperation` (Helm lock) | nothing in the repository yet: an operator runs `helm rollback NAME LAST_GOOD`; then find why the interrupted upgrade hung | `why` prints the last good revision |
    | `RolloutStuck` | what changed in the new pod template (image, config, probes), or roll the manifest back | the old revision still serves: urgent, not an outage |
    | healthy but "cannot connect" / timeouts | NetworkPolicy rules, Service port/targetPort | `reach SOURCE DEST`: the rule that allows or the rules that deny, DNS, whether policies are enforced |
-   | PVC `Pending`, `ProvisioningFailed` | `storageClassName` | `cause:` follows pod -> PVC -> StorageClass |
-   | `BackoffLimitExceeded`, `DeadlineExceeded` | the job's command, data or `activeDeadlineSeconds` | logs of the last pod |
+   | PVC `Pending`, `ProvisioningFailed` | `storageClassName` | `cause:` follows pod -> PVC -> StorageClass; the claim (or StatefulSet template) is recreated: `immutable:` |
+   | `BackoffLimitExceeded`, `DeadlineExceeded` | the job's command, data or `activeDeadlineSeconds` | logs of the last pod; the Job is recreated: `immutable:` |
    | `FailedGetResourceMetric` (HPA) | CPU/memory requests on the target, or metrics-server | |
    | `ReplicaFailure` | quota, LimitRange, PodSecurity, a webhook | the message says which |
    | custom resource `Ready=False ...` | what the controller's message says | the controller's own logs: `find <operator> --kind pod` |
@@ -53,7 +53,10 @@ cluster: the fix goes into the manifest or Helm values for the developer or GitO
    from there and edit. `not defined in this repository` means every YAML file was searched (Helm templates
    and Kustomize name transforms are the exception: then `Grep`). Then
    validate with `kubectl apply --dry-run=client -f FILE` (and `--dry-run=server` when the cluster is
-   reachable); build and test manifests also go through `k8s-manifest-review`. With no reachable
+   reachable: a client dry-run passes a change to a field fixed at creation, the server rejects it);
+   build and test manifests also go through `k8s-manifest-review`. When `why` printed `immutable:`, the
+   fix does not apply over the existing object: put the operator step it names (delete and recreate the
+   claim, StatefulSet or Job) next to the diff. With no reachable
    cluster (a saved snapshot) skip the dry-run, which needs an API server even with
    `--validate=false`, and say so under "Limits".
 5. **Verify after the change is applied** (by the developer or GitOps): `why KIND/NAME --refresh`. A new
