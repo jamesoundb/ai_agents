@@ -57,27 +57,29 @@ def _writable_dir(d):
         return False
 
 
-def default_db_dir():
-    """Where snapshots live: KUBEGRAPH_DIR, else the first writable of ~/.cache/kubegraph,
-    $TMPDIR/kubegraph and ./.kubegraph (the working directory).
+def db_dirs():
+    """Where snapshots can live: KUBEGRAPH_DIR, else ~/.cache/kubegraph, $TMPDIR/kubegraph and
+    ./.kubegraph (the working directory). `snapshot` writes to the first writable one (DB_DIR);
+    queries read the newest snapshot of the context in any of them (find_db).
 
     A Claude Code sandbox makes ~/.cache read-only: snapshot failed there, and an agent spent five
     calls finding a writable --db. $TMPDIR is the sandbox's own writable temp dir in a normal
     session, but read-only under `claude plugin eval`, whose /tmp is private to each Bash call: a
     snapshot written to /tmp/kubegraph was gone by the next query, so bare /tmp (where
     tempfile.gettempdir() falls through to) is never used. Every command resolves the same way, so
-    a query finds the snapshot without --db."""
+    a query finds the snapshot without --db. A sandbox can still READ ~/.cache/kubegraph: a snapshot
+    taken outside it (where the cluster is reachable) is read from there."""
     if os.environ.get("KUBEGRAPH_DIR"):
-        return os.environ["KUBEGRAPH_DIR"]
-    home = os.path.join(os.path.expanduser("~"), ".cache", "kubegraph")
-    candidates = [home]
+        return [os.environ["KUBEGRAPH_DIR"]]
+    dirs = [os.path.join(os.path.expanduser("~"), ".cache", "kubegraph")]
     if os.environ.get("TMPDIR"):
-        candidates.append(os.path.join(os.environ["TMPDIR"], "kubegraph"))
-    candidates.append(os.path.join(os.getcwd(), ".kubegraph"))
-    return next((d for d in candidates if _writable_dir(d)), home)
+        dirs.append(os.path.join(os.environ["TMPDIR"], "kubegraph"))
+    dirs.append(os.path.join(os.getcwd(), ".kubegraph"))
+    return dirs
 
 
-DB_DIR = default_db_dir()
+DB_DIRS = db_dirs()
+DB_DIR = next((d for d in DB_DIRS if _writable_dir(d)), DB_DIRS[0])   # where snapshot writes
 MAX_AGE = int(os.environ.get("KUBEGRAPH_MAX_AGE", "300"))   # seconds before a query re-snapshots
 
 # Resource types not worth a list call: duplicates of another type (events.k8s.io, endpoints and
@@ -161,19 +163,58 @@ class QueryError(Exception):
 
 # --------------------------------------------------------------------------- kubectl (read-only)
 
+# A Claude Code sandbox has no network route of its own: traffic leaves through its proxy
+# (HTTPS_PROXY), and it sets NO_PROXY to every private range, so kubectl dials a private API server
+# (minikube, a private GKE endpoint) directly and gets "network is unreachable". When that happens
+# and a proxy is set, kubectl is re-run through the proxy with NO_PROXY cleared, and every later
+# call in this process goes that way too. Wherever the direct route works, nothing changes.
+_VIA_PROXY = False
+
+
+def _kubectl_env():
+    if not _VIA_PROXY:
+        return None
+    env = dict(os.environ)
+    env.pop("NO_PROXY", None)
+    env.pop("no_proxy", None)
+    return env
+
+
 def kubectl(ctx, args, timeout=60):
     """Run one read-only kubectl call; returns (rc, stdout, stderr)."""
+    global _VIA_PROXY
     verb = args[0]
     if verb not in ("get", "api-resources", "logs", "version") and args[:2] != ["config", "current-context"]:
         raise SystemExit(f"kubegraph: refusing a kubectl call that is not read-only: {' '.join(args)}")
     cmd = [KUBECTL] + (["--context", ctx] if ctx else []) + list(args)
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except FileNotFoundError:
-        raise SystemExit(f"kubegraph: {KUBECTL} not found (set KUBEGRAPH_KUBECTL)") from None
-    except subprocess.TimeoutExpired:
-        return 124, "", f"timed out after {timeout}s"
+    for _attempt in (1, 2):
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=_kubectl_env())
+        except FileNotFoundError:
+            raise SystemExit(f"kubegraph: {KUBECTL} not found (set KUBEGRAPH_KUBECTL)") from None
+        except subprocess.TimeoutExpired:
+            return 124, "", f"timed out after {timeout}s"
+        if (p.returncode != 0 and not _VIA_PROXY and "network is unreachable" in p.stderr
+                and (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy"))):
+            _VIA_PROXY = True
+            continue
+        break
     return p.returncode, p.stdout, p.stderr
+
+
+def reach_hint(err):
+    """What to do when the API server cannot be reached from a sandbox (empty when not that case):
+    the direct dial is unreachable, or the call went through the proxy and the proxy refused it
+    ("user denied", 2026-11-26). An RBAC "Forbidden" on a direct call gets no sandbox advice."""
+    direct = "network is unreachable" in err
+    refused = _VIA_PROXY and re.search(r"user denied|proxyconnect|Forbidden", err)
+    if not (direct or refused):
+        return ""
+    host = re.search(r"dial tcp ([^\s:]+:\d+)", err) or re.search(r"https://([^/\s\"]+)", err)
+    entry = f'"{host.group(1)}"' if host else '"<api-server-host>:<port>"'
+    return (f"\n  a sandboxed session reaches the API server only through its proxy: allow it in "
+            f"settings.json, sandbox.network.allowedDomains: [{entry}] (kubegraph already routes "
+            f"its kubectl calls through the proxy; a kubectl you run yourself needs NO_PROXY= no_proxy=)")
 
 
 def clean_err(err):
@@ -190,7 +231,7 @@ def current_context():
         rc, out, err = kubectl(None, ["config", "current-context"], timeout=15)
     if rc != 0 or not out.strip():
         # name the saved snapshots: an offline one (`snapshot --from`) is queried by its own context
-        saved = sorted(f[:-3] for f in os.listdir(DB_DIR) if f.endswith(".db")) if os.path.isdir(DB_DIR) else []
+        saved = sorted({f[:-3] for d in DB_DIRS if os.path.isdir(d) for f in os.listdir(d) if f.endswith(".db")})
         hint = f" (snapshots here: {', '.join(saved)})" if saved else ""
         raise SystemExit(f"kubegraph: no current kubectl context ({err.strip()}); pass --context{hint}")
     return out.strip()
@@ -1243,16 +1284,44 @@ def selects(sel, pod):
 
 # --------------------------------------------------------------------------- snapshot
 
+def db_name(ctx):
+    return re.sub(r"[^A-Za-z0-9_.@-]+", "_", ctx) + ".db"
+
+
 def db_path(args, ctx):
+    """Where `snapshot` writes: --db, else DB_DIR."""
     if getattr(args, "db", None):
         return args.db
-    return os.path.join(DB_DIR, re.sub(r"[^A-Za-z0-9_.@-]+", "_", ctx) + ".db")
+    return os.path.join(DB_DIR, db_name(ctx))
+
+
+def _taken_at(path):
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            row = db.execute("SELECT value FROM meta WHERE key='taken_at'").fetchone()
+        finally:
+            db.close()
+        return float(json.loads(row[0])) if row else 0.0
+    except (sqlite3.Error, ValueError, TypeError):
+        return 0.0
+
+
+def find_db(args, ctx):
+    """What a query reads: --db, else the most recently taken snapshot of ctx in any of DB_DIRS,
+    else the path `snapshot` would write. Reading only DB_DIR made a sandboxed session (which
+    writes to $TMPDIR) ignore the snapshot taken outside it in ~/.cache, and serve an older one."""
+    if getattr(args, "db", None):
+        return args.db
+    found = [p for p in (os.path.join(d, db_name(ctx)) for d in DB_DIRS) if os.path.isfile(p)]
+    return max(found, key=_taken_at) if found else db_path(args, ctx)
 
 
 def collect(ctx, namespaces, include, exclude, timeout, jobs):
     rc, out, err = kubectl(ctx, ["api-resources", "--verbs=list", "-o", "wide"], timeout=timeout)
     if rc != 0 and not out:
-        raise SystemExit(f"kubegraph: cannot reach the cluster of context {ctx}: {err.strip()[:300]}")
+        raise SystemExit(f"kubegraph: cannot reach the cluster of context {ctx}: {err.strip()[:300]}"
+                         + reach_hint(err))
     resources = parse_api_resources(out)
     # an unavailable aggregated API (APIService) makes discovery partial: name the groups, once
     groups = sorted(set(re.findall(r"couldn't get resource list for ([^:\s]+)", err)))
@@ -2639,7 +2708,7 @@ def open_graph(a):
         path = a.db
     else:
         ctx = ctx or current_context()
-        path = db_path(a, ctx)
+        path = find_db(a, ctx)
     fresh = None
     if os.path.exists(path):
         g = Graph(path)

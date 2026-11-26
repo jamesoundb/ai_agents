@@ -22,6 +22,9 @@ steps (cordon, restart, delete) are named for an operator, never run.
 
 1. **Context.** `kubectl config current-context`; if it is not clearly the cluster the developer means,
    ask. Pass `--context NAME` on every engine call.
+   In a sandboxed Claude Code session: the cluster is reachable once the developer allows the API
+   server in `sandbox.network.allowedDomains` (cluster-graph names the entry); a kubectl you run
+   yourself there needs `NO_PROXY= no_proxy=` in front.
 2. **Sweep in one call:** `../cluster-graph/scripts/run.sh health --context NAME` (`-n NS` for a
    namespace). Add `--refresh` if a fix was applied since the last snapshot.
 3. **Read it top-down; the order is the triage order:**

@@ -20,6 +20,9 @@ cluster: the fix goes into the manifest or Helm values for the developer or GitO
 
 1. **Context.** `kubectl config current-context`; ask when it is not clearly the right cluster, then pass
    `--context NAME` on every call.
+   In a sandboxed Claude Code session: the cluster is reachable once the developer allows the API
+   server in `sandbox.network.allowedDomains` (cluster-graph names the entry); a kubectl you run
+   yourself there needs `NO_PROXY= no_proxy=` in front.
 2. **One call:** `../cluster-graph/scripts/run.sh why KIND/NAME -n NS --context NAME` (several objects
    at once if the report names several). It prints the owner chain, children, failing dependencies,
    the Services that select the pods, warning events, `cause:`, `advice:`, the failing container's last

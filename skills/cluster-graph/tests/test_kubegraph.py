@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -436,12 +437,12 @@ class OfflineContext(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="kubegraph-offline-")
-        self.saved = kg.DB_DIR, os.environ.get("KUBECONFIG")
-        kg.DB_DIR = self.tmp
+        self.saved = kg.DB_DIR, os.environ.get("KUBECONFIG"), getattr(kg, "DB_DIRS", None)
+        kg.DB_DIR, kg.DB_DIRS = self.tmp, [self.tmp]
         os.environ["KUBECONFIG"] = os.path.join(self.tmp, "no-kubeconfig")   # no current context
 
     def tearDown(self):
-        kg.DB_DIR = self.saved[0]
+        kg.DB_DIR, kg.DB_DIRS = self.saved[0], self.saved[2]
         if self.saved[1] is None:
             os.environ.pop("KUBECONFIG", None)
         else:
@@ -517,6 +518,119 @@ class ReadOnlyCache(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(ws, ".kubegraph", "agents-test.db")), r.stdout + r.stderr)
         q = self.cli("--context", "agents-test", "health", "-n", "kg-faults", tmpdir=bad_tmp, cwd=ws)
         self.assertEqual(q.returncode, 0, q.stderr[-800:])
+
+
+class SnapshotDirs(unittest.TestCase):
+    """A sandbox can read ~/.cache/kubegraph but not write it, so snapshot writes elsewhere ($TMPDIR).
+    A query has to read the newest snapshot it can see wherever it is: reading only the write
+    directory ignored a snapshot taken outside the sandbox and served a 48-day-old one from $TMPDIR
+    instead (live probe 2026-11-26)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="kubegraph-dirs-")
+        self.home, self.sbx = os.path.join(self.tmp, "home"), os.path.join(self.tmp, "sbx")
+        self.saved = kg.DB_DIR, getattr(kg, "DB_DIRS", None)
+        kg.DB_DIRS, kg.DB_DIR = [self.home, self.sbx], self.sbx   # home readable only, as in the sandbox
+
+    def tearDown(self):
+        kg.DB_DIR, kg.DB_DIRS = self.saved
+        shutil.rmtree(self.tmp)
+
+    def snapshot_in(self, d, taken_at):
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, "agents-test.db")
+        rc, out = run("snapshot", "--from", FIXTURE, "--db", path)
+        self.assertEqual(rc, 0, out)
+        db = sqlite3.connect(path)
+        db.execute("UPDATE meta SET value=? WHERE key='taken_at'", (json.dumps(taken_at),))
+        db.commit()
+        db.close()
+        return path
+
+    def query_header(self):
+        rc, out = run("--context", "agents-test", "--no-refresh", "health", "-n", "kg-faults")
+        self.assertEqual(rc, 0, out)
+        return out.splitlines()[0]
+
+    def test_query_reads_the_newest_snapshot_in_any_directory(self):
+        day = 86400
+        self.snapshot_in(self.sbx, time.time() - 10 * day)        # old one where snapshot writes
+        self.snapshot_in(self.home, time.time() - 1 * day)        # newer one taken outside the sandbox
+        self.assertIn("snapshot 1d old", self.query_header())
+        self.snapshot_in(self.sbx, time.time() - 3600)            # newer still, in the write dir
+        self.assertIn("snapshot 1h old", self.query_header())
+
+    def test_query_with_no_snapshot_says_where_it_looked(self):
+        rc, _ = run("--context", "agents-test", "--no-refresh", "health", "-n", "kg-faults")
+        self.assertIn(os.path.join(self.sbx, "agents-test.db"), str(rc))
+
+    def test_snapshot_writes_to_the_writable_directory(self):
+        self.assertEqual(kg.db_path(argparse_ns(), "agents-test"), os.path.join(self.sbx, "agents-test.db"))
+
+
+class SandboxProxy(unittest.TestCase):
+    """A Claude Code sandbox reaches the network only through its proxy (HTTPS_PROXY) and sets
+    NO_PROXY to every private range, so kubectl dials a private API server (minikube, a private GKE
+    endpoint) directly and fails: "dial tcp 192.168.49.2:8443: connect: network is unreachable"
+    (live probe 2026-11-26). With the address in sandbox.network.allowedDomains and NO_PROXY cleared,
+    the same call works through the proxy."""
+
+    FAKE = """#!/bin/sh
+# Fake kubectl inside a sandbox: the API server is reachable only through the proxy.
+case ",$NO_PROXY,$no_proxy," in
+  *192.168.0.0/16*) echo 'Unable to connect to the server: dial tcp 192.168.49.2:8443: connect: network is unreachable' >&2; exit 1 ;;
+esac
+echo "via-proxy $*"
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="kubegraph-proxy-")
+        fake = os.path.join(self.tmp, "kubectl")
+        with open(fake, "w") as f:
+            f.write(self.FAKE)
+        os.chmod(fake, 0o755)
+        self.saved = kg.KUBECTL, dict(os.environ), getattr(kg, "_VIA_PROXY", False)
+        kg.KUBECTL, kg._VIA_PROXY = fake, False
+        os.environ.update(NO_PROXY="localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+                          no_proxy="localhost,127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
+
+    def tearDown(self):
+        kg.KUBECTL, kg._VIA_PROXY = self.saved[0], self.saved[2]
+        os.environ.clear()
+        os.environ.update(self.saved[1])
+        shutil.rmtree(self.tmp)
+
+    def test_unreachable_direct_route_retries_through_the_proxy(self):
+        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:3128"
+        rc, out, _ = kg.kubectl("agents-test", ["get", "nodes"])
+        self.assertEqual((rc, out.strip()), (0, "via-proxy --context agents-test get nodes"))
+        rc, out, _ = kg.kubectl("agents-test", ["get", "pods"])     # later calls go straight via the proxy
+        self.assertEqual(rc, 0)
+
+    def test_no_proxy_set_means_no_retry(self):
+        os.environ.pop("HTTPS_PROXY", None)
+        os.environ.pop("https_proxy", None)
+        rc, _, err = kg.kubectl("agents-test", ["get", "nodes"])
+        self.assertEqual(rc, 1)
+        self.assertIn("network is unreachable", err)
+
+    def test_unreachable_error_names_the_sandbox_setting(self):
+        hint = kg.reach_hint("Unable to connect to the server: dial tcp 192.168.49.2:8443: connect: network is unreachable")
+        self.assertIn('sandbox.network.allowedDomains', hint)
+        self.assertIn('"192.168.49.2:8443"', hint)
+
+    def test_proxy_refusal_names_the_sandbox_setting_but_rbac_does_not(self):
+        refused = ('err="couldn\'t get current server API group list: Get "https://192.168.49.2:8443/api?timeout=32s": '
+                   'user denied"\nUnable to connect to the server: user denied')
+        kg._VIA_PROXY = True                                  # the call went through the sandbox proxy
+        self.assertIn('"192.168.49.2:8443"', kg.reach_hint(refused))
+        kg._VIA_PROXY = False                                 # a direct call refused by RBAC
+        self.assertEqual(kg.reach_hint('Error from server (Forbidden): pods is forbidden: User "dev" cannot list'), "")
+
+
+def argparse_ns(**kw):
+    import argparse
+    return argparse.Namespace(db=None, **kw)
 
 
 if __name__ == "__main__":
