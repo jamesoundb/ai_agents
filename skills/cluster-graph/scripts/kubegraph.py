@@ -2052,6 +2052,9 @@ def q_why(g, a):
                        "controller's diagnosis; the controller's own logs have the detail")
             if adv:
                 print(f"advice: {adv}")
+            imm = immutable_note(g, c, via)
+            if imm:
+                print(f"immutable: {imm}")
             if g.nodes[c][1] == "Pod" and not a.no_logs:
                 for l in pod_logs(g, c, a.tail):
                     print(l)
@@ -2062,6 +2065,48 @@ def q_why(g, a):
                 print("next: " + " ; ".join(nxt))
         elif g.h(i)[0] in ("ok", "-"):
             print("cause: none found; the object and everything it depends on look healthy in this snapshot")
+
+
+DRY_RUN_SERVER = "validate with `kubectl apply --dry-run=server -f FILE`: a client dry-run accepts the change"
+
+
+def immutable_note(g, c, via):
+    """When the fix for cause `c` changes a field Kubernetes fixes at creation, say how it gets applied.
+    A corrected manifest does not apply over the existing object, and a client dry-run passes it: on
+    minikube 2026-11-26 the server rejected a changed storageClassName on a Pending PVC ("spec is immutable
+    after creation except resources.requests for bound claims") and a changed Job command ("spec.template:
+    ... field is immutable"), and `--dry-run=client` reported both "configured". None for other causes."""
+    kind = g.nodes[c][1]
+    # The claim whose spec the fix changes: the failing claim itself, or the claim naming a missing StorageClass
+    pvc = c if kind == "PersistentVolumeClaim" else \
+        via if kind == "StorageClass" and via and g.nodes.get(via, [0, ""])[1] == "PersistentVolumeClaim" else None
+    if pvc and (g.raw(pvc).get("status") or {}).get("phase") == "Pending":
+        ns, name = g.nodes[pvc][3], g.nodes[pvc][4]
+        note = (f"a claim's spec is fixed at creation (only resources.requests grows, on a bound claim): a changed "
+                f"storageClassName, accessModes or volumeMode does not apply over {pvc}. An operator deletes "
+                f"the claim (Pending, never bound: no data lost), then GitOps recreates it from the fixed manifest")
+        # A claim stamped from a StatefulSet's volumeClaimTemplates is named <template>-<statefulset>-<ordinal>
+        for j, n in g.nodes.items():
+            if n[1] != "StatefulSet" or n[3] != ns:
+                continue
+            tpls = [(t.get("metadata") or {}).get("name") or "" for t in
+                    (g.raw(j).get("spec") or {}).get("volumeClaimTemplates") or []]
+            if any(re.fullmatch(f"{re.escape(t)}-{re.escape(n[4])}-[0-9]+", name) for t in tpls if t):
+                note = (f"{pvc} comes from {j} volumeClaimTemplates, and neither can change after creation: fix "
+                        f"the template; an operator deletes the StatefulSet with --cascade=orphan (running pods "
+                        f"stay), then the Pending claim (never bound: no data lost) and its pod; GitOps recreates "
+                        f"the StatefulSet, which creates both again from the fixed template")
+                break
+        if kind == "StorageClass":
+            note += f"; creating {c} instead needs no recreate"
+        return f"{note}; {DRY_RUN_SERVER}"
+    # A standalone Job (a CronJob's Jobs come from its template, which can change)
+    job = g.root(c) if kind in ("Pod", "Job") else None
+    if job and g.nodes[job][1] == "Job":
+        return (f"a Job's pod template is fixed at creation: a changed command, image, env or resources does not "
+                f"apply over {job}. It is deleted (an operator, ttlSecondsAfterFinished, a Helm hook delete policy "
+                f"or Argo CD Replace=true) and recreated from the fixed manifest; {DRY_RUN_SERVER}")
+    return None
 
 
 def next_steps(g, i):

@@ -77,7 +77,10 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
 - `why OBJ...`: the object, its owner chain, children (collapsed when identical), dependencies and
   dependents (including Services that select its pods), warning events of the object, its children and
   the PVCs it uses, then `cause:` (a missing dependency first, then the deepest failing dependency, then
-  the deepest failing pod), `advice:` for that class, the failing container's last 20 log lines
+  the deepest failing pod), `advice:` for that class, `immutable:` when the fix changes a field fixed at
+  creation (a Pending PVC's spec, a StatefulSet's volumeClaimTemplates, a standalone Job's pod template:
+  the delete-and-recreate step an operator runs, and `--dry-run=server`, since a client dry-run accepts
+  it), the failing container's last 20 log lines
   (`--previous` when it restarted; `--tail N`, `--no-logs`; live snapshots only) and `next:` commands.
   For a Service whose selector matches nothing it prints the closest pod label sets.
 - `why` and `show` print where the repository defines the

@@ -63,7 +63,11 @@ objects `helm-chart-review`; what in the repository references a manifest object
    at`, `not defined in this repository`) and `used-by OBJ` lists what uses it live, so `blast-radius`
    adds nothing for plain manifests; use it only when code, Helm templates or Kustomize may reference
    the object. `kubectl apply --dry-run` needs an API server: with a saved snapshot there is none, so
-   skip it and say so under "Limits" instead of trying.
+   skip it and say so under "Limits" instead of trying. For an object that already exists, validate with
+   `--dry-run=server`: a client dry-run does not check fields fixed at creation. When `why` prints
+   `immutable:` (a Pending PVC's spec, a StatefulSet's volumeClaimTemplates, a Job's pod template), the
+   fix does not apply over the live object: the report names the operator step it gives (delete and
+   recreate) next to the diff.
 6. After the developer or GitOps applies it, re-check with `why OBJ --refresh`.
 
 ## Cost work
@@ -95,8 +99,8 @@ fallback when there is no evidence at all, and you must say so.
 4. Guardrails: `k8s-guardrails` (LimitRange, ResourceQuota per build namespace, optional janitor);
    roll out LimitRange first, quota second, janitor last, one namespace at a time.
 5. Verify every manifest you touch with `kubectl apply --dry-run=client -f` (and `--dry-run=server`
-   when a cluster is reachable; with none, as with a saved snapshot, both fail: skip them and say so
-   under "Limits"); `blast-radius` for what references a changed ConfigMap/Secret/Service
+   when a cluster is reachable: only it rejects a field fixed at creation, such as a Job's resources;
+   with no cluster, as with a saved snapshot, both fail: skip them and say so under "Limits"); `blast-radius` for what references a changed ConfigMap/Secret/Service
    in the repository, `cluster-graph used-by` for what uses it live.
 
 ## Target environment (assumptions; adjust to the organization)

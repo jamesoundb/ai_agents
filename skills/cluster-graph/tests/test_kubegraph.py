@@ -142,6 +142,24 @@ class Fixture(unittest.TestCase):
         out = self.q("why", "deploy/uses-pvc")
         self.assertIn("cause: StorageClass/does-not-exist missing", out)
 
+    def test_immutable_fix_notes(self):
+        # Live run 2026-11-26: the agent changed storageClassName on the Pending claim without saying the API
+        # server rejects that on the existing claim; a client dry-run passed it.
+        out = self.q("why", "deploy/uses-pvc", "--no-logs")
+        imm = [l for l in out.splitlines() if l.startswith("immutable: ")]
+        self.assertEqual(len(imm), 1, out)
+        self.assertIn("does not apply over PersistentVolumeClaim/kg-faults/data-pending", imm[0])
+        self.assertIn("An operator deletes the claim (Pending, never bound: no data lost)", imm[0])
+        self.assertIn("creating StorageClass/does-not-exist instead needs no recreate", imm[0])
+        self.assertIn("--dry-run=server", imm[0])
+        # A standalone Job's pod template is immutable too: the fix for its failing pod
+        out = self.q("why", "job/migrate-db", "--no-logs")
+        self.assertIn("immutable: a Job's pod template is fixed at creation", out)
+        self.assertIn("does not apply over Job/kg-faults/migrate-db", out)
+        # A Deployment's pod template and a missing ConfigMap need no recreate
+        out = self.q("why", "deploy/crashy", "deploy/missing-config", "--no-logs")
+        self.assertNotIn("immutable:", out)
+
     def test_job_backoff(self):
         self.assertEqual(self.health("Job/kg-faults/migrate-db"), ("fail", "BackoffLimitExceeded"))
 
@@ -626,6 +644,65 @@ echo "via-proxy $*"
         self.assertIn('"192.168.49.2:8443"', kg.reach_hint(refused))
         kg._VIA_PROXY = False                                 # a direct call refused by RBAC
         self.assertEqual(kg.reach_hint('Error from server (Forbidden): pods is forbidden: User "dev" cannot list'), "")
+
+
+class StatefulSetClaim(unittest.TestCase):
+    """A Pending claim stamped from a StatefulSet's volumeClaimTemplates: the template is immutable on the
+    StatefulSet too, so the fix needs the StatefulSet recreated (--cascade=orphan), not only the claim."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="kubegraph-sts-")
+        snap = os.path.join(self.tmp, "snap")
+        shutil.copytree(FIXTURE, snap)
+        ns = "kg-faults"
+        sts = {"apiVersion": "apps/v1", "kind": "StatefulSet",
+               "metadata": {"name": "db", "namespace": ns, "uid": "sts-db-uid"},
+               "spec": {"replicas": 1, "serviceName": "db", "selector": {"matchLabels": {"app": "db"}},
+                        "template": {"metadata": {"labels": {"app": "db"}},
+                                     "spec": {"containers": [{"name": "db", "image": "busybox:1.36"}]}},
+                        "volumeClaimTemplates": [{"metadata": {"name": "data"},
+                                                  "spec": {"storageClassName": "does-not-exist"}}]},
+               "status": {"replicas": 1, "readyReplicas": 0}}
+        pvc = {"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+               "metadata": {"name": "data-db-0", "namespace": ns, "labels": {"app": "db"}},
+               "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "does-not-exist",
+                        "resources": {"requests": {"storage": "1Gi"}}},
+               "status": {"phase": "Pending"}}
+        pod = {"apiVersion": "v1", "kind": "Pod",
+               "metadata": {"name": "db-0", "namespace": ns, "labels": {"app": "db"},
+                            "ownerReferences": [{"kind": "StatefulSet", "name": "db", "uid": "sts-db-uid",
+                                                 "controller": True}]},
+               "spec": {"containers": [{"name": "db", "image": "busybox:1.36"}],
+                        "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": "data-db-0"}}]},
+               "status": {"phase": "Pending", "conditions": [
+                   {"type": "PodScheduled", "status": "False", "reason": "Unschedulable",
+                    "message": "0/2 nodes are available: 2 pod has unbound immediate PersistentVolumeClaims."}]}}
+        with open(os.path.join(snap, "statefulsets.apps.json"), "w") as f:
+            json.dump({"kind": "List", "items": [sts]}, f)
+        for fn, obj in (("persistentvolumeclaims.json", pvc), ("pods.json", pod)):
+            p = os.path.join(snap, fn)
+            with open(p) as f:
+                data = json.load(f)
+            data["items"].append(obj)
+            with open(p, "w") as f:
+                json.dump(data, f)
+        self.db = os.path.join(self.tmp, "sts.db")
+        rc, out = run("snapshot", "--from", snap, "--db", self.db)
+        self.assertEqual(rc, 0, out)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_template_claim_names_the_statefulset_recreate(self):
+        rc, out = run("--db", self.db, "--no-refresh", "why", "sts/db", "--no-logs")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("cause: StorageClass/does-not-exist missing", out)
+        imm = [l for l in out.splitlines() if l.startswith("immutable: ")]
+        self.assertEqual(len(imm), 1, out)
+        self.assertIn("PersistentVolumeClaim/kg-faults/data-db-0 comes from StatefulSet/kg-faults/db "
+                      "volumeClaimTemplates", imm[0])
+        self.assertIn("deletes the StatefulSet with --cascade=orphan", imm[0])
+        self.assertIn("--dry-run=server", imm[0])
 
 
 def argparse_ns(**kw):
