@@ -19,7 +19,9 @@ scripts/run.sh snapshot --from DIR [--db PATH]        # offline: saved `kubectl 
 - Stored in `~/.cache/kubegraph/<context>.db` (`KUBEGRAPH_DIR`, `--db`), written atomically; where
   `~/.cache` is read-only (a Claude Code sandbox) in `$TMPDIR/kubegraph/`, else `./.kubegraph/` in the
   working directory (never bare `/tmp`, which a sandbox may give each command fresh). Every command
-  resolves the same way, so queries need no `--db`; `snapshot` prints the path it wrote. Queries
+  resolves the same way for writing, so queries need no `--db`; `snapshot` prints the path it wrote.
+  A query reads the most recently taken snapshot of the context in any of those directories (a
+  sandbox can read `~/.cache/kubegraph` but not write it). Queries
   re-snapshot a live snapshot older than `--max-age` (default 300 s, `KUBEGRAPH_MAX_AGE`) with the same
   scope; `--refresh` forces it, `--no-refresh` never does. `--from` snapshots are never refreshed.
 - `--save DIR` writes the sanitized lists, `api-resources.json` and `meta.json`: the input for `--from`,
@@ -126,3 +128,19 @@ All take `--context`, `--db`, `-n NS`, `--refresh`, `--no-refresh`, `--max-age S
   generic references (`secretName`, `serviceName`, `*Ref.name` to objects that exist).
 - Large clusters: the snapshot holds every object's sanitized JSON (roughly 5-10 KB per pod). Use `-n`
   when only some namespaces matter.
+
+## Sandboxed sessions (Claude Code)
+
+A sandboxed Bash call has no network route of its own: it reaches the network through Claude
+Code's proxy (`HTTPS_PROXY`), only to hosts in `sandbox.network.allowedDomains`, and `NO_PROXY` lists
+every private range (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, ...). kubectl therefore dials a
+private API server directly and fails with "network is unreachable". kubegraph then re-runs the call
+with `NO_PROXY` cleared, through the proxy, and keeps doing so for the rest of the process. If the
+proxy refuses the host ("user denied"), the error names the entry to add:
+
+    "sandbox": {"network": {"allowedDomains": ["192.168.49.2:8443"]}}
+
+in the developer's `~/.claude/settings.json` or the project's `.claude/settings.json` (a plugin cannot
+ship it). Checked 2026-11-26 on minikube (CLI 2.1.331): with the entry, a live `snapshot` and a query
+in a later call work from the sandbox. A public endpoint (most GKE clusters) is outside `NO_PROXY`
+and needs only the entry.

@@ -24,6 +24,16 @@ Antigravity denies a chain if any part lacks a grant, and installed skill folder
 the working directory. Read-only by construction: it only runs `get`, `api-resources`, `logs`,
 `version` and `config current-context`. Secret values are never stored (key names only).
 
+**From a sandboxed Claude Code session.** The sandbox gives Bash no network of its own: traffic leaves
+through its proxy, to the hosts in `sandbox.network.allowedDomains`, and `NO_PROXY` covers every
+private range, so a private API server (minikube, a private GKE endpoint) is "network is unreachable".
+kubegraph then re-runs its kubectl calls through the proxy by itself; the developer only has to allow
+the API server, which a plugin cannot do for them. `snapshot` says so when it is missing, with the
+entry to add (`"sandbox": {"network": {"allowedDomains": ["192.168.49.2:8443"]}}` in their
+settings.json). Pass that on; never edit their settings. A kubectl you run yourself there needs
+`NO_PROXY= no_proxy=` in front. The snapshot goes to `$TMPDIR/kubegraph/` (`~/.cache` is read-only);
+queries read the newest snapshot of the context wherever it is, one taken outside the sandbox included.
+
 ## Workflow
 
 1. **Pick the context explicitly.** The snapshot is per context (`~/.cache/kubegraph/<context>.db`).

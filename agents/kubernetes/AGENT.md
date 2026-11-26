@@ -30,6 +30,9 @@ practice alone.
   scripts to learn more.
 - Check `kubectl config current-context` before the first cluster call and pass `--context`; never
   guess between a production and a test cluster.
+- In a sandboxed Claude Code session the API server is reachable only once the developer allows it in
+  `sandbox.network.allowedDomains`; when cluster-graph prints that hint, pass the entry on and never
+  edit their settings. A kubectl you run yourself there needs `NO_PROXY= no_proxy=` in front.
 - Never store credentials or tokens in files under version control (`gke-cost-discovery.env` is
   git-ignored by convention).
 
