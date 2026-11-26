@@ -17,7 +17,9 @@ between two orgs, or two providers, appears as soon as both are built.
 
 Per repository: name, path, description, topics, primary language, default branch, archived and
 fork flags, last activity, a README summary, and the repositories it depends on, each with
-file:line: git submodules, npm / Go / Python dependencies, Maven (parents, BOMs, properties),
+file:line: git submodules, npm (workspaces, local and aliased packages, internal packages from
+lockfiles) / Go (replace, go.work) / Python (Poetry, uv, PDM, Hatch, Pipfile, setup.py, conda)
+dependencies, Ruby gems, Composer, Dart / Flutter, Hex, Deno, R and Perl git sources, Maven (parents, BOMs, properties),
 Gradle (version catalogs, convention plugins, plugin ids, composite builds), sbt, Clojure, .NET
 (PackageReference, ProjectReference to sibling repositories, packages.config, paket), C and C++
 (CMake FetchContent / ExternalProject / CPM / find_package, Conan, vcpkg, Meson wraps), Rust (Cargo),

@@ -46,6 +46,8 @@ VIA_TEXT = {
     "vcpkg": "vcpkg dependency", "meson": "Meson wrap", "cargo": "Cargo dependency", "swiftpm": "Swift package",
     "cocoapods": "CocoaPods pod", "carthage": "Carthage dependency", "bazel": "Bazel module / repository",
     "cabal": "Cabal source package", "zig": "Zig dependency", "mix": "Mix dependency", "rebar": "rebar3 dependency",
+    "npm-lock": "npm lockfile (transitive)", "deno": "Deno import", "gems": "Ruby gem", "composer": "Composer package",
+    "pub": "Dart / Flutter package", "r-remotes": "R remote", "cpanfile": "cpanfile git dependency",
 }
 
 

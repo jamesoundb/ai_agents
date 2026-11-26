@@ -1,0 +1,2 @@
+requires 'Acme::Lib', git => 'http://{HOST}/{ORG}/perl-lib.git';
+requires 'DBI';

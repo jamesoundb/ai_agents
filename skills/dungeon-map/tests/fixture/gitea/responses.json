@@ -11,7 +11,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/base-image.git",
-   "created_at": "2026-11-24T20:41:57Z",
+   "created_at": "2026-11-26T17:56:45Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -52,7 +52,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -89,7 +89,7 @@
    "topics": [
     "docker"
    ],
-   "updated_at": "2026-11-24T20:41:57Z",
+   "updated_at": "2026-11-26T17:56:46Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/base-image",
    "watchers_count": 1,
    "website": ""
@@ -105,7 +105,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/bazel-app.git",
-   "created_at": "2026-11-24T20:41:57Z",
+   "created_at": "2026-11-26T17:56:46Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -146,7 +146,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -183,7 +183,7 @@
    "topics": [
     "bazel"
    ],
-   "updated_at": "2026-11-24T20:41:58Z",
+   "updated_at": "2026-11-26T17:56:46Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/bazel-app",
    "watchers_count": 1,
    "website": ""
@@ -199,7 +199,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/bazel-rules.git",
-   "created_at": "2026-11-24T20:41:57Z",
+   "created_at": "2026-11-26T17:56:46Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -240,7 +240,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -277,7 +277,7 @@
    "topics": [
     "bazel"
    ],
-   "updated_at": "2026-11-24T20:41:58Z",
+   "updated_at": "2026-11-26T17:56:47Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/bazel-rules",
    "watchers_count": 1,
    "website": ""
@@ -293,7 +293,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/big-monorepo.git",
-   "created_at": "2026-11-24T20:41:58Z",
+   "created_at": "2026-11-26T17:56:46Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -334,7 +334,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -371,7 +371,7 @@
    "topics": [
     "monorepo"
    ],
-   "updated_at": "2026-11-24T20:41:58Z",
+   "updated_at": "2026-11-26T17:56:47Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo",
    "watchers_count": 1,
    "website": ""
@@ -387,7 +387,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/billing-core.git",
-   "created_at": "2026-11-24T20:41:58Z",
+   "created_at": "2026-11-26T17:56:47Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -428,7 +428,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -466,7 +466,7 @@
     "java",
     "maven"
    ],
-   "updated_at": "2026-11-24T20:41:58Z",
+   "updated_at": "2026-11-26T17:56:47Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/billing-core",
    "watchers_count": 1,
    "website": ""
@@ -482,7 +482,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/checkout-web.git",
-   "created_at": "2026-11-24T20:41:58Z",
+   "created_at": "2026-11-26T17:56:47Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -523,7 +523,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -562,7 +562,7 @@
     "payments",
     "react"
    ],
-   "updated_at": "2026-11-24T20:41:59Z",
+   "updated_at": "2026-11-26T17:56:48Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/checkout-web",
    "watchers_count": 1,
    "website": ""
@@ -578,7 +578,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/ci-actions.git",
-   "created_at": "2026-11-24T20:41:59Z",
+   "created_at": "2026-11-26T17:56:47Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -619,7 +619,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -656,7 +656,7 @@
    "topics": [
     "ci"
    ],
-   "updated_at": "2026-11-24T20:41:59Z",
+   "updated_at": "2026-11-26T17:56:48Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/ci-actions",
    "watchers_count": 1,
    "website": ""
@@ -672,7 +672,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/clj-tools.git",
-   "created_at": "2026-11-24T20:41:59Z",
+   "created_at": "2026-11-26T17:56:48Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -713,7 +713,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -750,7 +750,7 @@
    "topics": [
     "clojure"
    ],
-   "updated_at": "2026-11-24T20:41:59Z",
+   "updated_at": "2026-11-26T17:56:48Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/clj-tools",
    "watchers_count": 1,
    "website": ""
@@ -766,7 +766,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/cpp-app.git",
-   "created_at": "2026-11-24T20:41:59Z",
+   "created_at": "2026-11-26T17:56:48Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -807,7 +807,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -844,7 +844,7 @@
    "topics": [
     "cpp"
    ],
-   "updated_at": "2026-11-24T20:42:00Z",
+   "updated_at": "2026-11-26T17:56:48Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-app",
    "watchers_count": 1,
    "website": ""
@@ -860,7 +860,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/cpp-core.git",
-   "created_at": "2026-11-24T20:42:00Z",
+   "created_at": "2026-11-26T17:56:48Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -901,7 +901,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -938,7 +938,7 @@
    "topics": [
     "cpp"
    ],
-   "updated_at": "2026-11-24T20:42:00Z",
+   "updated_at": "2026-11-26T17:56:49Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-core",
    "watchers_count": 1,
    "website": ""
@@ -954,7 +954,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/cpp-net.git",
-   "created_at": "2026-11-24T20:42:00Z",
+   "created_at": "2026-11-26T17:56:49Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -995,7 +995,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1032,7 +1032,7 @@
    "topics": [
     "cpp"
    ],
-   "updated_at": "2026-11-24T20:42:00Z",
+   "updated_at": "2026-11-26T17:56:49Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-net",
    "watchers_count": 1,
    "website": ""
@@ -1047,8 +1047,384 @@
    "archived": false,
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/dart-app.git",
+   "created_at": "2026-11-26T17:56:49Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Flutter mobile app",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/dart-app",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/dart-app",
+   "id": 12,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/dart-app/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "dart-app",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/dart-app.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "dart"
+   ],
+   "updated_at": "2026-11-26T17:56:50Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/dart-app",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/dart-ui.git",
+   "created_at": "2026-11-26T17:56:50Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Flutter widgets",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/dart-ui",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/dart-ui",
+   "id": 13,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/dart-ui/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "dart-ui",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/dart-ui.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "dart"
+   ],
+   "updated_at": "2026-11-26T17:56:50Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/dart-ui",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/deno-core.git",
+   "created_at": "2026-11-26T17:56:50Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Shared Deno modules",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/deno-core",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/deno-core",
+   "id": 14,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/deno-core/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "deno-core",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/deno-core.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "deno"
+   ],
+   "updated_at": "2026-11-26T17:56:50Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/deno-core",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/deno-tool.git",
+   "created_at": "2026-11-26T17:56:50Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Deno command-line tool",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/deno-tool",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/deno-tool",
+   "id": 15,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/deno-tool/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "deno-tool",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/deno-tool.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "deno"
+   ],
+   "updated_at": "2026-11-26T17:56:51Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/deno-tool",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/design-tokens.git",
-   "created_at": "2026-11-24T20:42:00Z",
+   "created_at": "2026-11-26T17:56:51Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1066,7 +1442,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/design-tokens",
-   "id": 12,
+   "id": 16,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1089,7 +1465,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1127,7 +1503,7 @@
     "design",
     "frontend"
    ],
-   "updated_at": "2026-11-24T20:42:01Z",
+   "updated_at": "2026-11-26T17:56:51Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/design-tokens",
    "watchers_count": 1,
    "website": ""
@@ -1142,8 +1518,196 @@
    "archived": false,
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/ex-app.git",
+   "created_at": "2026-11-26T17:56:51Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Elixir Phoenix service",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/ex-app",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/ex-app",
+   "id": 17,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Elixir",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/ex-app/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "ex-app",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/ex-app.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "elixir"
+   ],
+   "updated_at": "2026-11-26T17:56:51Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/ex-app",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/ex-auth.git",
+   "created_at": "2026-11-26T17:56:51Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Elixir authentication library",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/ex-auth",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/ex-auth",
+   "id": 18,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Elixir",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/ex-auth/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "ex-auth",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/ex-auth.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "elixir"
+   ],
+   "updated_at": "2026-11-26T17:56:52Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/ex-auth",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/feature-store-client.git",
-   "created_at": "2026-11-24T20:42:00Z",
+   "created_at": "2026-11-26T17:56:52Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1161,7 +1725,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/feature-store-client",
-   "id": 13,
+   "id": 19,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1184,7 +1748,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1221,7 +1785,7 @@
    "topics": [
     "python"
    ],
-   "updated_at": "2026-11-24T20:42:01Z",
+   "updated_at": "2026-11-26T17:56:53Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/feature-store-client",
    "watchers_count": 1,
    "website": ""
@@ -1236,8 +1800,290 @@
    "archived": false,
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/go-log-fork.git",
+   "created_at": "2026-11-26T17:56:52Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Logging library fork",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/go-log-fork",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/go-log-fork",
+   "id": 20,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Go Module",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/go-log-fork/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "go-log-fork",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/go-log-fork.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "go"
+   ],
+   "updated_at": "2026-11-26T17:56:53Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/go-log-fork",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/go-tools.git",
+   "created_at": "2026-11-26T17:56:52Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Go developer tools",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/go-tools",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/go-tools",
+   "id": 21,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Go Module",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/go-tools/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "go-tools",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/go-tools.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "go"
+   ],
+   "updated_at": "2026-11-26T17:56:53Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/go-tools",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/go-workspace.git",
+   "created_at": "2026-11-26T17:56:53Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Go service in a go.work workspace",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/go-workspace",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/go-workspace",
+   "id": 22,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Go Module",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/go-workspace/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "go-workspace",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/go-workspace.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "go"
+   ],
+   "updated_at": "2026-11-26T17:56:53Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/go-workspace",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/gradle-conventions.git",
-   "created_at": "2026-11-24T20:42:01Z",
+   "created_at": "2026-11-26T17:56:53Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1255,7 +2101,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/gradle-conventions",
-   "id": 14,
+   "id": 23,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1278,7 +2124,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1315,7 +2161,7 @@
    "topics": [
     "gradle"
    ],
-   "updated_at": "2026-11-24T20:42:01Z",
+   "updated_at": "2026-11-26T17:56:54Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/gradle-conventions",
    "watchers_count": 1,
    "website": ""
@@ -1331,7 +2177,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/infra-live.git",
-   "created_at": "2026-11-24T20:42:01Z",
+   "created_at": "2026-11-26T17:56:54Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1349,7 +2195,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/infra-live",
-   "id": 15,
+   "id": 24,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1372,7 +2218,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1410,7 +2256,7 @@
     "helm",
     "terraform"
    ],
-   "updated_at": "2026-11-24T20:42:01Z",
+   "updated_at": "2026-11-26T17:56:54Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/infra-live",
    "watchers_count": 1,
    "website": ""
@@ -1426,7 +2272,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/inventory-scala.git",
-   "created_at": "2026-11-24T20:42:01Z",
+   "created_at": "2026-11-26T17:56:54Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1444,7 +2290,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/inventory-scala",
-   "id": 16,
+   "id": 25,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1467,7 +2313,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1504,7 +2350,7 @@
    "topics": [
     "scala"
    ],
-   "updated_at": "2026-11-24T20:42:02Z",
+   "updated_at": "2026-11-26T17:56:55Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/inventory-scala",
    "watchers_count": 1,
    "website": ""
@@ -1520,7 +2366,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/invoicing-dotnet.git",
-   "created_at": "2026-11-24T20:42:02Z",
+   "created_at": "2026-11-26T17:56:54Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1538,7 +2384,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/invoicing-dotnet",
-   "id": 17,
+   "id": 26,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1561,7 +2407,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1598,7 +2444,7 @@
    "topics": [
     "dotnet"
    ],
-   "updated_at": "2026-11-24T20:42:02Z",
+   "updated_at": "2026-11-26T17:56:55Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/invoicing-dotnet",
    "watchers_count": 1,
    "website": ""
@@ -1614,7 +2460,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/java-bom.git",
-   "created_at": "2026-11-24T20:42:02Z",
+   "created_at": "2026-11-26T17:56:55Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1632,7 +2478,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/java-bom",
-   "id": 18,
+   "id": 27,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1655,7 +2501,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1693,7 +2539,7 @@
     "java",
     "maven"
    ],
-   "updated_at": "2026-11-24T20:42:02Z",
+   "updated_at": "2026-11-26T17:56:55Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/java-bom",
    "watchers_count": 1,
    "website": ""
@@ -1708,8 +2554,196 @@
    "archived": false,
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/js-mono.git",
+   "created_at": "2026-11-26T17:56:55Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Web front ends in one npm workspace",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/js-mono",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/js-mono",
+   "id": 28,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "js-mono",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 24,
+   "ssh_url": "git@localhost:dmtest/js-mono.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "javascript"
+   ],
+   "updated_at": "2026-11-26T17:56:55Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/js-shared.git",
+   "created_at": "2026-11-26T17:56:55Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Shared JavaScript helpers",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/js-shared",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/js-shared",
+   "id": 29,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/js-shared/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "js-shared",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/js-shared.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "javascript"
+   ],
+   "updated_at": "2026-11-26T17:56:56Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/js-shared",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/ledger-dotnet.git",
-   "created_at": "2026-11-24T20:42:02Z",
+   "created_at": "2026-11-26T17:56:56Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1727,7 +2761,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/ledger-dotnet",
-   "id": 19,
+   "id": 30,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1750,7 +2784,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1787,7 +2821,7 @@
    "topics": [
     "dotnet"
    ],
-   "updated_at": "2026-11-24T20:42:03Z",
+   "updated_at": "2026-11-26T17:56:56Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/ledger-dotnet",
    "watchers_count": 1,
    "website": ""
@@ -1800,10 +2834,10 @@
    "allow_rebase_update": true,
    "allow_squash_merge": true,
    "archived": true,
-   "archived_at": "2026-11-24T20:42:03Z",
+   "archived_at": "2026-11-26T17:56:56Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/legacy-billing.git",
-   "created_at": "2026-11-24T20:42:02Z",
+   "created_at": "2026-11-26T17:56:56Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1821,7 +2855,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/legacy-billing",
-   "id": 20,
+   "id": 31,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1844,7 +2878,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1881,7 +2915,7 @@
    "topics": [
     "billing"
    ],
-   "updated_at": "2026-11-24T20:42:03Z",
+   "updated_at": "2026-11-26T17:56:56Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/legacy-billing",
    "watchers_count": 1,
    "website": ""
@@ -1897,7 +2931,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/ml-pipeline.git",
-   "created_at": "2026-11-24T20:42:03Z",
+   "created_at": "2026-11-26T17:56:56Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -1915,7 +2949,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/ml-pipeline",
-   "id": 21,
+   "id": 32,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -1938,7 +2972,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -1976,7 +3010,7 @@
     "ml",
     "python"
    ],
-   "updated_at": "2026-11-24T20:42:03Z",
+   "updated_at": "2026-11-26T17:56:57Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/ml-pipeline",
    "watchers_count": 1,
    "website": ""
@@ -1992,7 +3026,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/orders-service.git",
-   "created_at": "2026-11-24T20:42:03Z",
+   "created_at": "2026-11-26T17:56:57Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2010,7 +3044,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/orders-service",
-   "id": 22,
+   "id": 33,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2033,7 +3067,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2071,7 +3105,7 @@
     "gradle",
     "java"
    ],
-   "updated_at": "2026-11-24T20:42:03Z",
+   "updated_at": "2026-11-26T17:56:57Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/orders-service",
    "watchers_count": 1,
    "website": ""
@@ -2087,7 +3121,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/payments-api.git",
-   "created_at": "2026-11-24T20:42:03Z",
+   "created_at": "2026-11-26T17:56:57Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2105,7 +3139,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/payments-api",
-   "id": 23,
+   "id": 34,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2128,7 +3162,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2167,7 +3201,7 @@
     "payments",
     "service"
    ],
-   "updated_at": "2026-11-24T20:42:04Z",
+   "updated_at": "2026-11-26T17:56:58Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/payments-api",
    "watchers_count": 1,
    "website": ""
@@ -2182,8 +3216,384 @@
    "archived": false,
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/perl-app.git",
+   "created_at": "2026-11-26T17:56:57Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Legacy Perl batch jobs",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/perl-app",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/perl-app",
+   "id": 35,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Perl",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/perl-app/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "perl-app",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/perl-app.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "perl"
+   ],
+   "updated_at": "2026-11-26T17:56:58Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/perl-app",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/perl-lib.git",
+   "created_at": "2026-11-26T17:56:58Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Perl modules",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/perl-lib",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/perl-lib",
+   "id": 36,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Perl",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/perl-lib/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "perl-lib",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/perl-lib.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "perl"
+   ],
+   "updated_at": "2026-11-26T17:56:58Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/perl-lib",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/php-app.git",
+   "created_at": "2026-11-26T17:56:58Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "PHP customer site",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/php-app",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/php-app",
+   "id": 37,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/php-app/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "php-app",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/php-app.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "php"
+   ],
+   "updated_at": "2026-11-26T17:56:59Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/php-app",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/php-billing.git",
+   "created_at": "2026-11-26T17:56:59Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Invoice rendering for PHP",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/php-billing",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/php-billing",
+   "id": 38,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/php-billing/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "php-billing",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/php-billing.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "php"
+   ],
+   "updated_at": "2026-11-26T17:56:59Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/php-billing",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/platform-lib.git",
-   "created_at": "2026-11-24T20:42:04Z",
+   "created_at": "2026-11-26T17:56:59Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2201,7 +3611,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/platform-lib",
-   "id": 24,
+   "id": 39,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2224,7 +3634,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2262,7 +3672,7 @@
     "go",
     "library"
    ],
-   "updated_at": "2026-11-24T20:42:04Z",
+   "updated_at": "2026-11-26T17:56:59Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/platform-lib",
    "watchers_count": 1,
    "website": ""
@@ -2278,7 +3688,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/polyglot-tools.git",
-   "created_at": "2026-11-24T20:42:04Z",
+   "created_at": "2026-11-26T17:56:59Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2296,7 +3706,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/polyglot-tools",
-   "id": 25,
+   "id": 40,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2319,7 +3729,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2356,7 +3766,7 @@
    "topics": [
     "tools"
    ],
-   "updated_at": "2026-11-24T20:42:04Z",
+   "updated_at": "2026-11-26T17:57:00Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/polyglot-tools",
    "watchers_count": 1,
    "website": ""
@@ -2372,7 +3782,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/proto.git",
-   "created_at": "2026-11-24T20:42:04Z",
+   "created_at": "2026-11-26T17:57:00Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2390,7 +3800,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/proto",
-   "id": 26,
+   "id": 41,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2413,7 +3823,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2450,7 +3860,7 @@
    "topics": [
     "protobuf"
    ],
-   "updated_at": "2026-11-24T20:42:05Z",
+   "updated_at": "2026-11-26T17:57:00Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/proto",
    "watchers_count": 1,
    "website": ""
@@ -2465,8 +3875,666 @@
    "archived": false,
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/py-legacy.git",
+   "created_at": "2026-11-26T17:57:00Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Older Python job",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/py-legacy",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/py-legacy",
+   "id": 42,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Python",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "py-legacy",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/py-legacy.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "python"
+   ],
+   "updated_at": "2026-11-26T17:57:01Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/py-sdk.git",
+   "created_at": "2026-11-26T17:57:00Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Python client SDK",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/py-sdk",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/py-sdk",
+   "id": 43,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/py-sdk/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "py-sdk",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/py-sdk.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "python"
+   ],
+   "updated_at": "2026-11-26T17:57:01Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/py-sdk",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/py-uv-app.git",
+   "created_at": "2026-11-26T17:57:01Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Python service on uv",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/py-uv-app",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/py-uv-app",
+   "id": 44,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/py-uv-app/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "py-uv-app",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/py-uv-app.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "python"
+   ],
+   "updated_at": "2026-11-26T17:57:01Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/py-uv-app",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/r-report.git",
+   "created_at": "2026-11-26T17:57:01Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "R monthly reports",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/r-report",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/r-report",
+   "id": 45,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/r-report/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "r-report",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/r-report.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "r"
+   ],
+   "updated_at": "2026-11-26T17:57:02Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/r-report",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/r-utils.git",
+   "created_at": "2026-11-26T17:57:01Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "R helpers",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/r-utils",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/r-utils",
+   "id": 46,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/r-utils/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "r-utils",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/r-utils.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "r"
+   ],
+   "updated_at": "2026-11-26T17:57:02Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/r-utils",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/rb-app.git",
+   "created_at": "2026-11-26T17:57:02Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Rails admin console",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/rb-app",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/rb-app",
+   "id": 47,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Ruby",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/rb-app/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "rb-app",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/rb-app.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "ruby"
+   ],
+   "updated_at": "2026-11-26T17:57:02Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/rb-app",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
+   "clone_url": "http://localhost:3300/dmtest/rb-auth.git",
+   "created_at": "2026-11-26T17:57:02Z",
+   "default_allow_maintainer_edit": false,
+   "default_branch": "main",
+   "default_delete_branch_after_merge": false,
+   "default_merge_style": "merge",
+   "description": "Ruby authentication gem",
+   "empty": false,
+   "fork": false,
+   "forks_count": 0,
+   "full_name": "dmtest/rb-auth",
+   "has_actions": true,
+   "has_issues": true,
+   "has_packages": true,
+   "has_projects": true,
+   "has_pull_requests": true,
+   "has_releases": true,
+   "has_wiki": true,
+   "html_url": "http://localhost:3300/dmtest/rb-auth",
+   "id": 48,
+   "ignore_whitespace_conflicts": false,
+   "internal": false,
+   "internal_tracker": {
+    "allow_only_contributors_to_track_time": true,
+    "enable_issue_dependencies": true,
+    "enable_time_tracker": true
+   },
+   "language": "Ruby",
+   "languages_url": "http://localhost:3300/api/v1/repos/dmtest/rb-auth/languages",
+   "licenses": [],
+   "link": "",
+   "mirror": false,
+   "mirror_interval": "",
+   "mirror_updated": "0001-01-01T00:00:00Z",
+   "name": "rb-auth",
+   "object_format_name": "sha1",
+   "open_issues_count": 0,
+   "open_pr_counter": 0,
+   "original_url": "",
+   "owner": {
+    "active": false,
+    "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
+    "created": "2026-11-26T17:56:45Z",
+    "description": "",
+    "email": "",
+    "followers_count": 0,
+    "following_count": 0,
+    "full_name": "",
+    "html_url": "http://localhost:3300/dmtest",
+    "id": 2,
+    "is_admin": false,
+    "language": "",
+    "last_login": "0001-01-01T00:00:00Z",
+    "location": "",
+    "login": "dmtest",
+    "login_name": "",
+    "prohibit_login": false,
+    "restricted": false,
+    "source_id": 0,
+    "starred_repos_count": 0,
+    "username": "dmtest",
+    "visibility": "public",
+    "website": ""
+   },
+   "permissions": {
+    "admin": true,
+    "pull": true,
+    "push": true
+   },
+   "private": false,
+   "projects_mode": "all",
+   "release_counter": 0,
+   "size": 23,
+   "ssh_url": "git@localhost:dmtest/rb-auth.git",
+   "stars_count": 0,
+   "template": false,
+   "topics": [
+    "ruby"
+   ],
+   "updated_at": "2026-11-26T17:57:03Z",
+   "url": "http://localhost:3300/api/v1/repos/dmtest/rb-auth",
+   "watchers_count": 1,
+   "website": ""
+  },
+  {
+   "allow_fast_forward_only_merge": true,
+   "allow_merge_commits": true,
+   "allow_rebase": true,
+   "allow_rebase_explicit": true,
+   "allow_rebase_update": true,
+   "allow_squash_merge": true,
+   "archived": false,
+   "archived_at": "1970-01-01T00:00:00Z",
+   "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/rust-app.git",
-   "created_at": "2026-11-24T20:42:04Z",
+   "created_at": "2026-11-26T17:57:03Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2484,7 +4552,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/rust-app",
-   "id": 27,
+   "id": 49,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2507,7 +4575,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2544,7 +4612,7 @@
    "topics": [
     "rust"
    ],
-   "updated_at": "2026-11-24T20:42:05Z",
+   "updated_at": "2026-11-26T17:57:03Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/rust-app",
    "watchers_count": 1,
    "website": ""
@@ -2560,7 +4628,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/rust-core.git",
-   "created_at": "2026-11-24T20:42:05Z",
+   "created_at": "2026-11-26T17:57:03Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2578,7 +4646,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/rust-core",
-   "id": 28,
+   "id": 50,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2601,7 +4669,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2638,11 +4706,13 @@
    "topics": [
     "rust"
    ],
-   "updated_at": "2026-11-24T20:42:05Z",
+   "updated_at": "2026-11-26T17:57:03Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/rust-core",
    "watchers_count": 1,
    "website": ""
-  },
+  }
+ ],
+ "json orgs/dmtest/repos?limit=50&page=2": [
   {
    "allow_fast_forward_only_merge": true,
    "allow_merge_commits": true,
@@ -2654,7 +4724,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/rust-shared.git",
-   "created_at": "2026-11-24T20:42:05Z",
+   "created_at": "2026-11-26T17:57:03Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2672,7 +4742,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/rust-shared",
-   "id": 29,
+   "id": 51,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2695,7 +4765,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2732,7 +4802,7 @@
    "topics": [
     "rust"
    ],
-   "updated_at": "2026-11-24T20:42:05Z",
+   "updated_at": "2026-11-26T17:57:04Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/rust-shared",
    "watchers_count": 1,
    "website": ""
@@ -2748,7 +4818,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/service-chart.git",
-   "created_at": "2026-11-24T20:42:05Z",
+   "created_at": "2026-11-26T17:57:04Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2766,7 +4836,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/service-chart",
-   "id": 30,
+   "id": 52,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2789,7 +4859,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2826,7 +4896,7 @@
    "topics": [
     "helm"
    ],
-   "updated_at": "2026-11-24T20:42:06Z",
+   "updated_at": "2026-11-26T17:57:04Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/service-chart",
    "watchers_count": 1,
    "website": ""
@@ -2842,7 +4912,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/shared-dotnet.git",
-   "created_at": "2026-11-24T20:42:06Z",
+   "created_at": "2026-11-26T17:57:04Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2860,7 +4930,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/shared-dotnet",
-   "id": 31,
+   "id": 53,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2883,7 +4953,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -2920,7 +4990,7 @@
    "topics": [
     "dotnet"
    ],
-   "updated_at": "2026-11-24T20:42:06Z",
+   "updated_at": "2026-11-26T17:57:04Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/shared-dotnet",
    "watchers_count": 1,
    "website": ""
@@ -2936,7 +5006,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/swift-app.git",
-   "created_at": "2026-11-24T20:42:06Z",
+   "created_at": "2026-11-26T17:57:04Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -2954,7 +5024,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/swift-app",
-   "id": 32,
+   "id": 54,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -2977,7 +5047,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -3015,7 +5085,7 @@
     "ios",
     "swift"
    ],
-   "updated_at": "2026-11-24T20:42:06Z",
+   "updated_at": "2026-11-26T17:57:05Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/swift-app",
    "watchers_count": 1,
    "website": ""
@@ -3031,7 +5101,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/swift-kit.git",
-   "created_at": "2026-11-24T20:42:06Z",
+   "created_at": "2026-11-26T17:57:05Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -3049,7 +5119,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/swift-kit",
-   "id": 33,
+   "id": 55,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -3072,7 +5142,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -3110,7 +5180,7 @@
     "ios",
     "swift"
    ],
-   "updated_at": "2026-11-24T20:42:07Z",
+   "updated_at": "2026-11-26T17:57:05Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/swift-kit",
    "watchers_count": 1,
    "website": ""
@@ -3126,7 +5196,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/terraform-google-network.git",
-   "created_at": "2026-11-24T20:42:07Z",
+   "created_at": "2026-11-26T17:57:05Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -3144,7 +5214,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/terraform-google-network",
-   "id": 34,
+   "id": 56,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -3167,7 +5237,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -3204,7 +5274,7 @@
    "topics": [
     "terraform"
    ],
-   "updated_at": "2026-11-24T20:42:07Z",
+   "updated_at": "2026-11-26T17:57:05Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/terraform-google-network",
    "watchers_count": 1,
    "website": ""
@@ -3220,7 +5290,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/ui-kit.git",
-   "created_at": "2026-11-24T20:42:07Z",
+   "created_at": "2026-11-26T17:57:05Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -3238,7 +5308,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/ui-kit",
-   "id": 35,
+   "id": 57,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -3261,7 +5331,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -3299,7 +5369,7 @@
     "frontend",
     "react"
    ],
-   "updated_at": "2026-11-24T20:42:07Z",
+   "updated_at": "2026-11-26T17:57:06Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/ui-kit",
    "watchers_count": 1,
    "website": ""
@@ -3315,7 +5385,7 @@
    "archived_at": "1970-01-01T00:00:00Z",
    "avatar_url": "",
    "clone_url": "http://localhost:3300/dmtest/vcpkg-registry.git",
-   "created_at": "2026-11-24T20:42:07Z",
+   "created_at": "2026-11-26T17:57:06Z",
    "default_allow_maintainer_edit": false,
    "default_branch": "main",
    "default_delete_branch_after_merge": false,
@@ -3333,7 +5403,7 @@
    "has_releases": true,
    "has_wiki": true,
    "html_url": "http://localhost:3300/dmtest/vcpkg-registry",
-   "id": 36,
+   "id": 58,
    "ignore_whitespace_conflicts": false,
    "internal": false,
    "internal_tracker": {
@@ -3356,7 +5426,7 @@
    "owner": {
     "active": false,
     "avatar_url": "http://localhost:3300/avatars/406f639e21603036c2f0ed4120fdb1c8",
-    "created": "2026-11-24T20:41:57Z",
+    "created": "2026-11-26T17:56:45Z",
     "description": "",
     "email": "",
     "followers_count": 0,
@@ -3394,16 +5464,15 @@
     "cpp",
     "vcpkg"
    ],
-   "updated_at": "2026-11-24T20:42:08Z",
+   "updated_at": "2026-11-26T17:57:06Z",
    "url": "http://localhost:3300/api/v1/repos/dmtest/vcpkg-registry",
    "watchers_count": 1,
    "website": ""
   }
  ],
- "json orgs/dmtest/repos?limit=50&page=2": [],
  "json repos/dmtest/base-image/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "10d05e4cad52dee8eb2381cd303bd31227c93fda",
+  "sha": "da23630f0fd8c6895b4774950b37cdbef9aa90bb",
   "total_count": 2,
   "tree": [
    {
@@ -3424,11 +5493,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/base-image/git/trees/10d05e4cad52dee8eb2381cd303bd31227c93fda"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/base-image/git/trees/da23630f0fd8c6895b4774950b37cdbef9aa90bb"
  },
  "json repos/dmtest/bazel-app/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "3057d89617fee2525307be38a47a814cc8a1c2c7",
+  "sha": "184567b1301cec31bbe2025259ee2a1b301fe416",
   "total_count": 3,
   "tree": [
    {
@@ -3457,11 +5526,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/bazel-app/git/trees/3057d89617fee2525307be38a47a814cc8a1c2c7"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/bazel-app/git/trees/184567b1301cec31bbe2025259ee2a1b301fe416"
  },
  "json repos/dmtest/bazel-rules/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "87a49037d910ed13ba653ddde34ba2a49d26d3bb",
+  "sha": "2e17f8918b503e4ea11a11aed20380223b03c62f",
   "total_count": 2,
   "tree": [
    {
@@ -3482,11 +5551,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/bazel-rules/git/trees/87a49037d910ed13ba653ddde34ba2a49d26d3bb"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/bazel-rules/git/trees/2e17f8918b503e4ea11a11aed20380223b03c62f"
  },
  "json repos/dmtest/big-monorepo/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "f23876c1d278293a31b2c884c74667958f74d283",
+  "sha": "8e87e54d519106cd87803b422bca9475e3312c45",
   "total_count": 21,
   "tree": [
    {
@@ -3531,11 +5600,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/f23876c1d278293a31b2c884c74667958f74d283"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/8e87e54d519106cd87803b422bca9475e3312c45"
  },
  "json repos/dmtest/big-monorepo/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "f23876c1d278293a31b2c884c74667958f74d283",
+  "sha": "8e87e54d519106cd87803b422bca9475e3312c45",
   "total_count": 21,
   "tree": [
    {
@@ -3580,11 +5649,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/f23876c1d278293a31b2c884c74667958f74d283"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/8e87e54d519106cd87803b422bca9475e3312c45"
  },
  "json repos/dmtest/big-monorepo/git/trees/main?recursive=true&per_page=1000&page=3": {
   "page": 3,
-  "sha": "f23876c1d278293a31b2c884c74667958f74d283",
+  "sha": "8e87e54d519106cd87803b422bca9475e3312c45",
   "total_count": 21,
   "tree": [
    {
@@ -3629,11 +5698,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/f23876c1d278293a31b2c884c74667958f74d283"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/8e87e54d519106cd87803b422bca9475e3312c45"
  },
  "json repos/dmtest/big-monorepo/git/trees/main?recursive=true&per_page=1000&page=4": {
   "page": 4,
-  "sha": "f23876c1d278293a31b2c884c74667958f74d283",
+  "sha": "8e87e54d519106cd87803b422bca9475e3312c45",
   "total_count": 21,
   "tree": [
    {
@@ -3678,11 +5747,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/f23876c1d278293a31b2c884c74667958f74d283"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/8e87e54d519106cd87803b422bca9475e3312c45"
  },
  "json repos/dmtest/big-monorepo/git/trees/main?recursive=true&per_page=1000&page=5": {
   "page": 5,
-  "sha": "f23876c1d278293a31b2c884c74667958f74d283",
+  "sha": "8e87e54d519106cd87803b422bca9475e3312c45",
   "total_count": 21,
   "tree": [
    {
@@ -3695,11 +5764,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/f23876c1d278293a31b2c884c74667958f74d283"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/big-monorepo/git/trees/8e87e54d519106cd87803b422bca9475e3312c45"
  },
  "json repos/dmtest/billing-core/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "981d77843a1e3e4281f6c277b646423af212d112",
+  "sha": "00c2c93ad98887040899a5bc2f21a3df68d123d5",
   "total_count": 6,
   "tree": [
    {
@@ -3744,11 +5813,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/billing-core/git/trees/981d77843a1e3e4281f6c277b646423af212d112"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/billing-core/git/trees/00c2c93ad98887040899a5bc2f21a3df68d123d5"
  },
  "json repos/dmtest/billing-core/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "981d77843a1e3e4281f6c277b646423af212d112",
+  "sha": "00c2c93ad98887040899a5bc2f21a3df68d123d5",
   "total_count": 6,
   "tree": [
    {
@@ -3761,11 +5830,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/billing-core/git/trees/981d77843a1e3e4281f6c277b646423af212d112"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/billing-core/git/trees/00c2c93ad98887040899a5bc2f21a3df68d123d5"
  },
  "json repos/dmtest/checkout-web/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "eefe2c517df6f160721f7b63227336b6b22d2a93",
+  "sha": "ab6f6ddfba7fad24a2fc1a32c5bd4e140dc55b93",
   "total_count": 2,
   "tree": [
    {
@@ -3786,11 +5855,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/checkout-web/git/trees/eefe2c517df6f160721f7b63227336b6b22d2a93"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/checkout-web/git/trees/ab6f6ddfba7fad24a2fc1a32c5bd4e140dc55b93"
  },
  "json repos/dmtest/ci-actions/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "0387c9a6a3a18e0a47f5b1f1f7694e814d4f8071",
+  "sha": "dc2cf3dd907675b90dd049b03b9ff9bc0681375b",
   "total_count": 3,
   "tree": [
    {
@@ -3819,11 +5888,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/ci-actions/git/trees/0387c9a6a3a18e0a47f5b1f1f7694e814d4f8071"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ci-actions/git/trees/dc2cf3dd907675b90dd049b03b9ff9bc0681375b"
  },
  "json repos/dmtest/clj-tools/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "2d4ae0d238ae7ffe28642a0ad53f4a47d07dab4c",
+  "sha": "cb2421bbdc1b3662465ceca53c90f8a297820132",
   "total_count": 2,
   "tree": [
    {
@@ -3844,11 +5913,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/clj-tools/git/trees/2d4ae0d238ae7ffe28642a0ad53f4a47d07dab4c"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/clj-tools/git/trees/cb2421bbdc1b3662465ceca53c90f8a297820132"
  },
  "json repos/dmtest/cpp-app/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "274c6797adc913d2d7ca32f173ebb629da83acb2",
+  "sha": "a3facefebfac89dd0d1b1e808ce5e51bb20f603c",
   "total_count": 7,
   "tree": [
    {
@@ -3893,11 +5962,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-app/git/trees/274c6797adc913d2d7ca32f173ebb629da83acb2"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-app/git/trees/a3facefebfac89dd0d1b1e808ce5e51bb20f603c"
  },
  "json repos/dmtest/cpp-app/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "274c6797adc913d2d7ca32f173ebb629da83acb2",
+  "sha": "a3facefebfac89dd0d1b1e808ce5e51bb20f603c",
   "total_count": 7,
   "tree": [
    {
@@ -3918,11 +5987,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-app/git/trees/274c6797adc913d2d7ca32f173ebb629da83acb2"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-app/git/trees/a3facefebfac89dd0d1b1e808ce5e51bb20f603c"
  },
  "json repos/dmtest/cpp-core/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "3345280b09794d7c4b6c9c548e44d258fc08defc",
+  "sha": "86f2b31a00e83382f7bb39637f6bcde35c16f74b",
   "total_count": 4,
   "tree": [
    {
@@ -3959,11 +6028,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-core/git/trees/3345280b09794d7c4b6c9c548e44d258fc08defc"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-core/git/trees/86f2b31a00e83382f7bb39637f6bcde35c16f74b"
  },
  "json repos/dmtest/cpp-net/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "44be1d78b4b2f1dba3b75895752583e43d9622dd",
+  "sha": "68eb0b5f28d44108dbf5d77a5de5a89bc586ea56",
   "total_count": 2,
   "tree": [
    {
@@ -3984,11 +6053,111 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-net/git/trees/44be1d78b4b2f1dba3b75895752583e43d9622dd"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/cpp-net/git/trees/68eb0b5f28d44108dbf5d77a5de5a89bc586ea56"
+ },
+ "json repos/dmtest/dart-app/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "c432090d26d2e9291bf4d7e717baf6f86da058f9",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "05bc183cf070e5f347889060673d0e31259e4a71",
+    "size": 36,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/dart-app/git/blobs/05bc183cf070e5f347889060673d0e31259e4a71"
+   },
+   {
+    "mode": "100644",
+    "path": "pubspec.yaml",
+    "sha": "8652579c35ac8a98ff554afe752812fef1a2203b",
+    "size": 146,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/dart-app/git/blobs/8652579c35ac8a98ff554afe752812fef1a2203b"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/dart-app/git/trees/c432090d26d2e9291bf4d7e717baf6f86da058f9"
+ },
+ "json repos/dmtest/dart-ui/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "f0ddcad3ec1ea33f5068383e3e6f3c49e004c8a1",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "f2a877c7785b441e69caf8359e984a36e18324b7",
+    "size": 54,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/dart-ui/git/blobs/f2a877c7785b441e69caf8359e984a36e18324b7"
+   },
+   {
+    "mode": "100644",
+    "path": "pubspec.yaml",
+    "sha": "ccbfd576f4964b218af44474cd74fd5a6e8ec010",
+    "size": 31,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/dart-ui/git/blobs/ccbfd576f4964b218af44474cd74fd5a6e8ec010"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/dart-ui/git/trees/f0ddcad3ec1ea33f5068383e3e6f3c49e004c8a1"
+ },
+ "json repos/dmtest/deno-core/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "3df4b44d0bf965af31a2c3c4dae9fa25087b29a6",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "5a03607ae8f18989a22615d34cb9b3f7cc415526",
+    "size": 34,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/deno-core/git/blobs/5a03607ae8f18989a22615d34cb9b3f7cc415526"
+   },
+   {
+    "mode": "100644",
+    "path": "deno.json",
+    "sha": "9d8905052f8400fa59d8818123d9252e3cd413f5",
+    "size": 56,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/deno-core/git/blobs/9d8905052f8400fa59d8818123d9252e3cd413f5"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/deno-core/git/trees/3df4b44d0bf965af31a2c3c4dae9fa25087b29a6"
+ },
+ "json repos/dmtest/deno-tool/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "5222e3637bdbc0b8b26fc92d9a1095b7543fdf71",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "0b32a307d70e983d9ee6e0cce3aa50acc5844265",
+    "size": 39,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/deno-tool/git/blobs/0b32a307d70e983d9ee6e0cce3aa50acc5844265"
+   },
+   {
+    "mode": "100644",
+    "path": "deno.json",
+    "sha": "e1be99dade5851d776e9018abef03a1bcfaf9812",
+    "size": 94,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/deno-tool/git/blobs/e1be99dade5851d776e9018abef03a1bcfaf9812"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/deno-tool/git/trees/5222e3637bdbc0b8b26fc92d9a1095b7543fdf71"
  },
  "json repos/dmtest/design-tokens/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "1a5dda11b9ff4378e619f6dbdd5eca6267f4a791",
+  "sha": "09bea10c6f02f9a621f6532bc8c7a39e4961389e",
   "total_count": 6,
   "tree": [
    {
@@ -4033,11 +6202,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/design-tokens/git/trees/1a5dda11b9ff4378e619f6dbdd5eca6267f4a791"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/design-tokens/git/trees/09bea10c6f02f9a621f6532bc8c7a39e4961389e"
  },
  "json repos/dmtest/design-tokens/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "1a5dda11b9ff4378e619f6dbdd5eca6267f4a791",
+  "sha": "09bea10c6f02f9a621f6532bc8c7a39e4961389e",
   "total_count": 6,
   "tree": [
    {
@@ -4050,11 +6219,61 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/design-tokens/git/trees/1a5dda11b9ff4378e619f6dbdd5eca6267f4a791"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/design-tokens/git/trees/09bea10c6f02f9a621f6532bc8c7a39e4961389e"
+ },
+ "json repos/dmtest/ex-app/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "23719a75c2538d8c8b2539aed6eeee644494d39e",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "f24e7676e40a43060b276b5e6aac2f3c914460da",
+    "size": 37,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/ex-app/git/blobs/f24e7676e40a43060b276b5e6aac2f3c914460da"
+   },
+   {
+    "mode": "100644",
+    "path": "mix.exs",
+    "sha": "6a7ed7485916143bcb2a3e054a45d07ecd65af05",
+    "size": 162,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/ex-app/git/blobs/6a7ed7485916143bcb2a3e054a45d07ecd65af05"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ex-app/git/trees/23719a75c2538d8c8b2539aed6eeee644494d39e"
+ },
+ "json repos/dmtest/ex-auth/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "8edc641eae5258178ebc1c38f84b423282c8cda2",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "ed805081b1fd80044028aa795e25599661b4bdb0",
+    "size": 42,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/ex-auth/git/blobs/ed805081b1fd80044028aa795e25599661b4bdb0"
+   },
+   {
+    "mode": "100644",
+    "path": "mix.exs",
+    "sha": "eadd999fa14d206b4cf4ac4781ecf7f7a03e288c",
+    "size": 90,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/ex-auth/git/blobs/eadd999fa14d206b4cf4ac4781ecf7f7a03e288c"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ex-auth/git/trees/8edc641eae5258178ebc1c38f84b423282c8cda2"
  },
  "json repos/dmtest/feature-store-client/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "5676e27174687c57682fb0e7386595a5b2c15d84",
+  "sha": "16e2463eac28d221137741de77ed68a1bd712918",
   "total_count": 2,
   "tree": [
    {
@@ -4075,11 +6294,94 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/feature-store-client/git/trees/5676e27174687c57682fb0e7386595a5b2c15d84"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/feature-store-client/git/trees/16e2463eac28d221137741de77ed68a1bd712918"
+ },
+ "json repos/dmtest/go-log-fork/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "bc2faf64b3858beed6722e8c26e9a7606690c2f5",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "fbb2c36a0c9b9655d73474fda3799a8b36aabdfe",
+    "size": 76,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-log-fork/git/blobs/fbb2c36a0c9b9655d73474fda3799a8b36aabdfe"
+   },
+   {
+    "mode": "100644",
+    "path": "go.mod",
+    "sha": "47396899c7850964b862f554aa28a2591dc27ca5",
+    "size": 50,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-log-fork/git/blobs/47396899c7850964b862f554aa28a2591dc27ca5"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/go-log-fork/git/trees/bc2faf64b3858beed6722e8c26e9a7606690c2f5"
+ },
+ "json repos/dmtest/go-tools/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "7900a6e10237550f54b96d4c420104c0d01ab7b9",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "17e298b6eaf3d1129512fa0fb37a0d9bd7185f88",
+    "size": 65,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-tools/git/blobs/17e298b6eaf3d1129512fa0fb37a0d9bd7185f88"
+   },
+   {
+    "mode": "100644",
+    "path": "go.mod",
+    "sha": "3c59131049bae0f58c691b8f1931c8e71c2639d0",
+    "size": 47,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-tools/git/blobs/3c59131049bae0f58c691b8f1931c8e71c2639d0"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/go-tools/git/trees/7900a6e10237550f54b96d4c420104c0d01ab7b9"
+ },
+ "json repos/dmtest/go-workspace/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "bf41ac7aac9ab37fad3af99d0f5ce9aa191d9e1d",
+  "total_count": 3,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "fe14c7c89524ae97066b525ba8d7f91b288c6e09",
+    "size": 63,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-workspace/git/blobs/fe14c7c89524ae97066b525ba8d7f91b288c6e09"
+   },
+   {
+    "mode": "100644",
+    "path": "go.mod",
+    "sha": "ae3f1a50d812be069d423c128bfdf7fff959ba0f",
+    "size": 168,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-workspace/git/blobs/ae3f1a50d812be069d423c128bfdf7fff959ba0f"
+   },
+   {
+    "mode": "100644",
+    "path": "go.work",
+    "sha": "0920d40f0835a241e6d127cf694ecbf4330f69f6",
+    "size": 33,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/go-workspace/git/blobs/0920d40f0835a241e6d127cf694ecbf4330f69f6"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/go-workspace/git/trees/bf41ac7aac9ab37fad3af99d0f5ce9aa191d9e1d"
  },
  "json repos/dmtest/gradle-conventions/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "88f1a8debaf8d300a01da3a54fe6eac1226905e3",
+  "sha": "a87b3c0712ef217baa887553e5b1aa6d2a3dad18",
   "total_count": 3,
   "tree": [
    {
@@ -4108,11 +6410,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/gradle-conventions/git/trees/88f1a8debaf8d300a01da3a54fe6eac1226905e3"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/gradle-conventions/git/trees/a87b3c0712ef217baa887553e5b1aa6d2a3dad18"
  },
  "json repos/dmtest/infra-live/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "c36700696478f82db2c5c78b7e9afcd67a5834b1",
+  "sha": "2071f891a59688d0834c302101ae583078267935",
   "total_count": 7,
   "tree": [
    {
@@ -4157,11 +6459,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/infra-live/git/trees/c36700696478f82db2c5c78b7e9afcd67a5834b1"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/infra-live/git/trees/2071f891a59688d0834c302101ae583078267935"
  },
  "json repos/dmtest/infra-live/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "c36700696478f82db2c5c78b7e9afcd67a5834b1",
+  "sha": "2071f891a59688d0834c302101ae583078267935",
   "total_count": 7,
   "tree": [
    {
@@ -4182,11 +6484,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/infra-live/git/trees/c36700696478f82db2c5c78b7e9afcd67a5834b1"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/infra-live/git/trees/2071f891a59688d0834c302101ae583078267935"
  },
  "json repos/dmtest/inventory-scala/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "9546e7ba4dfdff1329cee888cb9c9d94fdda4ce6",
+  "sha": "b6edacee50dc0c9c290ecd33254386450b06fcfe",
   "total_count": 4,
   "tree": [
    {
@@ -4223,11 +6525,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/inventory-scala/git/trees/9546e7ba4dfdff1329cee888cb9c9d94fdda4ce6"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/inventory-scala/git/trees/b6edacee50dc0c9c290ecd33254386450b06fcfe"
  },
  "json repos/dmtest/invoicing-dotnet/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "4d5d509e6f1f8d9b265921a1afe1b5dceeaefeb3",
+  "sha": "b44cdc013f2bd7764458e9e198bbe14ce3d9e2c0",
   "total_count": 5,
   "tree": [
    {
@@ -4272,11 +6574,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/invoicing-dotnet/git/trees/4d5d509e6f1f8d9b265921a1afe1b5dceeaefeb3"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/invoicing-dotnet/git/trees/b44cdc013f2bd7764458e9e198bbe14ce3d9e2c0"
  },
  "json repos/dmtest/java-bom/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "27b7a8789125204db36796488b43bdb4834fc82d",
+  "sha": "9a75cad1f0706760aa98623cfeb16d6a883cdf63",
   "total_count": 2,
   "tree": [
    {
@@ -4297,11 +6599,134 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/java-bom/git/trees/27b7a8789125204db36796488b43bdb4834fc82d"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/java-bom/git/trees/9a75cad1f0706760aa98623cfeb16d6a883cdf63"
+ },
+ "json repos/dmtest/js-mono/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "0f5dab4aeae8125f81bb7636223aab4acfe4659c",
+  "total_count": 10,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": ".npmrc",
+    "sha": "71a73888593f92fcc974ab8b3defb567346d408e",
+    "size": 45,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/71a73888593f92fcc974ab8b3defb567346d408e"
+   },
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "7bc668064093dbadcf6f36452537e04d2c36944f",
+    "size": 52,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/7bc668064093dbadcf6f36452537e04d2c36944f"
+   },
+   {
+    "mode": "100644",
+    "path": "package-lock.json",
+    "sha": "32f5003c96e4fee5f7faa5aa63498cf0760286bb",
+    "size": 382,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/32f5003c96e4fee5f7faa5aa63498cf0760286bb"
+   },
+   {
+    "mode": "100644",
+    "path": "package.json",
+    "sha": "a3d2565bdef22b5d8600e5364b36cacbda5030f4",
+    "size": 75,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/a3d2565bdef22b5d8600e5364b36cacbda5030f4"
+   },
+   {
+    "mode": "040000",
+    "path": "packages",
+    "sha": "a7d1b874a588cc705a68d9658da484e5b2d642cf",
+    "size": 0,
+    "type": "tree",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/trees/a7d1b874a588cc705a68d9658da484e5b2d642cf"
+   }
+  ],
+  "truncated": true,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/trees/0f5dab4aeae8125f81bb7636223aab4acfe4659c"
+ },
+ "json repos/dmtest/js-mono/git/trees/main?recursive=true&per_page=1000&page=2": {
+  "page": 2,
+  "sha": "0f5dab4aeae8125f81bb7636223aab4acfe4659c",
+  "total_count": 10,
+  "tree": [
+   {
+    "mode": "040000",
+    "path": "packages/util",
+    "sha": "5bf1c2364147f4d7ea62f10ee7996cee074b9464",
+    "size": 0,
+    "type": "tree",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/trees/5bf1c2364147f4d7ea62f10ee7996cee074b9464"
+   },
+   {
+    "mode": "100644",
+    "path": "packages/util/package.json",
+    "sha": "809aa5b53121519b6d56946e7ed1031dd705bec1",
+    "size": 54,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/809aa5b53121519b6d56946e7ed1031dd705bec1"
+   },
+   {
+    "mode": "040000",
+    "path": "packages/web",
+    "sha": "9356583792532e41e96d4e0a78e288dc48f52d8d",
+    "size": 0,
+    "type": "tree",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/trees/9356583792532e41e96d4e0a78e288dc48f52d8d"
+   },
+   {
+    "mode": "100644",
+    "path": "packages/web/package.json",
+    "sha": "042e962fe254c8483f78a6155f5e7d8eefe3fa60",
+    "size": 199,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/042e962fe254c8483f78a6155f5e7d8eefe3fa60"
+   },
+   {
+    "mode": "100644",
+    "path": "pnpm-workspace.yaml",
+    "sha": "18ec407efca710b5d0d1e19dd3e34a27ac6716a1",
+    "size": 27,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/blobs/18ec407efca710b5d0d1e19dd3e34a27ac6716a1"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/js-mono/git/trees/0f5dab4aeae8125f81bb7636223aab4acfe4659c"
+ },
+ "json repos/dmtest/js-shared/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "9bd3e6e0ce2a93e03d0793f9e65e501bb87ae2c2",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "ed462bd154ffcc37369435f010112595ac8715a6",
+    "size": 75,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-shared/git/blobs/ed462bd154ffcc37369435f010112595ac8715a6"
+   },
+   {
+    "mode": "100644",
+    "path": "package.json",
+    "sha": "3d8ca9c20e1b549a4916c251ae9741dfac769445",
+    "size": 48,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/js-shared/git/blobs/3d8ca9c20e1b549a4916c251ae9741dfac769445"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/js-shared/git/trees/9bd3e6e0ce2a93e03d0793f9e65e501bb87ae2c2"
  },
  "json repos/dmtest/ledger-dotnet/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "972e0762058bf4c3e3756200bac9d6e97d25ffe2",
+  "sha": "6630fcefe8b595aa4bb00854fd0d40655076a17b",
   "total_count": 8,
   "tree": [
    {
@@ -4346,11 +6771,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/ledger-dotnet/git/trees/972e0762058bf4c3e3756200bac9d6e97d25ffe2"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ledger-dotnet/git/trees/6630fcefe8b595aa4bb00854fd0d40655076a17b"
  },
  "json repos/dmtest/ledger-dotnet/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "972e0762058bf4c3e3756200bac9d6e97d25ffe2",
+  "sha": "6630fcefe8b595aa4bb00854fd0d40655076a17b",
   "total_count": 8,
   "tree": [
    {
@@ -4379,11 +6804,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/ledger-dotnet/git/trees/972e0762058bf4c3e3756200bac9d6e97d25ffe2"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ledger-dotnet/git/trees/6630fcefe8b595aa4bb00854fd0d40655076a17b"
  },
  "json repos/dmtest/legacy-billing/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "c09532dd0cb65abdeb58d4d80601c3d9cadcd06e",
+  "sha": "7ed99115a618da1ffb7751d04f72cfe53fd68b7a",
   "total_count": 1,
   "tree": [
    {
@@ -4396,11 +6821,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/legacy-billing/git/trees/c09532dd0cb65abdeb58d4d80601c3d9cadcd06e"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/legacy-billing/git/trees/7ed99115a618da1ffb7751d04f72cfe53fd68b7a"
  },
  "json repos/dmtest/ml-pipeline/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "83bbcad1bff8f996ecd30b323947ae6431a3ee09",
+  "sha": "2d66fd808b8d03abd6382888a412202d95afbd35",
   "total_count": 2,
   "tree": [
    {
@@ -4421,11 +6846,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/ml-pipeline/git/trees/83bbcad1bff8f996ecd30b323947ae6431a3ee09"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ml-pipeline/git/trees/2d66fd808b8d03abd6382888a412202d95afbd35"
  },
  "json repos/dmtest/orders-service/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "7256383f546d3299f6eb5b5ce1139ec27415460c",
+  "sha": "cc83a5225d04fba5c127dce3a20793885dfe6296",
   "total_count": 9,
   "tree": [
    {
@@ -4470,11 +6895,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/orders-service/git/trees/7256383f546d3299f6eb5b5ce1139ec27415460c"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/orders-service/git/trees/cc83a5225d04fba5c127dce3a20793885dfe6296"
  },
  "json repos/dmtest/orders-service/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "7256383f546d3299f6eb5b5ce1139ec27415460c",
+  "sha": "cc83a5225d04fba5c127dce3a20793885dfe6296",
   "total_count": 9,
   "tree": [
    {
@@ -4511,11 +6936,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/orders-service/git/trees/7256383f546d3299f6eb5b5ce1139ec27415460c"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/orders-service/git/trees/cc83a5225d04fba5c127dce3a20793885dfe6296"
  },
  "json repos/dmtest/payments-api/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "456fa37a8872ddcd2f57be168bbce60862dab494",
+  "sha": "2c73c12fa9a692adcb151d4c68b3cb19a0ed508c",
   "total_count": 7,
   "tree": [
    {
@@ -4560,11 +6985,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/payments-api/git/trees/456fa37a8872ddcd2f57be168bbce60862dab494"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/payments-api/git/trees/2c73c12fa9a692adcb151d4c68b3cb19a0ed508c"
  },
  "json repos/dmtest/payments-api/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "456fa37a8872ddcd2f57be168bbce60862dab494",
+  "sha": "2c73c12fa9a692adcb151d4c68b3cb19a0ed508c",
   "total_count": 7,
   "tree": [
    {
@@ -4585,11 +7010,111 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/payments-api/git/trees/456fa37a8872ddcd2f57be168bbce60862dab494"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/payments-api/git/trees/2c73c12fa9a692adcb151d4c68b3cb19a0ed508c"
+ },
+ "json repos/dmtest/perl-app/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "fa4ae0db2afa420c436e2aec105d0f75d8ee2e3b",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "8761840bd06d0a454013036d1fbeb4216025e65c",
+    "size": 40,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/perl-app/git/blobs/8761840bd06d0a454013036d1fbeb4216025e65c"
+   },
+   {
+    "mode": "100644",
+    "path": "cpanfile",
+    "sha": "fbd6610e2b196c3ca826836a66b61c3df196948d",
+    "size": 90,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/perl-app/git/blobs/fbd6610e2b196c3ca826836a66b61c3df196948d"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/perl-app/git/trees/fa4ae0db2afa420c436e2aec105d0f75d8ee2e3b"
+ },
+ "json repos/dmtest/perl-lib/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "795f980621128d927ce6309190eb3aaf7eb373c6",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "43e91c094f269cf44c20e167b7a7003addabbbb6",
+    "size": 46,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/perl-lib/git/blobs/43e91c094f269cf44c20e167b7a7003addabbbb6"
+   },
+   {
+    "mode": "100644",
+    "path": "cpanfile",
+    "sha": "05a9196070b8eed28c06b4161e7f1f8f971fd79a",
+    "size": 18,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/perl-lib/git/blobs/05a9196070b8eed28c06b4161e7f1f8f971fd79a"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/perl-lib/git/trees/795f980621128d927ce6309190eb3aaf7eb373c6"
+ },
+ "json repos/dmtest/php-app/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "a2d6f1ef63141618aa04d975df07119776c460eb",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "d525ff4ccde51078ca8bba0c494085752a4cfbff",
+    "size": 34,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/php-app/git/blobs/d525ff4ccde51078ca8bba0c494085752a4cfbff"
+   },
+   {
+    "mode": "100644",
+    "path": "composer.json",
+    "sha": "4bd7e9974d9d87c315615ec4307851e40358a5d9",
+    "size": 269,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/php-app/git/blobs/4bd7e9974d9d87c315615ec4307851e40358a5d9"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/php-app/git/trees/a2d6f1ef63141618aa04d975df07119776c460eb"
+ },
+ "json repos/dmtest/php-billing/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "cb916e050f1a12136be7d75d5ce6e6b5e3bb6538",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "a601a73e7b99382cb881d66f16f40df91efbdaff",
+    "size": 52,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/php-billing/git/blobs/a601a73e7b99382cb881d66f16f40df91efbdaff"
+   },
+   {
+    "mode": "100644",
+    "path": "composer.json",
+    "sha": "f31bad00e36b7ffb40d33bc390dcdfe482927676",
+    "size": 74,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/php-billing/git/blobs/f31bad00e36b7ffb40d33bc390dcdfe482927676"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/php-billing/git/trees/cb916e050f1a12136be7d75d5ce6e6b5e3bb6538"
  },
  "json repos/dmtest/platform-lib/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "2de944f6f15dbaf4eb4cddf0ffbe98ecb3e4aacb",
+  "sha": "dfa882442fe05e95534240da357e57df31c3ca08",
   "total_count": 2,
   "tree": [
    {
@@ -4610,11 +7135,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/platform-lib/git/trees/2de944f6f15dbaf4eb4cddf0ffbe98ecb3e4aacb"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/platform-lib/git/trees/dfa882442fe05e95534240da357e57df31c3ca08"
  },
  "json repos/dmtest/polyglot-tools/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "3dd2639fa5836c8083cc73b28f43fa103123bcf1",
+  "sha": "24f9eeaaef7cedf65b474b4ad6c483d6e98a409a",
   "total_count": 5,
   "tree": [
    {
@@ -4659,11 +7184,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/polyglot-tools/git/trees/3dd2639fa5836c8083cc73b28f43fa103123bcf1"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/polyglot-tools/git/trees/24f9eeaaef7cedf65b474b4ad6c483d6e98a409a"
  },
  "json repos/dmtest/proto/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "52e686cd3271e25781f27970480e3dfa0470d866",
+  "sha": "fa56199bce74a61c0de531aef8829f0abaa997b1",
   "total_count": 1,
   "tree": [
    {
@@ -4676,11 +7201,202 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/proto/git/trees/52e686cd3271e25781f27970480e3dfa0470d866"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/proto/git/trees/fa56199bce74a61c0de531aef8829f0abaa997b1"
+ },
+ "json repos/dmtest/py-legacy/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "2f0b29885cc1ec3ebf399d4bd40e76a13bf79b1b",
+  "total_count": 4,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "Pipfile",
+    "sha": "b727e124df93cc257bb797fcfdf6cb97c3592a01",
+    "size": 99,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy/git/blobs/b727e124df93cc257bb797fcfdf6cb97c3592a01"
+   },
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "92a65e12efa402bad3366056861f912bda3f0b9b",
+    "size": 58,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy/git/blobs/92a65e12efa402bad3366056861f912bda3f0b9b"
+   },
+   {
+    "mode": "100644",
+    "path": "constraints.txt",
+    "sha": "5acc5db52f0137ec9ef006e5dd0461788ea9f492",
+    "size": 65,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy/git/blobs/5acc5db52f0137ec9ef006e5dd0461788ea9f492"
+   },
+   {
+    "mode": "100644",
+    "path": "setup.py",
+    "sha": "ec08c9afc98f6efe13a92707e08bca0d2e174c64",
+    "size": 110,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy/git/blobs/ec08c9afc98f6efe13a92707e08bca0d2e174c64"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/py-legacy/git/trees/2f0b29885cc1ec3ebf399d4bd40e76a13bf79b1b"
+ },
+ "json repos/dmtest/py-sdk/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "940e80946203972c9d6cae2c60e2a3f9710e9210",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "3fab9904d35d533b601b30722935b39eaf318cf7",
+    "size": 59,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-sdk/git/blobs/3fab9904d35d533b601b30722935b39eaf318cf7"
+   },
+   {
+    "mode": "100644",
+    "path": "pyproject.toml",
+    "sha": "693b80c36a00e4ace6dff1fe5503789e8744b1a5",
+    "size": 48,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-sdk/git/blobs/693b80c36a00e4ace6dff1fe5503789e8744b1a5"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/py-sdk/git/trees/940e80946203972c9d6cae2c60e2a3f9710e9210"
+ },
+ "json repos/dmtest/py-uv-app/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "e768ac664cebc18b131542a75ee27420972f7370",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "b671927b7dfe58e1a51ae8887ab924d4d8b5f482",
+    "size": 47,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-uv-app/git/blobs/b671927b7dfe58e1a51ae8887ab924d4d8b5f482"
+   },
+   {
+    "mode": "100644",
+    "path": "pyproject.toml",
+    "sha": "916fca50c310b478f0422257bc9db92ab2802ed4",
+    "size": 211,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/py-uv-app/git/blobs/916fca50c310b478f0422257bc9db92ab2802ed4"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/py-uv-app/git/trees/e768ac664cebc18b131542a75ee27420972f7370"
+ },
+ "json repos/dmtest/r-report/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "e2784b6702cf1f0d84ad94d1a04fe28d5cc934c0",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "DESCRIPTION",
+    "sha": "f64259cd4ecd9eae36ff06292778c7866c6511e9",
+    "size": 95,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/r-report/git/blobs/f64259cd4ecd9eae36ff06292778c7866c6511e9"
+   },
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "0d2f437ba0a8e916e1d1a788e37abf4956facef3",
+    "size": 46,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/r-report/git/blobs/0d2f437ba0a8e916e1d1a788e37abf4956facef3"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/r-report/git/trees/e2784b6702cf1f0d84ad94d1a04fe28d5cc934c0"
+ },
+ "json repos/dmtest/r-utils/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "ff16e53e36aaf421e795e5ce7986691c2b295e03",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "DESCRIPTION",
+    "sha": "bfd0623171b1f276e69bb5afc65399f4d2a41df0",
+    "size": 31,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/r-utils/git/blobs/bfd0623171b1f276e69bb5afc65399f4d2a41df0"
+   },
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "50ad9d3ca31a2f43674b392fa4b6aca9e2498554",
+    "size": 39,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/r-utils/git/blobs/50ad9d3ca31a2f43674b392fa4b6aca9e2498554"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/r-utils/git/trees/ff16e53e36aaf421e795e5ce7986691c2b295e03"
+ },
+ "json repos/dmtest/rb-app/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "d16bc730f867b2dc032dcf2071d3fd6591865ee8",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "Gemfile",
+    "sha": "215c953fce0723a6b8ba068f34f8d7b9d8c327f9",
+    "size": 81,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/rb-app/git/blobs/215c953fce0723a6b8ba068f34f8d7b9d8c327f9"
+   },
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "eb020f0a5e37544060adcbbf1e9a45e34fe280e2",
+    "size": 41,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/rb-app/git/blobs/eb020f0a5e37544060adcbbf1e9a45e34fe280e2"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/rb-app/git/trees/d16bc730f867b2dc032dcf2071d3fd6591865ee8"
+ },
+ "json repos/dmtest/rb-auth/git/trees/main?recursive=true&per_page=1000&page=1": {
+  "page": 1,
+  "sha": "e67742344a57f48bc22c2025ceee956066a7bd7f",
+  "total_count": 2,
+  "tree": [
+   {
+    "mode": "100644",
+    "path": "README.md",
+    "sha": "eda7b214cfdc1a0cbcaa15b98567a4407b9ff248",
+    "size": 40,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/rb-auth/git/blobs/eda7b214cfdc1a0cbcaa15b98567a4407b9ff248"
+   },
+   {
+    "mode": "100644",
+    "path": "rb-auth.gemspec",
+    "sha": "917280933318b89404da7ff594657a6cacc8103d",
+    "size": 90,
+    "type": "blob",
+    "url": "http://localhost:3300/api/v1/repos/dmtest/rb-auth/git/blobs/917280933318b89404da7ff594657a6cacc8103d"
+   }
+  ],
+  "truncated": false,
+  "url": "http://localhost:3300/api/v1/repos/dmtest/rb-auth/git/trees/e67742344a57f48bc22c2025ceee956066a7bd7f"
  },
  "json repos/dmtest/rust-app/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "2c26330b6ecb6c39b07572be9ab51f41b12cbb79",
+  "sha": "4432574ee2b4931893f7453fa3d3fc27852a339d",
   "total_count": 2,
   "tree": [
    {
@@ -4701,11 +7417,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-app/git/trees/2c26330b6ecb6c39b07572be9ab51f41b12cbb79"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-app/git/trees/4432574ee2b4931893f7453fa3d3fc27852a339d"
  },
  "json repos/dmtest/rust-core/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "b6413d3c43f2dd501c6d4b6717fabc2c2ffe45fb",
+  "sha": "d1f8e848b59b34984361b53fd3042f370e0971ce",
   "total_count": 9,
   "tree": [
    {
@@ -4750,11 +7466,11 @@
    }
   ],
   "truncated": true,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-core/git/trees/b6413d3c43f2dd501c6d4b6717fabc2c2ffe45fb"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-core/git/trees/d1f8e848b59b34984361b53fd3042f370e0971ce"
  },
  "json repos/dmtest/rust-core/git/trees/main?recursive=true&per_page=1000&page=2": {
   "page": 2,
-  "sha": "b6413d3c43f2dd501c6d4b6717fabc2c2ffe45fb",
+  "sha": "d1f8e848b59b34984361b53fd3042f370e0971ce",
   "total_count": 9,
   "tree": [
    {
@@ -4791,11 +7507,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-core/git/trees/b6413d3c43f2dd501c6d4b6717fabc2c2ffe45fb"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-core/git/trees/d1f8e848b59b34984361b53fd3042f370e0971ce"
  },
  "json repos/dmtest/rust-shared/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "ed05d9eb8f1541cb6628c3a878573d7967ec5797",
+  "sha": "a5af70e84c2bc96a5eff2b8f3d88af6c36085918",
   "total_count": 2,
   "tree": [
    {
@@ -4816,11 +7532,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-shared/git/trees/ed05d9eb8f1541cb6628c3a878573d7967ec5797"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/rust-shared/git/trees/a5af70e84c2bc96a5eff2b8f3d88af6c36085918"
  },
  "json repos/dmtest/service-chart/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "fa406eda97012c4d9568d75fc52422e0d4aaef03",
+  "sha": "313cf21a1dfbc157190b20f544d315dafbad1270",
   "total_count": 2,
   "tree": [
    {
@@ -4841,11 +7557,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/service-chart/git/trees/fa406eda97012c4d9568d75fc52422e0d4aaef03"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/service-chart/git/trees/313cf21a1dfbc157190b20f544d315dafbad1270"
  },
  "json repos/dmtest/shared-dotnet/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "143914a6ca236d9a087787d7f6826e1b88671224",
+  "sha": "4d1a451bcc29ac09819b2656950d69bca1874014",
   "total_count": 4,
   "tree": [
    {
@@ -4882,11 +7598,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/shared-dotnet/git/trees/143914a6ca236d9a087787d7f6826e1b88671224"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/shared-dotnet/git/trees/4d1a451bcc29ac09819b2656950d69bca1874014"
  },
  "json repos/dmtest/swift-app/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "7968d1aba32ccbf52cb538f2e51a6d791c25dc47",
+  "sha": "5f2f052a4064d39f2c92bc7e06da792e99f745a2",
   "total_count": 4,
   "tree": [
    {
@@ -4923,11 +7639,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/swift-app/git/trees/7968d1aba32ccbf52cb538f2e51a6d791c25dc47"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/swift-app/git/trees/5f2f052a4064d39f2c92bc7e06da792e99f745a2"
  },
  "json repos/dmtest/swift-kit/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "d5763ffede51fa6073a4b10865392adc4fe720ea",
+  "sha": "1862d07342fc22c463f0944c1883a7a3047ac2ea",
   "total_count": 3,
   "tree": [
    {
@@ -4956,11 +7672,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/swift-kit/git/trees/d5763ffede51fa6073a4b10865392adc4fe720ea"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/swift-kit/git/trees/1862d07342fc22c463f0944c1883a7a3047ac2ea"
  },
  "json repos/dmtest/terraform-google-network/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "3ad5abbd1f45e6a5b4fbb91a0bc1fc4318abb2a3",
+  "sha": "ae0e59f0e0712ee06e9325a4073ceb4f2466355d",
   "total_count": 2,
   "tree": [
    {
@@ -4981,11 +7697,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/terraform-google-network/git/trees/3ad5abbd1f45e6a5b4fbb91a0bc1fc4318abb2a3"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/terraform-google-network/git/trees/ae0e59f0e0712ee06e9325a4073ceb4f2466355d"
  },
  "json repos/dmtest/ui-kit/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "295afbecb15fbdedf4d2ba730423e6a44a7b683e",
+  "sha": "4ad19606c06cdce073d821db7c9a6731ee497e7c",
   "total_count": 2,
   "tree": [
    {
@@ -5006,11 +7722,11 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/ui-kit/git/trees/295afbecb15fbdedf4d2ba730423e6a44a7b683e"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/ui-kit/git/trees/4ad19606c06cdce073d821db7c9a6731ee497e7c"
  },
  "json repos/dmtest/vcpkg-registry/git/trees/main?recursive=true&per_page=1000&page=1": {
   "page": 1,
-  "sha": "5be58bb953cc5f4165443fe6088f8f055bb9aa84",
+  "sha": "b4cadc2bd5bcb303eb6c4184ebea92057527082a",
   "total_count": 3,
   "tree": [
    {
@@ -5039,7 +7755,7 @@
    }
   ],
   "truncated": false,
-  "url": "http://localhost:3300/api/v1/repos/dmtest/vcpkg-registry/git/trees/5be58bb953cc5f4165443fe6088f8f055bb9aa84"
+  "url": "http://localhost:3300/api/v1/repos/dmtest/vcpkg-registry/git/trees/b4cadc2bd5bcb303eb6c4184ebea92057527082a"
  },
  "raw repos/dmtest/base-image/raw/Dockerfile?ref=main": "FROM debian:bookworm-slim\nRUN apt-get update\n",
  "raw repos/dmtest/base-image/raw/README.md?ref=main": "# base-image\n\nThe container base image every service builds on: Debian slim plus CA certificates.\n",
@@ -5079,12 +7795,31 @@
  "raw repos/dmtest/cpp-core/raw/vcpkg.json?ref=main": "{\n  \"name\": \"cppcore\",\n  \"version\": \"2.0.0\"\n}\n",
  "raw repos/dmtest/cpp-net/raw/CMakeLists.txt?ref=main": "cmake_minimum_required(VERSION 3.24)\nproject(CppNet CXX)\n",
  "raw repos/dmtest/cpp-net/raw/README.md?ref=main": "# cpp-net\n\nThe C++ networking layer used by the native services.\n",
+ "raw repos/dmtest/dart-app/raw/README.md?ref=main": "# dart-app\n\nThe Flutter mobile app.\n",
+ "raw repos/dmtest/dart-app/raw/pubspec.yaml?ref=main": "name: dart_app\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1.2.0\n  dmtest_ui:\n    git:\n      url: http://localhost:3300/dmtest/dart-ui.git\n",
+ "raw repos/dmtest/dart-ui/raw/README.md?ref=main": "# dart-ui\n\nFlutter widgets shared by the mobile apps.\n",
+ "raw repos/dmtest/dart-ui/raw/pubspec.yaml?ref=main": "name: dmtest_ui\nversion: 1.0.0\n",
+ "raw repos/dmtest/deno-core/raw/README.md?ref=main": "# deno-core\n\nShared Deno modules.\n",
+ "raw repos/dmtest/deno-core/raw/deno.json?ref=main": "{\n  \"name\": \"@dmtest/deno-core\",\n  \"version\": \"1.0.0\"\n}\n",
+ "raw repos/dmtest/deno-tool/raw/README.md?ref=main": "# deno-tool\n\nA Deno command-line tool.\n",
+ "raw repos/dmtest/deno-tool/raw/deno.json?ref=main": "{\n  \"imports\": {\n    \"core\": \"jsr:@dmtest/deno-core@^1\",\n    \"path\": \"jsr:@std/path@^1\"\n  }\n}\n",
  "raw repos/dmtest/design-tokens/raw/.gitea/workflows/ci.yml?ref=main": "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: dmtest/ci-actions/go-test@v1\n",
  "raw repos/dmtest/design-tokens/raw/.gitmodules?ref=main": "[submodule \"fonts\"]\n\tpath = fonts\n\turl = ../../brand/fonts.git\n",
  "raw repos/dmtest/design-tokens/raw/README.md?ref=main": "# design-tokens\n\nColour, spacing and typography tokens for ui-kit, with the brand fonts as a submodule.\n",
  "raw repos/dmtest/design-tokens/raw/package.json?ref=main": "{\n  \"name\": \"@dmtest/design-tokens\",\n  \"version\": \"3.1.0\",\n  \"devDependencies\": {\n    \"@dmtest/ui-kit\": \"^2.0.0\"\n  }\n}\n",
+ "raw repos/dmtest/ex-app/raw/README.md?ref=main": "# ex-app\n\nAn Elixir Phoenix service.\n",
+ "raw repos/dmtest/ex-app/raw/mix.exs?ref=main": "defmodule App.MixProject do\n  def project, do: [app: :ex_app]\n  defp deps do\n    [{:jason, \"~> 1.4\"}, {:dmtest_auth, \"~> 1.0\", organization: \"dmtest\"}]\n  end\nend\n",
+ "raw repos/dmtest/ex-auth/raw/README.md?ref=main": "# ex-auth\n\nElixir authentication library.\n",
+ "raw repos/dmtest/ex-auth/raw/mix.exs?ref=main": "defmodule Auth.MixProject do\n  def project, do: [app: :dmtest_auth, version: \"1.0.0\"]\nend\n",
  "raw repos/dmtest/feature-store-client/raw/README.md?ref=main": "# feature-store-client\n\nPython client for the feature store.\n",
  "raw repos/dmtest/feature-store-client/raw/pyproject.toml?ref=main": "[project]\nname = \"feature_store_client\"\nversion = \"0.4.1\"\n",
+ "raw repos/dmtest/go-log-fork/raw/README.md?ref=main": "# go-log-fork\n\nThe org's fork of a logging library, with structured fields.\n",
+ "raw repos/dmtest/go-log-fork/raw/go.mod?ref=main": "module localhost:3300/dmtest/go-log-fork\n\ngo 1.22\n",
+ "raw repos/dmtest/go-tools/raw/README.md?ref=main": "# go-tools\n\nGo developer tools checked out next to the services.\n",
+ "raw repos/dmtest/go-tools/raw/go.mod?ref=main": "module localhost:3300/dmtest/go-tools\n\ngo 1.22\n",
+ "raw repos/dmtest/go-workspace/raw/README.md?ref=main": "# go-workspace\n\nA Go service developed in a go.work workspace.\n",
+ "raw repos/dmtest/go-workspace/raw/go.mod?ref=main": "module localhost:3300/dmtest/go-workspace\n\ngo 1.22\n\nrequire github.com/upstream/log v1.4.0\n\nreplace github.com/upstream/log => localhost:3300/dmtest/go-log-fork v1.4.1\n",
+ "raw repos/dmtest/go-workspace/raw/go.work?ref=main": "go 1.22\n\nuse (\n\t.\n\t../go-tools\n)\n",
  "raw repos/dmtest/gradle-conventions/raw/README.md?ref=main": "# gradle-conventions\n\nThe Gradle convention plugin every JVM build of the org applies.\n",
  "raw repos/dmtest/gradle-conventions/raw/build.gradle.kts?ref=main": "plugins {\n  `kotlin-dsl`\n}\n\ngroup = \"com.dmtest.gradle\"\n\ngradlePlugin {\n  plugins {\n    create(\"conventions\") {\n      id = \"com.dmtest.conventions\"\n      implementationClass = \"com.dmtest.gradle.ConventionsPlugin\"\n    }\n  }\n}\n",
  "raw repos/dmtest/gradle-conventions/raw/settings.gradle.kts?ref=main": "rootProject.name = \"gradle-conventions\"\n",
@@ -5099,6 +7834,14 @@
  "raw repos/dmtest/invoicing-dotnet/raw/src/Client/Client.csproj?ref=main": "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <PackageId>Dmtest.Invoicing.Client</PackageId>\n  </PropertyGroup>\n</Project>\n",
  "raw repos/dmtest/java-bom/raw/README.md?ref=main": "# java-bom\n\nThe platform bill of materials: one version for every shared Java library.\n",
  "raw repos/dmtest/java-bom/raw/pom.xml?ref=main": "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n  <modelVersion>4.0.0</modelVersion>\n  <groupId>com.dmtest.platform</groupId>\n  <artifactId>platform-bom</artifactId>\n  <version>1.4.0</version>\n  <packaging>pom</packaging>\n  <dependencyManagement>\n    <dependencies>\n      <dependency>\n        <groupId>com.dmtest</groupId>\n        <artifactId>billing-api</artifactId>\n        <version>2.1.0</version>\n      </dependency>\n    </dependencies>\n  </dependencyManagement>\n</project>\n",
+ "raw repos/dmtest/js-mono/raw/.npmrc?ref=main": "@dmtest:registry=https://npm.dmtest.example/\n",
+ "raw repos/dmtest/js-mono/raw/README.md?ref=main": "# js-mono\n\nThe web front ends as one npm workspace.\n",
+ "raw repos/dmtest/js-mono/raw/package-lock.json?ref=main": "{\n  \"name\": \"js-mono\",\n  \"lockfileVersion\": 3,\n  \"packages\": {\n    \"\": {},\n    \"node_modules/@dmtest/design-tokens\": { \"version\": \"3.1.0\" },\n    \"node_modules/@dmtest/ui-kit\": { \"version\": \"2.0.0\" },\n    \"node_modules/@dmtest/not-in-the-map\": { \"version\": \"0.1.0\" },\n    \"node_modules/@types/node\": { \"version\": \"20.0.0\" },\n    \"node_modules/lodash\": { \"version\": \"4.17.21\" }\n  }\n}\n",
+ "raw repos/dmtest/js-mono/raw/package.json?ref=main": "{\n  \"name\": \"js-mono\",\n  \"private\": true,\n  \"workspaces\": [\"packages/*\"]\n}\n",
+ "raw repos/dmtest/js-mono/raw/packages/util/package.json?ref=main": "{\n  \"name\": \"@dmtest/js-util\",\n  \"version\": \"1.0.0\"\n}\n",
+ "raw repos/dmtest/js-mono/raw/packages/web/package.json?ref=main": "{\n  \"name\": \"@dmtest/web\",\n  \"dependencies\": {\n    \"@dmtest/design-tokens\": \"^3.0.0\",\n    \"@dmtest/js-util\": \"workspace:*\",\n    \"js-shared\": \"file:../../../js-shared\",\n    \"lodash\": \"^4.17.21\"\n  }\n}\n",
+ "raw repos/dmtest/js-shared/raw/README.md?ref=main": "# js-shared\n\nShared JavaScript helpers checked out next to the front ends.\n",
+ "raw repos/dmtest/js-shared/raw/package.json?ref=main": "{\n  \"name\": \"js-shared\",\n  \"version\": \"1.0.0\"\n}\n",
  "raw repos/dmtest/ledger-dotnet/raw/Directory.Packages.props?ref=main": "<Project>\n  <PropertyGroup>\n    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageVersion Include=\"Dmtest.Invoicing.Client\" Version=\"1.2.0\" />\n    <PackageVersion Include=\"Newtonsoft.Json\" Version=\"13.0.3\" />\n  </ItemGroup>\n</Project>\n",
  "raw repos/dmtest/ledger-dotnet/raw/README.md?ref=main": "# ledger-dotnet\n\nThe ledger service on .NET: postings, balances and the audit trail.\n",
  "raw repos/dmtest/ledger-dotnet/raw/nuget.config?ref=main": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration>\n  <packageSources>\n    <add key=\"internal\" value=\"https://nuget.dmtest.example/v3/index.json\" />\n  </packageSources>\n</configuration>\n",
@@ -5118,6 +7861,14 @@
  "raw repos/dmtest/payments-api/raw/Dockerfile?ref=main": "ARG BASE=localhost:3300/dmtest/base-image:1.2\nFROM golang:1.22 AS build\nWORKDIR /src\nFROM ${BASE}\nCOPY --from=build /out/app /app\n",
  "raw repos/dmtest/payments-api/raw/README.md?ref=main": "# payments-api\n\n[![ci](badge.svg)](ci)\n\nThe payments service: card charges, refunds and the ledger API used by checkout.\n",
  "raw repos/dmtest/payments-api/raw/go.mod?ref=main": "module localhost:3300/dmtest/payments-api\n\ngo 1.22\n\nrequire (\n\tlocalhost:3300/dmtest/platform-lib v1.4.0\n\tlocalhost:3300/dmtest/billing-sdk v0.1.0\n\tgithub.com/dmtest/billing-sdk v0.1.0\n\tgithub.com/google/uuid v1.6.0\n)\n",
+ "raw repos/dmtest/perl-app/raw/README.md?ref=main": "# perl-app\n\nThe legacy Perl batch jobs.\n",
+ "raw repos/dmtest/perl-app/raw/cpanfile?ref=main": "requires 'Acme::Lib', git => 'http://localhost:3300/dmtest/perl-lib.git';\nrequires 'DBI';\n",
+ "raw repos/dmtest/perl-lib/raw/README.md?ref=main": "# perl-lib\n\nPerl modules for the legacy jobs.\n",
+ "raw repos/dmtest/perl-lib/raw/cpanfile?ref=main": "requires 'Moose';\n",
+ "raw repos/dmtest/php-app/raw/README.md?ref=main": "# php-app\n\nThe PHP customer site.\n",
+ "raw repos/dmtest/php-app/raw/composer.json?ref=main": "{\n  \"name\": \"dmtest/app\",\n  \"require\": {\n    \"php\": \">=8.2\",\n    \"dmtest/billing-php\": \"^1.0\",\n    \"dmtest/newsletter\": \"^2.0\",\n    \"laravel/framework\": \"^11.0\"\n  },\n  \"repositories\": [\n    { \"type\": \"vcs\", \"url\": \"http://localhost:3300/dmtest/php-billing.git\" }\n  ]\n}\n",
+ "raw repos/dmtest/php-billing/raw/README.md?ref=main": "# php-billing\n\nInvoice rendering for the PHP sites.\n",
+ "raw repos/dmtest/php-billing/raw/composer.json?ref=main": "{\n  \"name\": \"dmtest/billing-php\",\n  \"require\": {\n    \"php\": \">=8.2\"\n  }\n}\n",
  "raw repos/dmtest/platform-lib/raw/README.md?ref=main": "# platform-lib\n\nShared Go library: logging, config loading and the HTTP middleware every service uses.\n",
  "raw repos/dmtest/platform-lib/raw/go.mod?ref=main": "module localhost:3300/dmtest/platform-lib\n\ngo 1.22\n",
  "raw repos/dmtest/polyglot-tools/raw/README.md?ref=main": "# polyglot-tools\n\nSmall tools in Haskell, Zig, Elixir and Erlang.\n",
@@ -5126,6 +7877,22 @@
  "raw repos/dmtest/polyglot-tools/raw/mix.exs?ref=main": "defp deps do\n  [\n    {:jason, \"~> 1.4\"},\n    {:core, git: \"http://localhost:3300/dmtest/cpp-core.git\", tag: \"v2.0\"}\n  ]\nend\n",
  "raw repos/dmtest/polyglot-tools/raw/rebar.config?ref=main": "{deps, [{rules, {git, \"http://localhost:3300/dmtest/bazel-rules.git\", {tag, \"1.2.0\"}}}]}.\n",
  "raw repos/dmtest/proto/raw/README.md?ref=main": "# proto\n\nProtocol buffer definitions shared by the services (payments, orders).\n",
+ "raw repos/dmtest/py-legacy/raw/Pipfile?ref=main": "[[source]]\nurl = \"https://pypi.org/simple\"\nname = \"pypi\"\n\n[packages]\nml-pipeline = \"*\"\nflask = \"*\"\n",
+ "raw repos/dmtest/py-legacy/raw/README.md?ref=main": "# py-legacy\n\nAn older Python job on Pipfile and setup.py.\n",
+ "raw repos/dmtest/py-legacy/raw/constraints.txt?ref=main": "--index-url https://pypi.dmtest.example/simple\ndmtest-sdk==1.0.0\n",
+ "raw repos/dmtest/py-legacy/raw/setup.py?ref=main": "from setuptools import setup\n\nsetup(\n    name='py-legacy',\n    install_requires=['dmtest-sdk>=1.0', 'six'],\n)\n",
+ "raw repos/dmtest/py-sdk/raw/README.md?ref=main": "# py-sdk\n\nThe Python client SDK for the internal services.\n",
+ "raw repos/dmtest/py-sdk/raw/pyproject.toml?ref=main": "[project]\nname = \"dmtest-sdk\"\nversion = \"1.0.0\"\n",
+ "raw repos/dmtest/py-uv-app/raw/README.md?ref=main": "# py-uv-app\n\nA Python service managed with uv.\n",
+ "raw repos/dmtest/py-uv-app/raw/pyproject.toml?ref=main": "[project]\nname = \"py-uv-app\"\ndependencies = [\"dmtest-sdk\", \"httpx\"]\n\n[dependency-groups]\ndev = [\"feature-store-client>=0.4\"]\n\n[tool.uv.sources]\n\"dmtest-sdk\" = { git = \"http://localhost:3300/dmtest/py-sdk.git\" }\n",
+ "raw repos/dmtest/r-report/raw/DESCRIPTION?ref=main": "Package: rreport\nImports: dplyr, rutils\nRemotes: git::http://localhost:3300/dmtest/r-utils.git\n",
+ "raw repos/dmtest/r-report/raw/README.md?ref=main": "# r-report\n\nR reports for the monthly review.\n",
+ "raw repos/dmtest/r-utils/raw/DESCRIPTION?ref=main": "Package: rutils\nVersion: 1.0.0\n",
+ "raw repos/dmtest/r-utils/raw/README.md?ref=main": "# r-utils\n\nR helpers for the analysts.\n",
+ "raw repos/dmtest/rb-app/raw/Gemfile?ref=main": "source 'https://rubygems.org'\n\ngem 'rails', '~> 7.1'\ngem 'dmtest-auth', '~> 1.0'\n",
+ "raw repos/dmtest/rb-app/raw/README.md?ref=main": "# rb-app\n\nA Ruby on Rails admin console.\n",
+ "raw repos/dmtest/rb-auth/raw/README.md?ref=main": "# rb-auth\n\nThe Ruby authentication gem.\n",
+ "raw repos/dmtest/rb-auth/raw/rb-auth.gemspec?ref=main": "Gem::Specification.new do |spec|\n  spec.name = 'dmtest-auth'\n  spec.version = '1.0.0'\nend\n",
  "raw repos/dmtest/rust-app/raw/Cargo.toml?ref=main": "[package]\nname = \"rust-app\"\nversion = \"0.1.0\"\n\n[dependencies]\ndmtest-types = { git = \"http://localhost:3300/dmtest/rust-core.git\", branch = \"main\" }\ndmtest-macros = { version = \"0.2\", registry = \"dmtest\" }\nserde = { version = \"1\", features = [\"derive\"] }\ntokio = \"1\"\n\n[dependencies.shared]\npath = \"../rust-shared\"\n",
  "raw repos/dmtest/rust-app/raw/README.md?ref=main": "# rust-app\n\nA Rust command-line service for stock reconciliation.\n",
  "raw repos/dmtest/rust-core/raw/.cargo/config.toml?ref=main": "[registries.dmtest]\nindex = \"sparse+https://crates.dmtest.example/index/\"\n",

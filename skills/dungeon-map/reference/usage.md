@@ -66,8 +66,11 @@ All commands take `--cache DIR` before the command name (default `~/.cache/dunge
   open-telemetry's own repositories depend on, so it's only suggested. When two or more of the
   org's packages start with the org's name, `gaps` prints `note: ... rebuild with --internal
   pypi:opentelemetry-`. `--internal NS:PREFIX` adds a namespace (NS: git, go, npm, pypi, maven,
-  image, tfreg, helm, nuget, gradle-plugin). The list is stored in the map, later builds keep it, and passing
+  image, tfreg, helm, nuget, gradle-plugin, crates, cmake, conan, vcpkg, cocoapods, bazel,
+  gems, composer, pub, hex, jsr). The list is stored in the map, later builds keep it, and passing
   `--internal` again replaces it. Public packages outside these namespaces are never reported.
+  A Composer vendor (`acme/`) and a jsr scope are namespaces too: Packagist and jsr reserve them
+  for their owners. Gems, pub and Hex names are suggested like PyPI's.
 - Incremental: a repository whose last activity (GitHub `pushed_at`, GitLab `last_activity_at`,
   Gitea `updated_at`) and default branch match the previous build keeps its rows. Repositories
   that failed last time are always rescanned. `--full` rescans everything. So does a build whose
@@ -110,9 +113,17 @@ A page shorter than `per_page` ends the list only once a full page proved the se
 |---|---|---|
 | every repository | `git` host/path of its clone URL | |
 | `.gitmodules` (root) | | `git` each `url =`, relative URLs resolved against the repository (submodule) |
-| `package.json` | `npm` name | `npm` each dependency (all four sections); `git` for git / `github:` / `gitlab:` versions |
-| `go.mod` | `go` module path | `go` each `require` |
-| `pyproject.toml`, `setup.cfg`, `requirements*.txt` | `pypi` name (PEP 503 normalized) | `pypi` each dependency; `git` for `x @ git+...` and `git+` URLs (python) |
+| `package.json` (every workspace package is read as its own manifest) | `npm` name | `npm` each dependency (all four sections, `npm:` aliases by their real name, `workspace:` ones resolve inside the repository); `git` for git / `github:` / `gitlab:` versions and a `file:` / `link:` / `portal:` path leaving the repository (the sibling repository) |
+| `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml` | | `npm` scoped packages (`@types/` left out) as `npm-lock`; at load an edge only when an org repository provides the package and nothing else links the two repositories; unresolved rows are dropped, and a lockfile over 512 KB is skipped without a gap |
+| `.npmrc` | | `registry` `registry=` and `@scope:registry=` (never the auth lines) |
+| `deno.json[c]` | `jsr` name | `npm` / `jsr` import specifiers (deno) |
+| `go.mod`, `go.work` | `go` module path | `go` each `require` and a `replace` target module; `git` for a `replace` to, or a `go.work use` of, a path leaving the repository |
+| `pyproject.toml`, `setup.cfg`, `setup.py` (read as text), `requirements*.txt`, `constraints*.txt`, `Pipfile`, `environment.yml` (pip list) | `pypi` name (PEP 503 normalized) | `pypi` each dependency: PEP 621, PEP 735 groups, Poetry main / dev / groups, PDM dev groups, Hatch envs, Pipfile packages, setup.py `install_requires` / `extras_require` lists; `git` for `x @ git+...`, `git+` URLs, Poetry / Pipfile `git =`, uv sources, and path entries leaving the repository (python); `registry` Poetry / uv / PDM / Pipfile sources and `--index-url` / `--extra-index-url` |
+| `Gemfile`, `gems.rb`, `*.gemspec`, `Gemfile.lock` | `gems` gemspec name | `gems` each gem and `add_*dependency`; `git` for `git:` / `github:`, a `path:` leaving the repository, Gemfile.lock GIT remotes; `registry` `source` |
+| `composer.json` | `composer` name | `composer` require / require-dev (platform packages skipped); `git` for vcs / git repositories and a path repository leaving the repository; `registry` composer repositories |
+| `pubspec.yaml` | `pub` name | `pub` dependencies / dev_dependencies / dependency_overrides from pub.dev or `hosted:`; `git` for `git:` entries and a `path:` leaving the repository; `registry` hosted URLs |
+| `mix.exs` | `hex` the project's `app:` | `hex` each Hex dependency (`organization:` ones too); `git` for `git:` / `github:` and a `path:` leaving the repository (mix) |
+| `DESCRIPTION` (R, root), `cpanfile` | | `git` for R `Remotes` (github::, gitlab::, git::, bare org/repo) and cpanfile `git =>` sources |
 | `pom.xml` (every one in the repository, read together) | `maven` groupId:artifactId of each module, `${property}` resolved through the parent chain inside the repository | `maven` the parent, each dependency (managed ones and `<scope>import</scope>` BOMs marked), plugins and extensions; `registry` repository / distributionManagement URLs |
 | `*.gradle[.kts]`, `gradle.properties`, `gradle/*.versions.toml` (read together) | `maven` group:artifact per project; `gradle-plugin` ids of `gradlePlugin { }` and precompiled script plugins | `maven` dependency strings, map notation, `platform()`, catalog accessors (`libs.x.y`, bundles) and catalog entries no read script references (gradle); `gradle-plugin` applied plugin ids with a dot, catalog plugin aliases; `git` for `includeBuild` outside the repository and `sourceControl` repositories (gradle-build) |
 | `*.sbt`, `project/*.scala` | `maven` organization:name for each name / project | `maven` `"g" %% "a" % v` and `addSbtPlugin` (sbt, Scala suffix dropped); `git` for `RootProject` / `ProjectRef` URIs |
@@ -142,7 +153,8 @@ project's own `archivesName`, else an ancestor's `subprojects` template
 (`"opentelemetry-sdk-${proj.name}"`), else the convention plugin's template, else the project
 name. A publication's `groupId` / `artifactId` wins. Maven artifactIds drop a Scala suffix
 (`_2.13`, `_3`). Registry URLs are stored without credentials or query. `global.json` and the
-Gradle wrapper aren't read. Not covered: Buck2, Pants and Please, whose external
+Gradle wrapper aren't read. Not covered: Lua rockspecs, conda package names (only an environment's pip list), PyPI and
+Poetry lockfiles, R `Imports` and Perl module names; Buck2, Pants and Please, whose external
 repository declarations need a build tool to evaluate; Bazel `http_archive` URLs that aren't
 source archives on a code host (zlib.net, a mirror); a CMake `add_subdirectory` into a submodule
 (that's the submodule edge).

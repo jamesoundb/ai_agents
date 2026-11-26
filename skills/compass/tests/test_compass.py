@@ -86,7 +86,8 @@ class Compass(unittest.TestCase):
     def test_show_both_directions(self):
         rc, out = self.c("show", "ui-kit", "platform-lib")
         self.assertEqual(rc, 0, out)
-        self.assertIn("used by (2):\n    dmtest/checkout-web (npm dependency: package.json:5 in dmtest/checkout-web)", out)
+        self.assertIn("used by (3):\n    dmtest/checkout-web (npm dependency: package.json:5 in dmtest/checkout-web)", out)
+        self.assertIn("dmtest/js-mono (npm lockfile (transitive): package-lock.json:7 in dmtest/js-mono)", out)
         self.assertIn("used by (1):\n    dmtest/payments-api (Go module: go.mod:6 in dmtest/payments-api)", out)
 
     def test_show_lists_gaps_and_internal_references_with_no_repository(self):

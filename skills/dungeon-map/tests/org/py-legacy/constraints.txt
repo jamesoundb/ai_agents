@@ -1,0 +1,2 @@
+--index-url https://pypi.{ORG}.example/simple
+{ORG}-sdk==1.0.0

@@ -1,0 +1,8 @@
+name: dart_app
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  {ORG}_ui:
+    git:
+      url: http://{HOST}/{ORG}/dart-ui.git
