@@ -119,6 +119,15 @@ A page shorter than `per_page` ends the list only once a full page proved the se
 | `deps.edn`, `project.clj` | `maven` defproject group/artifact | `maven` `:mvn/version` and project.clj dependencies; `git` for `:git/url`, and `io.github.ORG/REPO` with only a sha (clojure) |
 | `*.csproj`, `*.fsproj`, `*.vbproj`, `Directory.Build.props/.targets`, `Directory.Packages.props` | `nuget` PackageId, else AssemblyName, else the project file name | `nuget` each PackageReference and GlobalPackageReference (central PackageVersion entries are versions, not dependencies); `git` for a ProjectReference that leaves the repository, as the sibling repository (dotnet-project) |
 | `packages.config`, `paket.dependencies`, `paket.references`, `nuget.config` | | `nuget` each package; `git` for paket `github` / `git` lines (paket); `registry` paket `source` and nuget.config package sources |
+| `CMakeLists.txt`, `*.cmake`, `*Config.cmake[.in]` | `cmake` the `project()` name, `install(EXPORT XTargets)`, a `XConfig.cmake` file | `git` for FetchContent_Declare / ExternalProject_Add `GIT_REPOSITORY` or a source-archive `URL`, CPMAddPackage (`gh:` / `gl:` / `bb:`, `GITHUB_REPOSITORY`; cmake-fetch), `${VAR}` from literal `set()`; `cmake` each find_package |
+| `conanfile.txt`, `conanfile.py` | `conan` name | `conan` requires, tool / build / test requires |
+| `vcpkg.json`, `vcpkg-configuration.json` | `vcpkg` name | `vcpkg` dependencies; `git` for git registries; `registry` artifact registries |
+| `subprojects/*.wrap` (Meson) | | `git` for `[wrap-git] url` and a `[wrap-file] source_url` archive on a code host (meson) |
+| `Cargo.toml`, `.cargo/config[.toml]` | `crates` package name (`-` and `_` equal) | `crates` each dependency (every section, target tables, workspace.dependencies, `[dependencies.x]` tables, `package =` renames); `git` for `git =`, a `path =` leaving the repository as the sibling repository, and `[patch]` git sources (cargo); `registry` registries index |
+| `Package.swift` | | `git` for `.package(url:)` and a `.package(path:)` leaving the repository (swiftpm) |
+| `Podfile`, `*.podspec`, `Cartfile[.private]` | `cocoapods` podspec name | `cocoapods` each pod, `git` for `:git =>` (cocoapods); `git` for Carthage `github` / `git` lines (carthage) |
+| `MODULE.bazel`, `WORKSPACE[.bazel]`, `*deps*.bzl`, `*repositories*.bzl` | `bazel` module / workspace name | `bazel` each bazel_dep; `git` for git_override / git_repository / new_git_repository remotes and archive_override / http_archive URLs on a code host (bazel) |
+| `cabal.project*`, `build.zig.zon`, `mix.exs`, `rebar.config` | | `git` for source-repository-package locations (cabal), dependency URLs (zig), `git:` / `github:` deps (mix), `{git, URL}` deps (rebar) |
 | `Chart.yaml` | `helm` chart name | `helm` each dependency not from `file://` |
 | `*.tf` | `tfreg` owner/name/provider for a repository named `terraform-<provider>-<name>` | `git` for git / `github.com/...` sources, `tfreg` for registry sources (terraform) |
 | `.gitlab-ci.yml`, `.gitlab/**/*.yml` | | `git` for `include: project:` and `remote: .../-/raw/...` (ci-include), `trigger:` (ci-trigger), `component:` (ci-component); `$CI_PROJECT_NAMESPACE`, `$CI_SERVER_HOST`/`FQDN` expanded, other variables skipped |
@@ -133,12 +142,16 @@ project's own `archivesName`, else an ancestor's `subprojects` template
 (`"opentelemetry-sdk-${proj.name}"`), else the convention plugin's template, else the project
 name. A publication's `groupId` / `artifactId` wins. Maven artifactIds drop a Scala suffix
 (`_2.13`, `_3`). Registry URLs are stored without credentials or query. `global.json` and the
-Gradle wrapper aren't read.
+Gradle wrapper aren't read. Not covered: Buck2, Pants and Please, whose external
+repository declarations need a build tool to evaluate; Bazel `http_archive` URLs that aren't
+source archives on a code host (zlib.net, a mirror); a CMake `add_subdirectory` into a submodule
+(that's the submodule edge).
 
 Identities are lowercase and carry no port (`localhost:3300/acme/x` and `git@localhost:acme/x`
 are the same repository). Skipped directories: `node_modules`, `vendor`, `third_party`,
-`.terraform`, `testdata`, `fixtures`, `__fixtures__`, and example code (`example`, `examples`,
-`_example`, `_examples`), whose dependencies are not the repository's own.
+`.terraform`, `testdata`, `fixtures`, `__fixtures__`, example and sample code (`example`, `examples`,
+`_example`, `_examples`, `sample`, `samples`) and test source sets (`src/test`, `src/it`, `src/intTest`, ...), whose
+dependencies are not the repository's own.
 
 ## Matching (at load, across every cached graph)
 

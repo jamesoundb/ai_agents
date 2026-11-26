@@ -1,0 +1,5 @@
+{
+  "default": {
+    "cppcore": { "baseline": "2.0.0" }
+  }
+}

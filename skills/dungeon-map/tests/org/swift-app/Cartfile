@@ -1,0 +1,2 @@
+github "Alamofire/Alamofire" ~> 5.8
+git "http://{HOST}/{ORG}/swift-kit.git" "main"

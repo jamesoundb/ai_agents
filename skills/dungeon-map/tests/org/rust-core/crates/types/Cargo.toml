@@ -1,0 +1,6 @@
+[package]
+name = "{ORG}-types"
+version = "0.3.0"
+
+[dependencies]
+serde = { workspace = true }

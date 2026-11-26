@@ -1,0 +1,4 @@
+target 'SwiftApp' do
+  pod '{ORGTITLE}Kit', '~> 1.0'
+  pod 'Alamofire', '~> 5.8'
+end

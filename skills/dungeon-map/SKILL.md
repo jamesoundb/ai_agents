@@ -19,7 +19,9 @@ Per repository: name, path, description, topics, primary language, default branc
 fork flags, last activity, a README summary, and the repositories it depends on, each with
 file:line: git submodules, npm / Go / Python dependencies, Maven (parents, BOMs, properties),
 Gradle (version catalogs, convention plugins, plugin ids, composite builds), sbt, Clojure, .NET
-(PackageReference, ProjectReference to sibling repositories, packages.config, paket), Helm chart
+(PackageReference, ProjectReference to sibling repositories, packages.config, paket), C and C++
+(CMake FetchContent / ExternalProject / CPM / find_package, Conan, vcpkg, Meson wraps), Rust (Cargo),
+Swift (SwiftPM, CocoaPods, Carthage), Bazel, Haskell / Zig / Elixir / Erlang git dependencies, Helm chart
 dependencies, Terraform module sources (git URLs and registry names), GitLab CI `include:` /
 `trigger:` / components, GitHub and Gitea workflow and action `uses:`, Dockerfile `FROM` images
 built in the org.
@@ -77,7 +79,8 @@ holds no credentials.
   name (`opentelemetry-*`). Ask the developer before adding it: anyone can publish under such a
   name.
 - Edges come only from files the map read (up to 300 manifests per repository, `--max-files`;
-  `node_modules/`, `vendor/`, `testdata/`, `fixtures/`, `examples/` skipped). A public package or
+  `node_modules/`, `vendor/`, `testdata/`, `fixtures/`, `examples/`, `samples/` and test source sets
+  such as `src/test/` skipped). A public package or
   image that no repository of a cached org provides is neither an edge nor a gap.
 
 Options, the file types and identities per edge, matching rules, the cache layout and the test

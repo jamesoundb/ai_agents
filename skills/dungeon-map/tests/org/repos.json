@@ -158,5 +158,80 @@
   "topics": [
    "clojure"
   ]
+ },
+ "cpp-core": {
+  "description": "Core C++ library",
+  "topics": [
+   "cpp"
+  ]
+ },
+ "cpp-net": {
+  "description": "C++ networking layer",
+  "topics": [
+   "cpp"
+  ]
+ },
+ "vcpkg-registry": {
+  "description": "vcpkg registry for the internal C++ libraries",
+  "topics": [
+   "cpp",
+   "vcpkg"
+  ]
+ },
+ "cpp-app": {
+  "description": "Native desktop client in C++",
+  "topics": [
+   "cpp"
+  ]
+ },
+ "rust-core": {
+  "description": "Shared Rust crates",
+  "topics": [
+   "rust"
+  ]
+ },
+ "rust-shared": {
+  "description": "Rust helpers",
+  "topics": [
+   "rust"
+  ]
+ },
+ "rust-app": {
+  "description": "Rust stock reconciliation service",
+  "topics": [
+   "rust"
+  ]
+ },
+ "swift-kit": {
+  "description": "Swift UI kit",
+  "topics": [
+   "swift",
+   "ios"
+  ]
+ },
+ "swift-app": {
+  "description": "iOS app shell",
+  "topics": [
+   "swift",
+   "ios"
+  ]
+ },
+ "bazel-rules": {
+  "description": "Bazel rules and toolchains",
+  "topics": [
+   "bazel"
+  ]
+ },
+ "bazel-app": {
+  "description": "Bazel monorepo service",
+  "topics": [
+   "bazel"
+  ]
+ },
+ "polyglot-tools": {
+  "description": "Tools in Haskell, Zig, Elixir and Erlang",
+  "topics": [
+   "tools"
+  ]
  }
 }

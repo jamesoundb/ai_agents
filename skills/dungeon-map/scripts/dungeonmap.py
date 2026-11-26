@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - exercised only on 3.10
 SCHEMA = 1
 # What the extractors and select_files read. Bump it whenever either changes: the next build then
 # rescans every repository, so the fix reaches repositories that have not changed since.
-SCANNER = 3
+SCANNER = 4
 # Manifests read per repository. 300 reads all but 3 of open-telemetry's 113 repositories completely
 # (4,032 file reads for the org; reading all of them would take ~4,600, close to GitHub's 5,000 calls
 # an hour). What the cap leaves out is reported as a gap, never dropped silently.
@@ -60,11 +60,26 @@ VIA_KIND = {
     "gradle": "build", "terraform": "build", "image": "build",
     "gradle-plugin": "build", "gradle-build": "build", "sbt": "build", "clojure": "build",
     "nuget": "build", "dotnet-project": "build", "paket": "build",
+    "cmake": "build", "cmake-fetch": "build", "conan": "build", "vcpkg": "build", "meson": "build",
+    "cargo": "build", "swiftpm": "build", "cocoapods": "build", "carthage": "build", "bazel": "build",
+    "cabal": "build", "zig": "build", "mix": "build", "rebar": "build",
     # a package registry URL (repositories, nuget.config): recorded for dm-registries-static,
     # never matched to a repository yet
     "registry": "build",
     "ci-include": "ci", "ci-component": "ci", "ci-trigger": "ci", "workflow": "ci", "action": "ci",
     "helm": "deploy",
+}
+# The ecosystem of each via. compass deps follows a repository it reached through one ecosystem only
+# through that ecosystem's edges and language-neutral ones (None: submodules, images, Terraform,
+# Helm, CI, Bazel), so a Java build that uses a polyglot monorepo's Java part does not pull in
+# everything its Go / Python / JS parts depend on.
+VIA_FAMILY = {
+    "maven": "jvm", "gradle": "jvm", "gradle-plugin": "jvm", "gradle-build": "jvm", "sbt": "jvm", "clojure": "jvm",
+    "go": "go", "python": "python", "npm": "js",
+    "nuget": "dotnet", "dotnet-project": "dotnet", "paket": "dotnet",
+    "cargo": "rust", "swiftpm": "swift", "cocoapods": "swift", "carthage": "swift",
+    "cmake": "native", "cmake-fetch": "native", "conan": "native", "vcpkg": "native", "meson": "native",
+    "cabal": "haskell", "zig": "zig", "mix": "beam", "rebar": "beam",
 }
 # Code hosts shared by many owners: a Go module path on one is internal only under host/org/.
 SHARED_GO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitea.com", "codeberg.org", "gopkg.in"}
@@ -328,8 +343,10 @@ class GitLab:
         return out
 
     def subgroups(self, group):
+        # all_available: without it GitLab lists only the subgroups the user is a member of, so a
+        # developer without direct membership saw none (found on gitlab.com/inkscape: 0 of 7)
         try:
-            return [g["full_path"] for g in pages(self.t, f"groups/{q(group)}/subgroups")]
+            return [g["full_path"] for g in pages(self.t, f"groups/{q(group)}/subgroups?all_available=true")]
         except NotFound:
             return []
 
@@ -914,7 +931,9 @@ def gradle_model(files, ctx):
                 renamed[(r, m.group(1))] = m.group(2)
             m = re.search(r"""project\(\s*['"]:([\w.\-:]+)['"]\s*\)\.projectDir\s*=\s*(?:file\()?\s*['"]([^'"]+)['"]""", code)
             if m:
-                projdirs[(r, m.group(1).replace(":", "/"))] = m.group(2).strip("./")
+                pdir = re.sub(r"^\$\{?rootDir\}?/?|^\$\{?rootProject\.projectDir\}?/?", "", m.group(2)).strip("./")
+                if "$" not in pdir:
+                    projdirs[(r, m.group(1).replace(":", "/"))] = pdir
             for m in re.finditer(r"""\bincludeBuild\s*\(?\s*['"]([^'"]+)['"]""", code):
                 tgt = os.path.normpath(os.path.join(r, m.group(1)))
                 if tgt.startswith(".."):
@@ -943,7 +962,7 @@ def gradle_model(files, ctx):
     for f, lines in scripts.items():
         r = root_of(os.path.dirname(f))
         cats = {name: cat for (cr, name), cat in catalogs.items() if cr == r}
-        fx = facts.setdefault(f, {"group": [], "artifact": [], "plugins": [], "pubs": []})
+        fx = facts.setdefault(f, {"group": [], "artifact": [], "plugins": [], "pubs": [], "applies": []})
         for n, code, stack in lines:
             inner = set(stack)
             m = re.match(r"""^\s*(?:project\.)?group\s*=?\s*['"]([^'"$]+)['"]""", code)
@@ -952,6 +971,14 @@ def gradle_model(files, ctx):
             if m and inner & {"publications", "publishing"}:
                 fx["pubs"].append(("group", m.group(1)))
             scope = "all" if "allprojects" in inner else "sub" if "subprojects" in inner else "own"
+            for mm in re.finditer(r"""\bapply\s*\(?\s*from\s*[:=]\s*(?:file\()?\s*['"]([^'"]+\.gradle(?:\.kts)?)['"]""", code):
+                raw_t = mm.group(1)
+                if re.match(r"^\$\{?(?:rootDir|rootProject\.projectDir)\}?/", raw_t):  # the build root
+                    base, tgt = r, re.sub(r"^\$\{?(?:rootDir|rootProject\.projectDir)\}?/", "", raw_t)
+                else:  # $projectDir/x or a plain relative path: the script's own directory
+                    base, tgt = os.path.dirname(f), re.sub(r"^\$\{?projectDir\}?/", "", raw_t)
+                if "$" not in tgt and not tgt.startswith("http"):
+                    fx["applies"].append((scope, os.path.normpath(os.path.join(base, tgt))))
             for m in re.finditer(r"""\b(?:archivesName\s*(?:\.set\s*\(|=)|archivesBaseName\s*=)\s*['"]([^'"]+)['"]""", code):
                 fx["artifact"].append((scope, m.group(1)))
             m = re.match(r"""^\s*artifactId\s*=?\s*['"]([^'"$]+)['"]""", code)
@@ -1010,6 +1037,23 @@ def gradle_model(files, ctx):
         if m:
             provided_plugins.add(m.group(1).lower())
             prov.append(("gradle-plugin", m.group(1).lower()))
+    # an applied script (apply from: "$rootDir/gradle/versioning.gradle") counts for the script that
+    # applies it, with the scope of the apply line: inside allprojects / subprojects its facts take
+    # that scope (temporalio/sdk-java sets its group this way)
+    for _round in range(2):
+        for f, fx in facts.items():
+            for scope, tgt in fx.get("applies", []):
+                tf = facts.get(tgt)
+                if not tf or tgt == f:
+                    continue
+                for key in ("group", "artifact"):
+                    for sc, v in tf[key]:
+                        item = (sc if scope == "own" else scope, v)
+                        if item not in fx[key]:
+                            fx[key].append(item)
+                for item in tf["pubs"]:
+                    if item not in fx["pubs"]:
+                        fx["pubs"].append(item)
     # catalog entries no script read here references: still declared dependencies of the build
     for (r, cname), cat in catalogs.items():
         for key, (kind, val, n, src) in cat.items():
@@ -1043,6 +1087,8 @@ def gradle_model(files, ctx):
         projects[r] = r
         for inc in includes.get(r, []):
             d = projdirs.get((r, inc), inc)
+            if d != inc:  # a remapped projectDir keeps the include's project name
+                dir_name[os.path.normpath(os.path.join(r, d)) if r else os.path.normpath(d)] = inc.rsplit("/", 1)[-1]
             parts = d.split("/")
             for k in range(1, len(parts) + 1):  # include(":a:b") also makes project :a
                 sub = "/".join(parts[:k]) if k < len(parts) else d
@@ -1085,7 +1131,7 @@ def gradle_model(files, ctx):
         v = re.sub(pat, name, tmpl or "")
         return None if not v or "$" in v else v
 
-    empty = {"group": [], "artifact": [], "plugins": [], "pubs": []}
+    empty = {"group": [], "artifact": [], "plugins": [], "pubs": [], "applies": []}
     for d, r in sorted(projects.items()):
         if d.split("/")[0] == "buildSrc" or d == "buildSrc":
             continue
@@ -1277,6 +1323,377 @@ def x_nuget_config(path, text, ctx):
         u = registry_url(m.group(1))
         if u:
             req.append(("registry", "registry", u, text.count("\n", 0, m.start()) + 1, "nuget packageSource"))
+    return [], req
+
+
+# ---- C, C++, Rust, Swift, Bazel and others ----------------------------------------
+def archive_repo(url):
+    """A source archive URL on a code host -> the repository it is cut from (host/org/repo), else
+    None: github.com/O/R/archive/..., /releases/download/..., codeload.github.com/O/R/...,
+    GitLab .../-/archive/..., Gitea / Forgejo O/R/archive/..."""
+    u = (url or "").strip().strip("'\"")
+    m = re.match(r"^[a-z]+://(?:[^@/]+@)?([^/]+)/(.+?)/-/archive/", u, re.I)  # GitLab, any group depth
+    if m:
+        return norm_path(f"{m.group(1).split(':')[0]}/{m.group(2)}")
+    m = re.match(r"^[a-z]+://codeload\.github\.com/([^/]+)/([^/]+)/", u, re.I)
+    if m:
+        return norm_path(f"github.com/{m.group(1)}/{m.group(2)}")
+    m = re.match(r"^[a-z]+://(?:[^@/]+@)?([^/]+)/([^/]+)/([^/]+)/(?:archive|releases/download)/", u, re.I)
+    if m:
+        return norm_path(f"{m.group(1).split(':')[0]}/{m.group(2)}/{m.group(3)}")
+    return None
+
+
+def source_ident(url, base=None):
+    """A git URL or a source archive URL -> repository identity."""
+    return archive_repo(url) or git_ident(url, base=base)
+
+
+def _ln(text, pos):
+    return text.count("\n", 0, pos) + 1
+
+
+def _strip_hash_comments(text):
+    """Drop # comments (CMake, Starlark, TOML-ish) outside quotes, keeping line breaks."""
+    out = []
+    for line in text.splitlines():
+        q, cut = None, len(line)
+        for i, ch in enumerate(line):
+            if q:
+                q = None if ch == q else q
+            elif ch in "\"'":
+                q = ch
+            elif ch == "#":
+                cut = i
+                break
+        out.append(line[:cut])
+    return "\n".join(out)
+
+
+# ---- CMake
+CMAKE_FETCH = re.compile(r"\b(FetchContent_Declare|ExternalProject_Add|CPMAddPackage|CPMDeclarePackage)\s*\(([^)]*)\)",
+                         re.I | re.S)
+
+
+def x_cmake(path, text, ctx):
+    """CMakeLists.txt / *.cmake: FetchContent_Declare, ExternalProject_Add and CPM sources (git or a
+    source archive; cmake-fetch); find_package(X) as `cmake` x; project(X) and XConfig.cmake files
+    provide `cmake` x."""
+    prov, req = [], []
+    code = _strip_hash_comments(text)
+    var = {m.group(1): m.group(2) for m in re.finditer(r"\bset\s*\(\s*(\w+)\s+\"?([^\s\")]+)\"?", code, re.I)}
+
+    def expand(v):
+        v = re.sub(r"\$\{(\w+)\}", lambda m: var.get(m.group(1), m.group(0)), v.strip().strip('"'))
+        return None if "${" in v else v
+    for m in CMAKE_FETCH.finditer(code):
+        body, n = m.group(2), _ln(code, m.start())
+        args = re.findall(r'"[^"]*"|\S+', body)
+        url = None
+        for k in ("GIT_REPOSITORY", "URL", "GITHUB_REPOSITORY", "GITLAB_REPOSITORY"):
+            if k in args and args.index(k) + 1 < len(args):
+                url = expand(args[args.index(k) + 1])
+                if url and k == "GITHUB_REPOSITORY":
+                    url = f"github.com/{url}"
+                elif url and k == "GITLAB_REPOSITORY":
+                    url = f"gitlab.com/{url}"
+                break
+        if not url and args and m.group(1).lower().startswith("cpm"):
+            short = re.match(r'^"?(gh|gl|bb):([\w.\-]+/[\w.\-]+)', args[0])  # "gh:fmtlib/fmt@10.0.0"
+            if short:
+                host = {"gh": "github.com", "gl": "gitlab.com", "bb": "bitbucket.org"}[short.group(1)]
+                url = f"{host}/{short.group(2)}"
+        g = source_ident(url) if url else None
+        if g:
+            req.append(("cmake-fetch", "git", g, n, f"{m.group(1)} {url}"[:120]))
+    for m in re.finditer(r"\bfind_package\s*\(\s*([\w.\-+]+)", code, re.I):
+        req.append(("cmake", "cmake", m.group(1).lower(), _ln(code, m.start()), m.group(0)[:80]))
+    if os.path.basename(path) == "CMakeLists.txt":
+        m = re.search(r"\bproject\s*\(\s*([\w.\-+]+)", code, re.I)
+        if m:
+            prov.append(("cmake", m.group(1).lower()))
+    m = re.match(r"^([\w.\-+]+?)(?:Config|-config)\.cmake(?:\.in)?$", os.path.basename(path))
+    if m:
+        prov.append(("cmake", m.group(1).lower()))
+    for m in re.finditer(r"\binstall\s*\(\s*EXPORT\s+([\w.\-+]+?)(?:Targets|-targets)?\b", code):
+        prov.append(("cmake", m.group(1).lower()))
+    return prov, req
+
+
+# ---- Conan, vcpkg, Meson
+def x_conan(path, text, ctx):
+    """conanfile.txt [requires] / [tool_requires], conanfile.py requires / self.requires(); name provided."""
+    prov, req = [], []
+    if path.endswith(".txt"):
+        sect = ""
+        for n, line in enumerate(text.splitlines(), 1):
+            s = line.split("#", 1)[0].strip()
+            if s.startswith("["):
+                sect = s.strip("[]")
+            elif s and sect in ("requires", "tool_requires", "build_requires", "test_requires"):
+                req.append(("conan", "conan", s.split("/", 1)[0].lower(), n, s[:80]))
+        return prov, req
+    code = _strip_hash_comments(text)
+    m = re.search(r"^\s*name\s*=\s*['\"]([\w.\-+]+)['\"]", code, re.M)
+    if m:
+        prov.append(("conan", m.group(1).lower()))
+    for m in re.finditer(r"""\b(?:requires|tool_requires|build_requires|test_requires)\s*(?:=|\()\s*([^\n)]*)""", code):
+        for ref in re.findall(r"""['"]([\w.\-+]+)/[^'"]*['"]""", m.group(1)):
+            req.append(("conan", "conan", ref.lower(), _ln(code, m.start()), m.group(0).strip()[:80]))
+    return prov, req
+
+
+def x_vcpkg(path, text, ctx):
+    """vcpkg.json dependencies (name provided); vcpkg-configuration.json git registries."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return [], []
+    prov, req = [], []
+    if os.path.basename(path) == "vcpkg.json":
+        if d.get("name"):
+            prov.append(("vcpkg", str(d["name"]).lower()))
+        for dep in d.get("dependencies") or []:
+            name = dep if isinstance(dep, str) else (dep.get("name") if isinstance(dep, dict) else None)
+            if name:
+                req.append(("vcpkg", "vcpkg", name.lower(), line_of(text, f'"{name}"'), "vcpkg dependency"))
+        return prov, req
+    regs = list(d.get("registries") or []) + ([d["default-registry"]] if isinstance(d.get("default-registry"), dict) else [])
+    for r in regs:
+        if not isinstance(r, dict):
+            continue
+        loc = r.get("repository") or r.get("location") or ""
+        if r.get("kind") == "git":
+            g = git_ident(loc)
+            if g:
+                req.append(("vcpkg", "git", g, line_of(text, loc), f"vcpkg git registry for {', '.join(r.get('packages') or [])}"[:120]))
+        elif r.get("kind") == "artifact" and registry_url(loc):
+            req.append(("registry", "registry", registry_url(loc), line_of(text, loc), "vcpkg artifact registry"))
+    return prov, req
+
+
+def x_meson_wrap(path, text, ctx):
+    """subprojects/*.wrap: [wrap-git] url, [wrap-file] source_url on a code host."""
+    req = []
+    for m in re.finditer(r"^[ \t]*(url|source_url)\s*=\s*(\S+)", text, re.M):
+        g = source_ident(m.group(2)) if m.group(1) == "source_url" else git_ident(m.group(2))
+        if g:
+            req.append(("meson", "git", g, _ln(text, m.start()), m.group(2)[:120]))
+    return [], req
+
+
+# ---- Rust
+def crate_name(name):
+    """crates.io treats - and _ in a crate name as the same character."""
+    return (name or "").strip().lower().replace("_", "-")
+
+
+def toml_tables(text):
+    """A forgiving line-based TOML reader for Cargo.toml: [(table, key, value text, line)], with
+    [dependencies.serde] sub-table keys reported under table "dependencies" and key "serde"."""
+    out, table = [], ""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        s = raw.split(" #", 1)[0].strip() if not raw.strip().startswith("#") else ""
+        n = i + 1
+        i += 1
+        if not s:
+            continue
+        m = re.match(r"^\[\[?\s*([^\]]+?)\s*\]\]?$", s)
+        if m:
+            table = m.group(1).replace('"', "").replace("'", "")
+            continue
+        m = re.match(r"""^(["']?)([\w.\-]+)\1\s*=\s*(.*)$""", s)
+        if not m:
+            continue
+        val = m.group(3)
+        while val.count("{") > val.count("}") or val.count("[") > val.count("]"):
+            if i >= len(lines):
+                break
+            val += " " + lines[i].split(" #", 1)[0].strip()
+            i += 1
+        out.append((table, m.group(2), val, n))
+    return out
+
+
+CARGO_DEP_TABLE = re.compile(r"^(?:workspace\.)?(?:target\.[^.]+(?:\.[^.]+)*\.)?(dependencies|dev-dependencies|build-dependencies)$")
+
+
+def x_cargo(path, text, ctx):
+    """Cargo.toml: [package] name provided as `crates`; each dependency (all sections, target
+    tables, workspace.dependencies, [dependencies.x] tables, `package =` renames) required as
+    `crates`, a `git =` source as `git`, a `path =` that leaves the repository as the sibling
+    repository; [patch.*] git sources."""
+    prov, req = [], []
+    rows = toml_tables(text)
+    sub = {}  # [dependencies.x] tables: (section, crate) -> {key: value}
+    for table, key, val, n in rows:
+        if table == "package" and key == "name":
+            prov.append(("crates", crate_name(val.strip("\"'"))))
+        m = re.match(r"^(.*(?:dependencies))\.([\w\-]+)$", table)
+        if m and CARGO_DEP_TABLE.match(m.group(1)):
+            sub.setdefault((m.group(1), m.group(2)), {"_line": n})[key] = val.strip()
+
+    def dep(name, spec, n, section):
+        git = re.search(r"""\bgit\s*=\s*["']([^"']+)["']""", spec)
+        pth = re.search(r"""\bpath\s*=\s*["']([^"']+)["']""", spec)
+        pkg = re.search(r"""\bpackage\s*=\s*["']([^"']+)["']""", spec)
+        reg = re.search(r"""\bregistry\s*=\s*["']([^"']+)["']""", spec)
+        real = crate_name(pkg.group(1) if pkg else name)
+        if git:
+            g = git_ident(git.group(1))
+            if g:
+                req.append(("cargo", "git", g, n, f"{section} {name} git {git.group(1)}"[:120]))
+        if pth:
+            tgt = os.path.normpath(os.path.join(os.path.dirname(path), pth.group(1)))
+            if tgt.startswith("../"):
+                sib = [x for x in tgt.split("/") if x != ".."][0]
+                g = git_ident(f"../{sib}", base=ctx.get("git"))
+                if g:
+                    req.append(("cargo", "git", g, n, f"{section} {name} path {pth.group(1)}"[:120]))
+            return  # a path dependency inside the repository is the repository itself
+        if not git:
+            req.append(("cargo", "crates", real, n, f"{section} {spec[:60]}" + (f" registry {reg.group(1)}" if reg else "")))
+    for table, key, val, n in rows:
+        m = CARGO_DEP_TABLE.match(table)
+        if m:
+            dep(key, val, n, m.group(1))
+        elif table.startswith("patch."):
+            g = re.search(r"""\bgit\s*=\s*["']([^"']+)["']""", val)
+            if g and git_ident(g.group(1)):
+                req.append(("cargo", "git", git_ident(g.group(1)), n, f"[{table}] {key}"))
+    for (section, name), kv in sub.items():
+        dep(name, " ".join(f"{k} = {v}" for k, v in kv.items() if k != "_line"), kv["_line"], section)
+    return prov, req
+
+
+def x_cargo_config(path, text, ctx):
+    req = []
+    for table, key, val, n in toml_tables(text):
+        if table.startswith("registries.") and key == "index":
+            u = registry_url(val.strip("\"'").removeprefix("sparse+"))
+            if u:
+                req.append(("registry", "registry", u, n, f"cargo registry {table.split('.', 1)[1]}"))
+    return [], req
+
+
+# ---- Swift and Apple
+def x_swift_package(path, text, ctx):
+    req = []
+    for m in re.finditer(r"""\.package\s*\(\s*(?:name:\s*"[^"]*"\s*,\s*)?(url|path):\s*"([^"]+)\"""", text):
+        kind, v = m.group(1), m.group(2)
+        if kind == "url":
+            g = git_ident(v)
+        else:
+            tgt = os.path.normpath(os.path.join(os.path.dirname(path), v))
+            g = git_ident(f"../{[x for x in tgt.split('/') if x != '..'][0]}", base=ctx.get("git")) \
+                if tgt.startswith("../") else None
+        if g:
+            req.append(("swiftpm", "git", g, _ln(text, m.start(2)), m.group(0)[:120]))
+    return [], req
+
+
+def x_podfile(path, text, ctx):
+    """Podfile pods (`cocoapods` name, `:git =>` as git); *.podspec name provided."""
+    prov, req = [], []
+    if path.endswith(".podspec"):
+        m = re.search(r"""\.name\s*=\s*['"]([\w.\-+]+)['"]""", text)
+        if m:
+            prov.append(("cocoapods", m.group(1).lower()))
+        return prov, req
+    for m in re.finditer(r"""^[ \t]*pod\s+['"]([\w.\-+/]+)['"]([^\n]*)""", text, re.M):
+        n, rest = _ln(text, m.start()), m.group(2)
+        g = re.search(r""":git\s*=>\s*['"]([^'"]+)['"]|git:\s*['"]([^'"]+)['"]""", rest)
+        if g:
+            gi = git_ident(g.group(1) or g.group(2))
+            if gi:
+                req.append(("cocoapods", "git", gi, n, m.group(0).strip()[:120]))
+        else:
+            req.append(("cocoapods", "cocoapods", m.group(1).split("/", 1)[0].lower(), n, m.group(0).strip()[:120]))
+    return prov, req
+
+
+def x_cartfile(path, text, ctx):
+    req = []
+    for m in re.finditer(r"""^[ \t]*(github|git)\s+"([^"]+)\"""", text, re.M):
+        g = git_ident(f"github.com/{m.group(2)}") if m.group(1) == "github" and "://" not in m.group(2) else git_ident(m.group(2))
+        if g:
+            req.append(("carthage", "git", g, _ln(text, m.start()), m.group(0).strip()[:120]))
+    return [], req
+
+
+# ---- Bazel
+def _starlark_calls(code, names):
+    """(function, {kwarg: value}, offset) for each call of these functions: string and list kwargs."""
+    for m in re.finditer(rf"\b({'|'.join(names)})\s*\(", code):
+        depth, i = 1, m.end()
+        while i < len(code) and depth:
+            depth += {"(": 1, ")": -1}.get(code[i], 0)
+            i += 1
+        body = code[m.end():i - 1]
+        kw = {}
+        for k in re.finditer(r"\b(\w+)\s*=\s*(\"[^\"]*\"|'[^']*'|\[[^\]]*\])", body):
+            v = k.group(2)
+            kw[k.group(1)] = re.findall(r"[\"']([^\"']*)[\"']", v) if v.startswith("[") else v[1:-1]
+        yield m.group(1), kw, m.start()
+
+
+def x_bazel(path, text, ctx):
+    """MODULE.bazel: module(name) provided, bazel_dep required as `bazel`, git_override /
+    archive_override sources; WORKSPACE and *deps*.bzl: git_repository / new_git_repository remote,
+    http_archive urls on a code host; workspace(name) provided."""
+    if re.search(r"(^|/)modules/[^/]+/[^/]+/MODULE\.bazel$", path):
+        return [], []  # a registry entry (bazel-central-registry layout): another module's copy
+    prov, req = [], []
+    code = _strip_hash_comments(text)
+    calls = ("module", "bazel_dep", "git_override", "archive_override", "workspace", "git_repository",
+             "new_git_repository", "http_archive")
+    for fn, kw, off in _starlark_calls(code, calls):
+        n = _ln(code, off)
+        if fn in ("module", "workspace") and isinstance(kw.get("name"), str):
+            prov.append(("bazel", kw["name"].lower()))
+        elif fn == "bazel_dep" and isinstance(kw.get("name"), str):
+            req.append(("bazel", "bazel", kw["name"].lower(), n, f"bazel_dep {kw.get('version', '')}".strip()))
+        elif fn in ("git_override", "git_repository", "new_git_repository") and isinstance(kw.get("remote"), str):
+            g = git_ident(kw["remote"])
+            if g:
+                req.append(("bazel", "git", g, n, f"{fn} {kw.get('module_name') or kw.get('name') or ''}".strip()))
+        elif fn in ("archive_override", "http_archive"):
+            urls = kw.get("urls") or ([kw["url"]] if isinstance(kw.get("url"), str) else [])
+            g = next((archive_repo(u) for u in urls if archive_repo(u)), None)
+            if g:
+                req.append(("bazel", "git", g, n, f"{fn} {kw.get('module_name') or kw.get('name') or ''}".strip()))
+    return prov, req
+
+
+# ---- Haskell, Zig, Elixir, Erlang
+def x_other_git_deps(path, text, ctx):
+    """cabal.project source-repository-package, build.zig.zon urls, mix.exs git / github deps,
+    rebar.config git deps."""
+    req, b = [], os.path.basename(path)
+    if b.startswith("cabal.project"):
+        for m in re.finditer(r"^[ \t]*location:\s*(\S+)", text, re.M):
+            g = git_ident(m.group(1))
+            if g:
+                req.append(("cabal", "git", g, _ln(text, m.start()), m.group(0).strip()[:120]))
+    elif b == "build.zig.zon":
+        for m in re.finditer(r'\.url\s*=\s*"([^"]+)"', text):
+            u = re.sub(r"^git\+", "", m.group(1)).split("#", 1)[0]
+            g = archive_repo(u) or git_ident(u)
+            if g:
+                req.append(("zig", "git", g, _ln(text, m.start()), m.group(0)[:120]))
+    elif b == "mix.exs":
+        for m in re.finditer(r"""\{\s*:(\w+)\s*,[^}]*?\b(git|github):\s*"([^"]+)\"""", text):
+            g = git_ident(m.group(3) if m.group(2) == "git" else f"github.com/{m.group(3)}")
+            if g:
+                req.append(("mix", "git", g, _ln(text, m.start()), m.group(0)[:120]))
+    elif b == "rebar.config":
+        for m in re.finditer(r"""\{\s*(\w+)\s*,\s*(?:"[^"]*"\s*,\s*)?\{\s*git\s*,\s*"([^"]+)\"""", text):
+            g = git_ident(m.group(2))
+            if g:
+                req.append(("rebar", "git", g, _ln(text, m.start()), m.group(0)[:120]))
     return [], req
 
 
@@ -1489,7 +1906,7 @@ def x_dockerfile(path, text, ctx):
 # Directories whose manifests are not the repository's own dependencies: vendored code, test data,
 # examples, and test source sets (spring-boot's maven plugin keeps 304 fixture projects under
 # src/intTest/, src/test/).
-SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?"
+SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?|samples?"
                        r"|src/(?:it|test|intTest|integrationTest|functionalTest|testFixtures))/")
 
 
@@ -1530,6 +1947,28 @@ def extractor_for(path):
         return x_paket
     if bl == "nuget.config":
         return x_nuget_config
+    if b == "CMakeLists.txt" or bl.endswith(".cmake") or bl.endswith(("config.cmake.in", "-config.cmake.in")):
+        return x_cmake
+    if bl in ("conanfile.txt", "conanfile.py"):
+        return x_conan
+    if b in ("vcpkg.json", "vcpkg-configuration.json"):
+        return x_vcpkg
+    if bl.endswith(".wrap") and "subprojects/" in "/" + path:
+        return x_meson_wrap
+    if b == "Cargo.toml":
+        return x_cargo
+    if re.search(r"(^|/)\.cargo/config(\.toml)?$", path):
+        return x_cargo_config
+    if b == "Package.swift":
+        return x_swift_package
+    if b == "Podfile" or bl.endswith(".podspec"):
+        return x_podfile
+    if b in ("Cartfile", "Cartfile.private"):
+        return x_cartfile
+    if b in ("MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel") or (bl.endswith(".bzl") and re.search(r"(deps|repositories|workspace)", bl)):
+        return x_bazel
+    if b.startswith("cabal.project") or b in ("build.zig.zon", "mix.exs", "rebar.config"):
+        return x_other_git_deps
     if b == "Chart.yaml":
         return x_chart
     if b.endswith(".tf"):
@@ -1871,7 +2310,8 @@ def parse_target(target, provider=None):
     return provider, host, org
 
 
-INTERNAL_NS = ("git", "go", "npm", "pypi", "maven", "image", "tfreg", "helm", "nuget", "gradle-plugin")
+INTERNAL_NS = ("git", "go", "npm", "pypi", "maven", "image", "tfreg", "helm", "nuget", "gradle-plugin", "crates",
+               "cmake", "conan", "vcpkg", "cocoapods", "bazel")
 
 
 def cmd_build(a):
@@ -2112,12 +2552,12 @@ def internal_rules(m, provides, extra=()):
             org_words |= {re.sub(r"[-_.]", "", seg), re.split(r"[-_.]", seg)[0]}
     shared = SHARED_GO_HOSTS | {g["host"].lower().split(":", 1)[0] for g in m.graphs.values()}
     tokens = {}  # (ns, token) -> {names}
+    vanity = {}  # Go vanity domain -> first path segments the org's modules use
     for (ns, ident), keys in provides.items():
         if all(m.repos.get(k, {}).get("fork") for k in keys):
             continue
         if ns == "go" and "/" in ident and ident.split("/", 1)[0] not in shared:
-            d = ident.split("/", 1)[0]
-            add("go", f"{d}/", f"Go modules under {d}/ are the org's")
+            vanity.setdefault(ident.split("/", 1)[0], set()).add(ident.split("/")[1])
         elif ns == "npm" and ident.startswith("@") and "/" in ident:
             sc = ident.split("/", 1)[0]
             add("npm", f"{sc}/", f"npm scope {sc} is the org's")
@@ -2133,8 +2573,15 @@ def internal_rules(m, provides, extra=()):
         elif ns == "tfreg" and "/" in ident:
             o = ident.split("/", 1)[0]
             add("tfreg", f"{o}/", f"Terraform registry namespace {o} is the org's")
-        elif ns in ("npm", "pypi") and name_token(ident) in org_words:
+        elif ns in ("npm", "pypi", "crates") and name_token(ident) in org_words:
             tokens.setdefault((ns, name_token(ident)), set()).add(ident)
+    for d, segs in vanity.items():
+        # go.opentelemetry.io/{otel,contrib,...} is open-telemetry's; google.golang.org/grpc alone does
+        # not make google.golang.org (protobuf, genproto, api) grpc's
+        if len(segs) >= 2:
+            add("go", f"{d}/", f"Go modules under {d}/ are the org's")
+        else:
+            add("go", f"{d}/{next(iter(segs))}/", f"Go modules under {d}/{next(iter(segs))}/ are the org's")
     for e in extra:
         ns, _, pre = e.partition(":")
         if pre:

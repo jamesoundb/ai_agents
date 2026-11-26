@@ -1,0 +1,6 @@
+[requires]
+cppcore/2.0
+zlib/1.3
+
+[generators]
+CMakeDeps

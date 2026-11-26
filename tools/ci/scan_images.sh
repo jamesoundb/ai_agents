@@ -10,6 +10,8 @@
 # packages carried fixable vulnerabilities, and its releases were compromised in March 2026
 # (0.69.4-0.69.6). To update: take the tarball's line from trivy_<version>_checksums.txt on the
 # GitHub release.
+# Accepted, expiring exceptions live in .trivyignore at the repository root (one ID per line with
+# exp:YYYY-MM-DD and the reason); after the date they fail the scan again.
 set -eu
 TRIVY_VERSION=0.76.2
 TRIVY_SHA256=bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
@@ -62,14 +64,17 @@ fi
 images=$(grep -oE '[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}' .gitlab-ci.yml | sort -u)
 [ -n "$images" ] || { echo "scan_images: no digest-pinned images in .gitlab-ci.yml" >&2; exit 2; }
 
+ignore="$root/.trivyignore"
+[ -f "$ignore" ] || ignore=/dev/null
+
 rc=0
 for img in $images; do
   echo "=== image $img"
   scan image --image-src remote --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
-    --exit-code 1 "$img" || rc=1
+    --ignorefile "$ignore" --exit-code 1 "$img" || rc=1
 done
 echo "=== this job's filesystem (packages installed at job start, Trivy itself)"
-scan rootfs --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
+scan rootfs --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --ignorefile "$ignore" --exit-code 1 \
   --skip-dirs /proc,/sys,/dev,"$root" / || rc=1
 
 [ "$rc" = 0 ] && echo "scan_images: no fixable HIGH or CRITICAL vulnerabilities"

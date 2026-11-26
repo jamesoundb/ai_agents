@@ -1,0 +1,11 @@
+# Vulnerabilities tools/ci/scan_images.sh accepts for now. Each entry expires: after its date Trivy
+# reports it again and the image-scan job fails, so every exception gets looked at again.
+# Format: one ID per line, optionally `exp:YYYY-MM-DD`.
+
+# BASH32_IMAGE (mirror.gcr.io/library/bash:3.2@sha256:2556c2da19c3..., alpine 3.22.8) has
+# libcrypto3 / libssl3 3.5.9-r0. OpenSSL fixed this QUIC denial of service in 3.5.9-r2, Alpine
+# ships it, but Docker Hub had not rebuilt any bash:3.2 tag by 2026-11-26, so no fixed digest
+# exists. The image only runs ai-task's shell tests (job ai-task-portable, which also upgrades
+# both packages at start); nothing there uses OpenSSL's QUIC code. Decided by Jim on 2026-11-26.
+# Remove this entry when BASH32_IMAGE moves to a rebuilt digest.
+CVE-2026-124709 exp:2026-12-10

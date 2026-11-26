@@ -152,6 +152,9 @@ ai-task-portable:
   stage: test
   image: $BASH32_IMAGE
   before_script:
+    # until BASH32_IMAGE moves to a rebuilt digest: OpenSSL 3.5.9-r2 fixes CVE-2026-124709
+    # (accepted in .trivyignore, expiring 2026-12-10)
+    - apk upgrade --no-cache -q libcrypto3 libssl3
     - apk add --no-cache -q git
   script:
     - bash skills/ai-task/tests/run_tests.sh
