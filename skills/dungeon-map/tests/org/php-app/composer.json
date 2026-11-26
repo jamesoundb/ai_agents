@@ -1,0 +1,12 @@
+{
+  "name": "{ORG}/app",
+  "require": {
+    "php": ">=8.2",
+    "{ORG}/billing-php": "^1.0",
+    "{ORG}/newsletter": "^2.0",
+    "laravel/framework": "^11.0"
+  },
+  "repositories": [
+    { "type": "vcs", "url": "http://{HOST}/{ORG}/php-billing.git" }
+  ]
+}

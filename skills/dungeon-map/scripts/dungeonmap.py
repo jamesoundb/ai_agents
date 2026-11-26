@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover - exercised only on 3.10
 SCHEMA = 1
 # What the extractors and select_files read. Bump it whenever either changes: the next build then
 # rescans every repository, so the fix reaches repositories that have not changed since.
-SCANNER = 4
+SCANNER = 5
 # Manifests read per repository. 300 reads all but 3 of open-telemetry's 113 repositories completely
 # (4,032 file reads for the org; reading all of them would take ~4,600, close to GitHub's 5,000 calls
 # an hour). What the cap leaves out is reported as a gap, never dropped silently.
@@ -63,6 +63,8 @@ VIA_KIND = {
     "cmake": "build", "cmake-fetch": "build", "conan": "build", "vcpkg": "build", "meson": "build",
     "cargo": "build", "swiftpm": "build", "cocoapods": "build", "carthage": "build", "bazel": "build",
     "cabal": "build", "zig": "build", "mix": "build", "rebar": "build",
+    "npm-lock": "build", "deno": "build", "gems": "build", "composer": "build", "pub": "build",
+    "r-remotes": "build", "cpanfile": "build",
     # a package registry URL (repositories, nuget.config): recorded for dm-registries-static,
     # never matched to a repository yet
     "registry": "build",
@@ -80,6 +82,7 @@ VIA_FAMILY = {
     "cargo": "rust", "swiftpm": "swift", "cocoapods": "swift", "carthage": "swift",
     "cmake": "native", "cmake-fetch": "native", "conan": "native", "vcpkg": "native", "meson": "native",
     "cabal": "haskell", "zig": "zig", "mix": "beam", "rebar": "beam",
+    "npm-lock": "js", "deno": "js", "gems": "ruby", "composer": "php", "pub": "dart", "r-remotes": "r", "cpanfile": "perl",
 }
 # Code hosts shared by many owners: a Go module path on one is internal only under host/org/.
 SHARED_GO_HOSTS = {"github.com", "gitlab.com", "bitbucket.org", "gitea.com", "codeberg.org", "gopkg.in"}
@@ -97,6 +100,12 @@ MAX_FILE_BYTES = 512 * 1024
 # for a minute or more. Matched on the CLI's message: HTTP 429, or a 403 that says "rate limit".
 RATE_WAITS = (15, 30, 60, 60, 60)
 RATE_LIMITED = re.compile(r"\b429\b|rate limit|too many requests")
+# A server or network hiccup, not a refusal: retried twice after these waits (seconds), on this
+# call only. Found live on GitHub: a 43,647-entry tree once came back empty ("unexpected end of
+# JSON input") and succeeded on the next call.
+TRANSIENT = re.compile(r"unexpected end of json input|unexpected eof|\b50[0234]\b|bad gateway|gateway time-?out|"
+                       r"service unavailable|internal server error|connection reset|tls handshake timeout")
+TRANSIENT_WAITS = (5, 15)
 
 
 class ApiError(Exception):
@@ -172,22 +181,32 @@ class CliTransport:
                            + login_hint(self.provider, self.host))
         env = dict(os.environ, GH_PROMPT_DISABLED="1", NO_COLOR="1", GLAB_NO_PROMPT="1")
         self._hold()  # before a retry, _pause has already waited
-        for wait in (*RATE_WAITS, None):
+        rate_waits, transient_waits = iter((*RATE_WAITS, None)), list(TRANSIENT_WAITS)
+        while True:
             with self._lock:
                 self.calls += 1
             try:
                 r = subprocess.run(exe, capture_output=True, text=True, timeout=self.timeout, env=env)
             except subprocess.TimeoutExpired:
-                raise ApiError(f"{exe[0]} api {endpoint}: timed out after {self.timeout}s") from None
+                if transient_waits:
+                    self._sleep(transient_waits.pop(0))
+                    continue
+                raise ApiError(f"{exe[0]} api {endpoint}: timed out after {self.timeout}s, "
+                               f"{len(TRANSIENT_WAITS) + 1} tries") from None
             if r.returncode == 0:
                 return r.stdout
             low = (r.stderr + r.stdout).lower()
-            if not RATE_LIMITED.search(low):
-                break
-            if wait is None:
-                raise ApiError(f"{exe[0]} api {endpoint}: rate limited by {self.host} for {sum(RATE_WAITS)}s; "
-                               "run the build again in a few minutes")
-            self._pause(wait)
+            if RATE_LIMITED.search(low):
+                wait = next(rate_waits)
+                if wait is None:
+                    raise ApiError(f"{exe[0]} api {endpoint}: rate limited by {self.host} for {sum(RATE_WAITS)}s; "
+                                   "run the build again in a few minutes")
+                self._pause(wait)
+                continue
+            if TRANSIENT.search(low) and transient_waits:
+                self._sleep(transient_waits.pop(0))
+                continue
+            break
         msg = (r.stderr.strip() or r.stdout.strip()).splitlines()
         text = " ".join(msg[-3:])[:400]
         if "404" in low or "not found" in low:
@@ -504,8 +523,15 @@ def x_package_json(path, text, ctx):
     for sect in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
         for name, ver in (d.get(sect) or {}).items():
             ln = line_of(text, f'"{name}"')
-            req.append(("npm", "npm", name.lower(), ln, f"{sect} {ver}"))
             v = str(ver)
+            alias = re.match(r"^npm:(@?[^@\s]+)", v)  # "x": "npm:@acme/real@^1"
+            loc = re.match(r"^(?:file|link|portal):(.+)$", v)
+            if loc:  # a local package: only one outside the repository is another repository
+                sib = sibling_repo(path, loc.group(1), ctx)
+                if sib:
+                    req.append(("npm", "git", sib, ln, f"{sect} {v}"))
+                continue
+            req.append(("npm", "npm", (alias.group(1) if alias else name).lower(), ln, f"{sect} {ver}"))
             g = None
             if re.match(r"^(git\+|git://|https?://|ssh://)", v):
                 g = git_ident(v)
@@ -517,28 +543,59 @@ def x_package_json(path, text, ctx):
     return prov, req
 
 
+def sibling_repo(path, rel, ctx):
+    """A relative path that leaves the repository (`../shared/lib`) -> the sibling repository it
+    names, as a git identity next to this one; None when it stays inside."""
+    rel = (rel or "").strip().strip("'\"").replace("\\", "/")
+    tgt = os.path.normpath(os.path.join(os.path.dirname(path), rel))
+    if not tgt.startswith("../"):
+        return None
+    sib = [x for x in tgt.split("/") if x != ".."]
+    return git_ident(f"../{sib[0]}", base=ctx.get("git")) if sib else None
+
+
 def go_ident(mod):
     """Module path, lowercased, without a port on its host (git identities never carry one)."""
     return re.sub(r"^([^/:]+):\d+/", r"\1/", mod.strip('"').lower())
 
 
 def x_go_mod(path, text, ctx):
-    prov, req, block = [], [], False
+    """go.mod / go.work: module provided; require; replace to another module or to a local path
+    that leaves the repository; go.work use directories that leave it."""
+    prov, req, block = [], [], ""
     for i, line in enumerate(text.splitlines(), 1):
         s = line.split("//", 1)[0].strip()
         m = re.match(r"module\s+(\S+)", s)
         if m:
             prov.append(("go", go_ident(m.group(1))))
             continue
-        if re.match(r"require\s*\($", s):
-            block = True
+        m = re.match(r"(require|replace|use)\s*\($", s)
+        if m:
+            block = m.group(1)
             continue
         if block and s == ")":
-            block = False
+            block = ""
             continue
-        m = re.match(r"require\s+(\S+)\s+(\S+)", s) or (block and re.match(r"(\S+)\s+(v\S+)", s))
+        m = re.match(r"require\s+(\S+)\s+(\S+)", s) or (block == "require" and re.match(r"(\S+)\s+(v\S+)", s))
         if m:
             req.append(("go", "go", go_ident(m.group(1)), i, m.group(2)))
+            continue
+        if s.startswith("replace ") or block == "replace":
+            m = re.match(r"(?:replace\s+)?(\S+)(?:\s+v\S+)?\s+=>\s+(\S+)(?:\s+(v\S+))?$", s)
+            if m:
+                tgt = m.group(2)
+                if tgt.startswith((".", "/")):
+                    sib = sibling_repo(path, tgt, ctx)
+                    if sib:
+                        req.append(("go", "git", sib, i, f"replace {m.group(1)} => {tgt}"))
+                else:
+                    req.append(("go", "go", go_ident(tgt), i, f"replace {m.group(1)} => {tgt} {m.group(3) or ''}".strip()))
+            continue
+        if s.startswith("use ") or block == "use":
+            m = re.match(r"(?:use\s+)?(\.\S*)$", s)
+            sib = sibling_repo(path, m.group(1), ctx) if m else None
+            if sib:
+                req.append(("go", "git", sib, i, f"go.work use {m.group(1)}"))
     return prov, req
 
 
@@ -574,8 +631,16 @@ def py_requirement(spec, line, file_via="python"):
 
 
 def x_requirements(path, text, ctx):
+    """requirements*.txt / constraints*.txt: each requirement; --index-url / --extra-index-url /
+    -i recorded as registries. -r / -c includes are read on their own (they match these names)."""
     req = []
     for i, line in enumerate(text.splitlines(), 1):
+        m = re.match(r"^\s*(?:--index-url|--extra-index-url|-i)[\s=]+(\S+)", line)
+        if m:
+            u = registry_url(m.group(1))
+            if u:
+                req.append(("registry", "registry", u, i, "pip index"))
+            continue
         req += py_requirement(line, i)
     return [], req
 
@@ -597,16 +662,62 @@ def x_pyproject(path, text, ctx):
             deps += list(v)
         for spec in deps:
             req += py_requirement(spec, line_of(text, spec.split(";")[0].strip()))
-        for sect in ("dependencies", "dev-dependencies"):
-            for name2, v in (poetry.get(sect) or {}).items():
+        tool = d.get("tool") or {}
+        # PEP 735 dependency groups, PDM dev groups, Hatch environments: lists of requirement strings
+        lists = list((d.get("dependency-groups") or {}).values())
+        lists += list(((tool.get("pdm") or {}).get("dev-dependencies") or {}).values())
+        for env in ((tool.get("hatch") or {}).get("envs") or {}).values():
+            if isinstance(env, dict):
+                lists += [env.get("dependencies") or [], env.get("extra-dependencies") or []]
+        for lst in lists:
+            for spec in lst if isinstance(lst, list) else []:
+                if isinstance(spec, str):
+                    req += py_requirement(spec, line_of(text, spec.split(";")[0].strip()))
+        # Poetry: main / dev / group dependencies, git and path entries, sources
+        sects = [("dependencies", poetry.get("dependencies")), ("dev-dependencies", poetry.get("dev-dependencies"))]
+        sects += [(f"group {g}", (v or {}).get("dependencies")) for g, v in (poetry.get("group") or {}).items()]
+        for sect, deps in sects:
+            for name2, v in (deps or {}).items():
                 if name2.lower() == "python":
                     continue
                 ln = line_of(text, name2)
+                if isinstance(v, dict) and v.get("path"):
+                    sib = sibling_repo(path, v["path"], ctx)
+                    if sib:
+                        req.append(("python", "git", sib, ln, f"poetry {sect} path {v['path']}"))
+                    continue
                 req.append(("python", "pypi", pypi_norm(name2), ln, f"poetry {sect}"))
                 if isinstance(v, dict) and v.get("git"):
                     g = git_ident(v["git"])
                     if g:
                         req.append(("python", "git", g, ln, v["git"]))
+        indexes = [x.get("url") for x in poetry.get("source") or [] if isinstance(x, dict)]
+        # uv: sources (git, path), workspace members outside the repository, indexes
+        uv = tool.get("uv") or {}
+        for name2, v in (uv.get("sources") or {}).items():
+            ln = line_of(text, name2)
+            for v1 in v if isinstance(v, list) else [v]:
+                if not isinstance(v1, dict):
+                    continue
+                if v1.get("git"):
+                    g = git_ident(v1["git"])
+                    if g:
+                        req.append(("python", "git", g, ln, f"uv source {v1['git']}"))
+                if v1.get("path"):
+                    sib = sibling_repo(path, v1["path"], ctx)
+                    if sib:
+                        req.append(("python", "git", sib, ln, f"uv source path {v1['path']}"))
+        for mem in ((uv.get("workspace") or {}).get("members") or []):
+            sib = sibling_repo(path, mem, ctx) if isinstance(mem, str) else None
+            if sib:
+                req.append(("python", "git", sib, line_of(text, mem), f"uv workspace member {mem}"))
+        indexes += [x.get("url") for x in uv.get("index") or [] if isinstance(x, dict)]
+        indexes += [uv.get("index-url")] + list(uv.get("extra-index-url") or [])
+        indexes += [x.get("url") for x in (tool.get("pdm") or {}).get("source") or [] if isinstance(x, dict)]
+        for url in indexes:
+            u = registry_url(url) if isinstance(url, str) else None
+            if u:
+                req.append(("registry", "registry", u, line_of(text, url), "python package index"))
         return prov, req
     # Python 3.10: name = "..." under [project] / [tool.poetry], and quoted strings in dependencies = [...]
     sect, in_deps = "", False
@@ -642,6 +753,279 @@ def x_setup_cfg(path, text, ctx):
             if spec.strip():
                 req += py_requirement(spec, line_of(text, spec.strip()))
     return prov, req
+
+
+def x_pipfile(path, text, ctx):
+    """Pipfile: [packages] / [dev-packages] (git, path and index entries); [[source]] urls."""
+    req = []
+    if not tomllib:
+        return [], req
+    try:
+        d = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return [], req
+    for sect in ("packages", "dev-packages"):
+        for name, v in (d.get(sect) or {}).items():
+            ln = line_of(text, name)
+            if isinstance(v, dict) and v.get("path"):
+                sib = sibling_repo(path, v["path"], ctx)
+                if sib:
+                    req.append(("python", "git", sib, ln, f"Pipfile {sect} path {v['path']}"))
+                continue
+            req.append(("python", "pypi", pypi_norm(name), ln, f"Pipfile {sect}"))
+            if isinstance(v, dict) and v.get("git"):
+                g = git_ident(v["git"])
+                if g:
+                    req.append(("python", "git", g, ln, v["git"]))
+    for src in d.get("source") or []:
+        u = registry_url(src.get("url")) if isinstance(src, dict) else None
+        if u:
+            req.append(("registry", "registry", u, line_of(text, src["url"]), "Pipfile source"))
+    return [], req
+
+
+def x_setup_py(path, text, ctx):
+    """setup.py, read as text (never executed): name= provided; the strings of install_requires,
+    setup_requires, tests_require and the lists inside extras_require required."""
+    prov, req = [], []
+    m = re.search(r"""\bname\s*=\s*['"]([\w.\-]+)['"]""", text)
+    if m:
+        prov.append(("pypi", pypi_norm(m.group(1))))
+    for m in re.finditer(r"\b(install_requires|setup_requires|tests_require|extras_require)\s*=\s*([\[{])", text):
+        opener = m.group(2)
+        closer = "]" if opener == "[" else "}"
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {opener: 1, closer: -1}.get(text[i], 0)
+            i += 1
+        body = text[m.end():i - 1]
+        if m.group(1) == "extras_require":  # only the strings inside the lists, not the extras' names
+            spans = [(lm.start() + 1, lm.end() - 1) for lm in re.finditer(r"\[[^\[\]]*\]", body)]
+        else:
+            spans = [(0, len(body))]
+        for a, b2 in spans:
+            for sm in re.finditer(r"""['"]([^'"]+)['"]""", body[a:b2]):
+                req += py_requirement(sm.group(1), _ln(text, m.end() + a + sm.start()))
+    return prov, req
+
+
+def x_conda_env(path, text, ctx):
+    """environment.yml: the requirements of its `- pip:` list."""
+    req, in_pip, indent = [], False, 0
+    for n, line in enumerate(text.splitlines(), 1):
+        if re.match(r"^\s*-\s*pip\s*:\s*$", line):
+            in_pip, indent = True, len(line) - len(line.lstrip())
+            continue
+        if in_pip:
+            m = re.match(r"^(\s*)-\s+(.+?)\s*$", line)
+            if m and len(m.group(1)) > indent:
+                req += py_requirement(m.group(2).strip("'\""), n)
+            elif line.strip():
+                in_pip = False
+    return [], req
+
+
+def x_npmrc(path, text, ctx):
+    """.npmrc: registry= and @scope:registry= recorded (never the auth lines)."""
+    req = []
+    for n, line in enumerate(text.splitlines(), 1):
+        m = re.match(r"^\s*(@[\w.\-]+:)?registry\s*=\s*(\S+)", line)
+        u = registry_url(m.group(2)) if m else None
+        if u:
+            req.append(("registry", "registry", u, n, f"npm registry {m.group(1) or ''}".strip()))
+    return [], req
+
+
+# npm lockfiles: only scoped names are kept (internal packages are scoped in practice; thousands of
+# public unscoped ones would bloat the map), and only resolved ones become edges (load_map).
+NPM_LOCK_SKIP_SCOPES = ("@types/",)
+
+
+def x_npm_lock(path, text, ctx):
+    """package-lock.json, yarn.lock, pnpm-lock.yaml: scoped packages installed transitively, as
+    `npm-lock` rows. load_map keeps one only when a repository provides it and no other edge
+    already joins the same two repositories; unresolved ones are dropped (no gap)."""
+    names = {}
+    b = os.path.basename(path)
+    if b == "package-lock.json":
+        pat = r'"(?:[^"]*/)?node_modules/(@[\w.\-]+/[\w.\-]+)"\s*:'
+    elif b == "yarn.lock":
+        pat = r'^"?(@[\w.\-]+/[\w.\-]+)@'
+    else:  # pnpm-lock.yaml: '/@acme/x@1.0.0', '@acme/x@1.0.0', /@acme/x/1.0.0
+        pat = r"^\s+'?/?(@[\w.\-]+/[\w.\-]+)[@/]\d"
+    for m in re.finditer(pat, text, re.M):
+        names.setdefault(m.group(1).lower(), _ln(text, m.start(1)))
+    return [], [("npm-lock", "npm", n, ln, f"{b} (transitive)") for n, ln in names.items()
+                if not n.startswith(NPM_LOCK_SKIP_SCOPES)]
+
+
+def x_deno(path, text, ctx):
+    """deno.json(c): name provided as `jsr`; npm: / jsr: specifiers in imports required."""
+    try:
+        d = json.loads(re.sub(r"(?m)^\s*//.*$", "", text))
+    except ValueError:
+        return [], []
+    prov, req = [], []
+    if isinstance(d.get("name"), str):
+        prov.append(("jsr", d["name"].lower()))
+    for k, v in (d.get("imports") or {}).items():
+        m = re.match(r"^(npm|jsr):/?(@[^@/\s]+/[^@/\s]+|[^@/\s]+)", str(v))
+        if m:
+            req.append(("deno", "npm" if m.group(1) == "npm" else "jsr", m.group(2).lower(),
+                        line_of(text, f'"{k}"'), str(v)[:100]))
+    return prov, req
+
+
+# ---- Ruby, PHP, Dart, R, Perl
+def x_gemfile(path, text, ctx):
+    """Gemfile: gem names (`gems`), git: / github: / path: sources, source registries; *.gemspec:
+    name provided, add_*dependency required; Gemfile.lock: GIT remotes."""
+    prov, req, b = [], [], os.path.basename(path)
+    if b == "Gemfile.lock":
+        for m in re.finditer(r"^GIT\n\s+remote:\s*(\S+)", text, re.M):
+            g = git_ident(m.group(1))
+            if g:
+                req.append(("gems", "git", g, _ln(text, m.start(1)), "Gemfile.lock GIT"))
+        return prov, req
+    if b.endswith(".gemspec"):
+        m = re.search(r"""\.name\s*=\s*['"]([\w.\-]+)['"]""", text)
+        if m:
+            prov.append(("gems", m.group(1).lower()))
+        for m in re.finditer(r"""\.add_(?:runtime_|development_)?dependency\s*\(?\s*['"]([\w.\-]+)['"]""", text):
+            req.append(("gems", "gems", m.group(1).lower(), _ln(text, m.start()), m.group(0)[:80]))
+        return prov, req
+    for m in re.finditer(r"""^[ \t]*source\s+['"]([^'"]+)['"]""", text, re.M):
+        u = registry_url(m.group(1))
+        if u:
+            req.append(("registry", "registry", u, _ln(text, m.start()), "gem source"))
+    for m in re.finditer(r"""^[ \t]*gem\s+['"]([\w.\-]+)['"]([^\n]*)""", text, re.M):
+        n, rest = _ln(text, m.start()), m.group(2)
+        gm = re.search(r"""\b(git|github|path)\s*(?::|=>)\s*['"]([^'"]+)['"]""", rest)
+        if gm and gm.group(1) == "path":
+            sib = sibling_repo(path, gm.group(2), ctx)
+            if sib:
+                req.append(("gems", "git", sib, n, m.group(0).strip()[:100]))
+            continue
+        req.append(("gems", "gems", m.group(1).lower(), n, m.group(0).strip()[:100]))
+        if gm:
+            g = git_ident(gm.group(2) if gm.group(1) == "git" else f"github.com/{gm.group(2)}")
+            if g:
+                req.append(("gems", "git", g, n, m.group(0).strip()[:100]))
+    return prov, req
+
+
+def x_composer(path, text, ctx):
+    """composer.json: name provided (`composer`), require / require-dev required (platform
+    packages skipped), vcs / git / path repositories, composer repositories recorded."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return [], []
+    prov, req = [], []
+    if isinstance(d.get("name"), str):
+        prov.append(("composer", d["name"].lower()))
+    for sect in ("require", "require-dev"):
+        for name in (d.get(sect) or {}):
+            if "/" in name:  # php, ext-*, lib-* are the platform
+                req.append(("composer", "composer", name.lower(), line_of(text, f'"{name}"'), sect))
+    repos = d.get("repositories") or []
+    for r in (repos.values() if isinstance(repos, dict) else repos):
+        if not isinstance(r, dict) or not isinstance(r.get("url"), str):
+            continue
+        t, url = r.get("type", ""), r["url"]
+        if t in ("vcs", "git", "github", "gitlab"):
+            g = git_ident(url)
+            if g:
+                req.append(("composer", "git", g, line_of(text, url), f"repository {t}"))
+        elif t == "path":
+            sib = sibling_repo(path, url, ctx)
+            if sib:
+                req.append(("composer", "git", sib, line_of(text, url), f"repository path {url}"))
+        elif t == "composer" and registry_url(url):
+            req.append(("registry", "registry", registry_url(url), line_of(text, url), "composer repository"))
+    return prov, req
+
+
+def yaml_blocks(text):
+    """A small YAML subset reader (pubspec.yaml): [(line, indent, key, inline value)] for each
+    `key:` line, comments dropped. Enough for name / dependencies / git / path / hosted."""
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        s = re.sub(r"\s+#.*$", "", line.rstrip())
+        m = re.match(r"^(\s*)([\w.\-]+)\s*:\s*(.*)$", s)
+        if m:
+            out.append((n, len(m.group(1)), m.group(2), m.group(3).strip().strip("'\"")))
+    return out
+
+
+def x_pubspec(path, text, ctx):
+    """pubspec.yaml: name provided (`pub`); dependencies / dev_dependencies / dependency_overrides
+    required, git (`git: url` or `git: {url:}`) and path entries; hosted urls recorded."""
+    prov, req = [], []
+    sect, dep, dep_line, dep_indent, nonpub = None, None, 0, 0, set()
+    for n, ind, key, val in yaml_blocks(text):
+        if ind == 0:
+            sect = key if key in ("dependencies", "dev_dependencies", "dependency_overrides") else None
+            dep = None
+            if key == "name" and val:
+                prov.append(("pub", val.lower()))
+            continue
+        if not sect:
+            continue
+        if dep is None or ind <= dep_indent:
+            dep, dep_line, dep_indent = key, n, ind
+            if key not in ("flutter", "flutter_test", "flutter_localizations", "sdk"):
+                req.append(("pub", "pub", key.lower(), n, f"{sect} {val}".strip()))
+            continue
+        if key in ("git", "url") and val and re.match(r"^(https?|git|ssh)://|^git@", val) and "pub.dev" not in val:
+            g = git_ident(val)
+            if g:
+                req.append(("pub", "git", g, dep_line, f"{dep} git {val}"))
+                nonpub.add(dep.lower())
+        elif key == "hosted" and val and registry_url(val):
+            req.append(("registry", "registry", registry_url(val), n, "pub hosted"))
+        elif key == "path" and val:
+            nonpub.add(dep.lower())
+            sib = sibling_repo(path, val, ctx)
+            if sib:
+                req.append(("pub", "git", sib, dep_line, f"{dep} path {val}"))
+        elif key == "sdk":
+            nonpub.add(dep.lower())
+    # a git, path or SDK dependency is not a package from pub.dev
+    return prov, [r for r in req if not (r[1] == "pub" and r[2] in nonpub)]
+
+
+def x_r_description(path, text, ctx):
+    """R DESCRIPTION: Remotes (github::, gitlab::, bitbucket::, git::, bare org/repo)."""
+    req = []
+    m = re.search(r"^Remotes:[ \t]*((?:.*)(?:\n[ \t]+.*)*)", text, re.M)
+    if m:
+        for item in re.split(r"[,\n]", m.group(1)):
+            v = item.strip()
+            if not v:
+                continue
+            kind, _, ref = v.rpartition("::")
+            ref = ref.split("@", 1)[0].split("#", 1)[0]
+            host = {"github": "github.com", "gitlab": "gitlab.com", "bitbucket": "bitbucket.org", "": "github.com"}.get(kind)
+            if kind in ("git", "url"):
+                g = git_ident(ref)
+            else:
+                g = norm_path(f"{host}/{ref}") if host and ref.count("/") == 1 else None
+            if g:
+                req.append(("r-remotes", "git", g, _ln(text, text.find(v, m.start())), v))
+    return [], req
+
+
+def x_cpanfile(path, text, ctx):
+    """cpanfile: requires with a git => source."""
+    req = []
+    for m in re.finditer(r"""requires\s+['"]([\w:]+)['"][^;\n]*?\bgit\s*=>\s*['"]([^'"]+)['"]""", text):
+        g = git_ident(m.group(2))
+        if g:
+            req.append(("cpanfile", "git", g, _ln(text, m.start()), m.group(0)[:100]))
+    return [], req
 
 
 # ---- JVM and .NET -----------------------------------------------------------------
@@ -1392,7 +1776,10 @@ def x_cmake(path, text, ctx):
         url = None
         for k in ("GIT_REPOSITORY", "URL", "GITHUB_REPOSITORY", "GITLAB_REPOSITORY"):
             if k in args and args.index(k) + 1 < len(args):
-                url = expand(args[args.index(k) + 1])
+                raw_arg = args[args.index(k) + 1]
+                # cite the line that holds the source, not the opening line of a multi-line call
+                n = _ln(code, m.start(2) + body.find(raw_arg, body.find(k)))
+                url = expand(raw_arg)
                 if url and k == "GITHUB_REPOSITORY":
                     url = f"github.com/{url}"
                 elif url and k == "GITLAB_REPOSITORY":
@@ -1685,10 +2072,23 @@ def x_other_git_deps(path, text, ctx):
             if g:
                 req.append(("zig", "git", g, _ln(text, m.start()), m.group(0)[:120]))
     elif b == "mix.exs":
-        for m in re.finditer(r"""\{\s*:(\w+)\s*,[^}]*?\b(git|github):\s*"([^"]+)\"""", text):
-            g = git_ident(m.group(3) if m.group(2) == "git" else f"github.com/{m.group(3)}")
-            if g:
-                req.append(("mix", "git", g, _ln(text, m.start()), m.group(0)[:120]))
+        for m in re.finditer(r"""\{\s*:(\w+)\s*,([^{}]*)\}""", text):
+            body, n = m.group(2), _ln(text, m.start())
+            gm = re.search(r"""\b(git|github):\s*"([^"]+)\"""", body)
+            pm = re.search(r"""\bpath:\s*"([^"]+)\"""", body)
+            if gm:
+                g = git_ident(gm.group(2) if gm.group(1) == "git" else f"github.com/{gm.group(2)}")
+                if g:
+                    req.append(("mix", "git", g, n, m.group(0)[:120]))
+            elif pm:
+                sib = sibling_repo(path, pm.group(1), ctx)
+                if sib:
+                    req.append(("mix", "git", sib, n, m.group(0)[:120]))
+            elif "in_umbrella" not in body:  # a Hex package (organization: for a private one)
+                req.append(("mix", "hex", m.group(1).lower(), n, m.group(0)[:120]))
+        m = re.search(r"\bapp:\s*:(\w+)", text)
+        if m:
+            return [("hex", m.group(1).lower())], req
     elif b == "rebar.config":
         for m in re.finditer(r"""\{\s*(\w+)\s*,\s*(?:"[^"]*"\s*,\s*)?\{\s*git\s*,\s*"([^"]+)\"""", text):
             g = git_ident(m.group(2))
@@ -1907,7 +2307,7 @@ def x_dockerfile(path, text, ctx):
 # examples, and test source sets (spring-boot's maven plugin keeps 304 fixture projects under
 # src/intTest/, src/test/).
 SKIP_DIRS = re.compile(r"(^|/)(node_modules|vendor|third_party|\.terraform|testdata|fixtures|__fixtures__|_?examples?|samples?"
-                       r"|src/(?:it|test|intTest|integrationTest|functionalTest|testFixtures))/")
+                       r"|src/(?:it|test|intTest|integrationTest|functionalTest|testFixtures))/", re.I)  # tests/Fixtures/ too
 
 
 def extractor_for(path):
@@ -1918,14 +2318,36 @@ def extractor_for(path):
         return x_gitmodules
     if b == "package.json":
         return x_package_json
-    if b == "go.mod":
+    if b in ("go.mod", "go.work"):
         return x_go_mod
     if b == "pyproject.toml":
         return x_pyproject
     if b == "setup.cfg":
         return x_setup_cfg
-    if bl.startswith("requirements") and bl.endswith(".txt"):
+    if (bl.startswith("requirements") or bl.startswith("constraints")) and bl.endswith(".txt"):
         return x_requirements
+    if b == "Pipfile":
+        return x_pipfile
+    if b == "setup.py":
+        return x_setup_py
+    if bl in ("environment.yml", "environment.yaml"):
+        return x_conda_env
+    if b == ".npmrc":
+        return x_npmrc
+    if b in ("package-lock.json", "yarn.lock", "pnpm-lock.yaml"):
+        return x_npm_lock
+    if b in ("deno.json", "deno.jsonc"):
+        return x_deno
+    if b in ("Gemfile", "Gemfile.lock", "gems.rb") or bl.endswith(".gemspec"):
+        return x_gemfile
+    if b == "composer.json":
+        return x_composer
+    if b == "pubspec.yaml":
+        return x_pubspec
+    if b == "DESCRIPTION" and "/" not in path:
+        return x_r_description
+    if b == "cpanfile":
+        return x_cpanfile
     if b == "pom.xml":
         return x_pom
     if b.endswith((".gradle", ".gradle.kts")) or b == "gradle.properties":
@@ -1997,7 +2419,8 @@ def plan_files(files, max_files=MAX_FILES):
         if not x:
             continue
         if (size or 0) > MAX_FILE_BYTES:
-            large.append(path)
+            if x is not x_npm_lock:  # lockfiles are extra evidence; a large one is not a gap
+                large.append(path)
             continue
         found.append((path, x))
     in_dir, in_kind, keyed = {}, {}, []
@@ -2311,7 +2734,7 @@ def parse_target(target, provider=None):
 
 
 INTERNAL_NS = ("git", "go", "npm", "pypi", "maven", "image", "tfreg", "helm", "nuget", "gradle-plugin", "crates",
-               "cmake", "conan", "vcpkg", "cocoapods", "bazel")
+               "cmake", "conan", "vcpkg", "cocoapods", "bazel", "gems", "composer", "pub", "hex", "jsr")
 
 
 def cmd_build(a):
@@ -2489,21 +2912,30 @@ def load_map(cache=None, hosts=None):
     # self-hosted hosts of the map (identities carry no port): host -> (host as built, provider)
     own_hosts = {g["host"].lower().split(":", 1)[0]: (g["host"], g["provider"]) for g in m.graphs.values()
                  if g["host"].lower().split(":", 1)[0] not in SHARED_GO_HOSTS}
+    lock_rows = []
     for src, via, ns, ident, f, line, detail, gk in requires:
+        if via == "npm-lock":  # transitive evidence: an edge only where nothing else links the two
+            lock_rows.append((src, via, ns, ident, f, line, detail, gk))
+            continue
         dsts, how = lookup(ns, ident)
+        if src in dsts:
+            # the repository provides it itself ("vue-router": "workspace:*" in vuejs/router): satisfied
+            # inside, even if another repository declares the same name (the Vue 2 vuejs/vue-router)
+            dsts = set()
+            how = "self"
         if len(dsts) > 1:
             # One name, several repositories: an archived old home (opentelemetry-js-api still
             # provides @opentelemetry/api), a mirror or a fork. Prefer the live, non-fork ones.
             live = {d for d in dsts if not (m.repos.get(d, {}).get("archived") or m.repos.get(d, {}).get("fork"))}
             dsts = live or dsts
-        why = "" if dsts else internal(ns, ident)
+        why = "" if dsts or how == "self" else internal(ns, ident)
         kind = VIA_KIND.get(via, "build")
         row = {"src": src, "via": via, "kind": kind, "ns": ns, "ident": ident, "file": f, "line": line,
                "detail": detail, "src_graph": gk}
         # a short `uses: owner/repo@v` names no host: Gitea fetches it from DEFAULT_ACTIONS_URL
         # (github.com unless configured), so only a full URL counts as this host's
         short_use = via in ("action", "workflow") and "://" not in (detail or "")
-        if dsts or (src, ns, ident) in seen:
+        if dsts or how == "self" or (src, ns, ident) in seen:
             pass
         elif why:
             seen.add((src, ns, ident))
@@ -2518,6 +2950,20 @@ def load_map(cache=None, hosts=None):
             seen.add((src, dst, via))
             m.edges.append({"src": src, "dst": dst, "via": via, "kind": kind, "ns": ns, "ident": ident, "file": f,
                             "line": line, "detail": detail, "match": how, "src_graph": gk})
+    linked = {(e["src"], e["dst"]) for e in m.edges}
+    for src, via, ns, ident, f, line, detail, gk in lock_rows:
+        dsts, how = lookup(ns, ident)
+        if src in dsts:
+            continue  # the repository's own package
+        if len(dsts) > 1:
+            live = {d for d in dsts if not (m.repos.get(d, {}).get("archived") or m.repos.get(d, {}).get("fork"))}
+            dsts = live or dsts
+        for dst in sorted(dsts):
+            if dst == src or (src, dst) in linked:
+                continue
+            linked.add((src, dst))
+            m.edges.append({"src": src, "dst": dst, "via": via, "kind": VIA_KIND[via], "ns": ns, "ident": ident,
+                            "file": f, "line": line, "detail": detail, "match": how, "src_graph": gk})
     return m
 
 
@@ -2558,9 +3004,15 @@ def internal_rules(m, provides, extra=()):
             continue
         if ns == "go" and "/" in ident and ident.split("/", 1)[0] not in shared:
             vanity.setdefault(ident.split("/", 1)[0], set()).add(ident.split("/")[1])
-        elif ns == "npm" and ident.startswith("@") and "/" in ident:
+        elif ns in ("npm", "jsr") and ident.startswith("@") and "/" in ident:
             sc = ident.split("/", 1)[0]
-            add("npm", f"{sc}/", f"npm scope {sc} is the org's")
+            add(ns, f"{sc}/", f"{ns} scope {sc} is the org's")
+        elif ns == "composer" and "/" in ident and re.sub(r"[-_.]", "", ident.split("/", 1)[0]) in org_words:
+            # Packagist reserves a vendor for its owner, but only the vendor named after the org is
+            # surely its own: laravel's vs-code-php-parser-cli still declares laravel-zero/laravel-zero
+            # from the Laravel Zero skeleton it was made from
+            v = ident.split("/", 1)[0]
+            add("composer", f"{v}/", f"Composer vendor {v} is the org's")
         elif ns == "maven" and ":" in ident:
             g = ident.split(":", 1)[0]
             add("maven", f"{g}:", f"Maven group {g} is the org's")
@@ -2573,7 +3025,7 @@ def internal_rules(m, provides, extra=()):
         elif ns == "tfreg" and "/" in ident:
             o = ident.split("/", 1)[0]
             add("tfreg", f"{o}/", f"Terraform registry namespace {o} is the org's")
-        elif ns in ("npm", "pypi", "crates") and name_token(ident) in org_words:
+        elif ns in ("npm", "pypi", "crates", "gems", "pub", "hex") and name_token(ident) in org_words:
             tokens.setdefault((ns, name_token(ident)), set()).add(ident)
     for d, segs in vanity.items():
         # go.opentelemetry.io/{otel,contrib,...} is open-telemetry's; google.golang.org/grpc alone does

@@ -54,6 +54,16 @@ PLANTED = {
     # Haskell, Zig, Elixir, Erlang
     ("polyglot-tools", "rust-shared", "cabal"), ("polyglot-tools", "cpp-net", "zig"),
     ("polyglot-tools", "cpp-core", "mix"), ("polyglot-tools", "bazel-rules", "rebar"),
+    # JS: a workspace package's dependency, file: to a sibling checkout, a transitive internal package
+    # only the lockfile names; Python: uv source + a PEP 735 group, Pipfile, constraints / setup.py;
+    # Go: replace to the org's fork, go.work use of a sibling; Ruby, PHP, Dart, Elixir, Deno, R, Perl
+    ("js-mono", "design-tokens", "npm"), ("js-mono", "js-shared", "npm"), ("js-mono", "ui-kit", "npm-lock"),
+    ("py-uv-app", "py-sdk", "python"), ("py-uv-app", "feature-store-client", "python"),
+    ("py-legacy", "ml-pipeline", "python"), ("py-legacy", "py-sdk", "python"),
+    ("go-workspace", "go-log-fork", "go"), ("go-workspace", "go-tools", "go"),
+    ("rb-app", "rb-auth", "gems"), ("php-app", "php-billing", "composer"), ("dart-app", "dart-ui", "pub"),
+    ("ex-app", "ex-auth", "mix"), ("deno-tool", "deno-core", "deno"), ("r-report", "r-utils", "r-remotes"),
+    ("perl-app", "perl-lib", "cpanfile"),
 }
 
 # The org's own references that no repository provides (src, ident): each must be reported by `gaps`.
@@ -66,6 +76,7 @@ UNRESOLVED = {
     ("checkout-web", "@dmtest/analytics"), ("payments-api", "localhost/dmtest/billing-sdk"),
     ("infra-live", "dmtest/dns/google"),
     ("ledger-dotnet", "dmtest.audit"),  # NuGet prefix Dmtest. is the org's
+    ("php-app", "dmtest/newsletter"),  # Composer vendor dmtest is the org's
 }
 
 
@@ -104,7 +115,7 @@ class GiteaFixture(Tmp):
     def test_every_planted_edge_and_no_decoy(self):
         rc, out = self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("36 repos (36 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("58 repos (58 scanned, 0 unchanged, 0 failed, 1 incomplete)", out)
         m = dm.load_map(self.cache)
         self.assertEqual(edges(m), PLANTED)
 
@@ -116,22 +127,23 @@ class GiteaFixture(Tmp):
         self.assertEqual(r["default_branch"], "main")
         self.assertEqual(r["readme"], "The payments service: card charges, refunds and the ledger API used by checkout.")
         self.assertTrue(m.repos["localhost:3300/dmtest/legacy-billing"]["archived"])
-        e = [e for e in m.edges if e["via"] == "go"][0]
+        e = [e for e in m.edges if e["via"] == "go" and e["src"].endswith("/payments-api")][0]
         self.assertEqual((e["file"], e["line"]), ("go.mod", 6))
 
     def test_incremental_rebuild_reads_only_changed_repos(self):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         changed = copy.deepcopy(GITEA)
-        listing = changed["json orgs/dmtest/repos?limit=50&page=1"]
-        for r in listing:
-            if r["name"] == "ui-kit":
-                r["updated_at"] = "2030-01-01T00:00:00Z"
+        for key, listing in changed.items():  # the org listing spans several pages
+            if key.startswith("json orgs/dmtest/repos?"):
+                for r in listing:
+                    if r["name"] == "ui-kit":
+                        r["updated_at"] = "2030-01-01T00:00:00Z"
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
         self.assertEqual(rc, 0, out)
-        self.assertIn("36 repos (1 scanned, 35 unchanged, 0 failed, 1 incomplete)", out)
+        self.assertIn("58 repos (1 scanned, 57 unchanged, 0 failed, 1 incomplete)", out)
         self.assertEqual(edges(dm.load_map(self.cache)), PLANTED)  # reused rows keep their edges
         rc, out = self.replay(changed, "localhost:3300/dmtest", "gitea")
-        self.assertIn("(0 scanned, 36 unchanged", out)
+        self.assertIn("(0 scanned, 58 unchanged", out)
 
     def test_no_credentials_in_the_map(self):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
@@ -146,7 +158,7 @@ class GiteaFixture(Tmp):
         self.replay(GITEA, "localhost:3300/dmtest", "gitea")
         rc, out = run("--cache", self.cache, "maps")
         self.assertEqual(rc, 0)
-        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+36 repos\s+43 edges out.*gaps: 1 incomplete, 4 unresolved")
+        self.assertRegex(out, r"localhost:3300/dmtest\s+gitea\s+58 repos\s+59 edges out.*gaps: 1 incomplete, 5 unresolved")
 
 
 def gh_repo(name, **kw):
@@ -269,6 +281,16 @@ class SeveralProviders(Tmp):
         self.replay(self.responses(), "https://github.com/acme", "github")
         self.assertEqual(edges(dm.load_map(self.cache)), {("app", "lib", "npm")})
 
+    def test_a_name_the_repository_provides_itself_makes_no_edge(self):
+        """Found live on vuejs: router's workspace packages depend on "vue-router": "workspace:*" (router
+        itself), and the Vue 2 vuejs/vue-router also declares vue-router: no edge to it."""
+        r = self.responses(old_archived=False)
+        r["raw repos/acme/app/contents/package.json?ref=main"] = '{"name": "@acme/lib", "dependencies": {"@acme/lib": "1"}}'
+        self.replay(r, "https://github.com/acme", "github")
+        m = dm.load_map(self.cache)
+        self.assertFalse([e for e in m.edges if e["src"].endswith("/app")])
+        self.assertFalse(m.unresolved)
+
     def test_an_archived_sole_provider_is_kept(self):
         self.replay(self.responses(new=False), "https://github.com/acme", "github")
         self.assertEqual(edges(dm.load_map(self.cache)), {("app", "lib-old", "npm")})
@@ -312,16 +334,16 @@ class Completeness(Tmp):
     def test_internal_references_with_no_repository_and_no_decoy(self):
         rc, out = self.build()
         self.assertEqual(rc, 0, out)
-        self.assertIn("gaps: 1 repositories read incompletely, 4 internal references with no repository", out)
+        self.assertIn("gaps: 1 repositories read incompletely, 5 internal references with no repository", out)
         m = dm.load_map(self.cache)
         self.assertEqual({(u["src"].rsplit("/", 1)[1], u["ident"]) for u in m.unresolved}, UNRESOLVED)
         self.assertEqual(edges(m), PLANTED)  # the new references and decoys add no edge
-        self.assertEqual(m.internal_hints, [("crates", "dmtest-", 2), ("pypi", "dmtest-", 2)])
+        self.assertEqual(m.internal_hints, [("crates", "dmtest-", 2), ("pypi", "dmtest-", 3)])
 
     def test_a_shared_package_name_is_internal_only_when_declared(self):
         self.build()
         rc, out = run("--cache", self.cache, "gaps")
-        self.assertIn("note: 2 of the org's pypi packages are named dmtest-*", out)
+        self.assertIn("note: 3 of the org's pypi packages are named dmtest-*", out)
         self.assertIn("rebuild with --internal pypi:dmtest-", out)
         self.build("--internal", "pypi:dmtest-")
         m = dm.load_map(self.cache)
@@ -379,7 +401,7 @@ class Completeness(Tmp):
     def test_scanner_version_change_rescans_every_repository(self):
         self.build()
         rc, out = self.build()
-        self.assertIn("(0 scanned, 36 unchanged", out)
+        self.assertIn("(0 scanned, 58 unchanged", out)
         old = dm.SCANNER
         try:
             dm.SCANNER = old + 1
@@ -387,7 +409,7 @@ class Completeness(Tmp):
         finally:
             dm.SCANNER = old
         self.assertIn(f"scanner {old} -> {old + 1}: rescanning every repository", out)
-        self.assertIn("(36 scanned, 0 unchanged", out)
+        self.assertIn("(58 scanned, 0 unchanged", out)
 
     def test_a_map_from_before_scanner_versions_is_rescanned(self):
         self.build()
@@ -399,7 +421,7 @@ class Completeness(Tmp):
         self.assertEqual(dm.load_map(self.cache).repos["localhost:3300/dmtest/big-monorepo"]["gaps"], [])
         rc, out = self.build()
         self.assertIn(f"scanner 1 -> {dm.SCANNER}", out)
-        self.assertIn("(36 scanned, 0 unchanged", out)
+        self.assertIn("(58 scanned, 0 unchanged", out)
 
     def test_reused_repositories_keep_their_gaps(self):
         self.build()
@@ -408,7 +430,7 @@ class Completeness(Tmp):
 
     def test_internal_prefixes_are_stored_and_kept(self):
         rc, out = self.build("--internal", "npm:dmtest-")
-        self.assertIn("5 internal references", out)  # dmtest-analytics is now the org's
+        self.assertIn("6 internal references", out)  # dmtest-analytics is now the org's
         self.build()
         self.assertIn(("checkout-web", "dmtest-analytics"),
                       {(u["src"].rsplit("/", 1)[1], u["ident"]) for u in dm.load_map(self.cache).unresolved})
@@ -880,7 +902,7 @@ class Native(unittest.TestCase):
               '# FetchContent_Declare(old GIT_REPOSITORY https://github.com/acme/commented-out.git)\n'
               'find_package(AcmeCore 2.0 REQUIRED)\nfind_package(Threads)\ninstall(EXPORT AcmeAppTargets DESTINATION lib)\n')
         r, prov = reqs({"CMakeLists.txt": cm, "cmake/AcmeNetConfig.cmake.in": "@PACKAGE_INIT@\n"})
-        self.assertEqual(r[("cmake-fetch", "git", "gitlab.acme.example/cpp/net")][:2], ("CMakeLists.txt", 5))
+        self.assertEqual(r[("cmake-fetch", "git", "gitlab.acme.example/cpp/net")][:2], ("CMakeLists.txt", 7))  # the GIT_REPOSITORY line, not the call
         for k in (("cmake-fetch", "git", "github.com/google/googletest"), ("cmake-fetch", "git", "gitlab.acme.example/cpp/legacy"),
                   ("cmake-fetch", "git", "github.com/fmtlib/fmt"), ("cmake-fetch", "git", "github.com/acme/util"),
                   ("cmake", "cmake", "acmecore"), ("cmake", "cmake", "threads")):
@@ -968,9 +990,9 @@ class Native(unittest.TestCase):
                      "rebar.config": '{deps, [{lib, {git, "https://gitlab.acme.example/erl/lib.git", {tag, "1"}}}]}.\n'})
         for k in (("cabal", "git", "gitlab.acme.example/hs/lib"), ("zig", "git", "gitlab.acme.example/zig/net"),
                   ("mix", "git", "gitlab.acme.example/ex/core"), ("mix", "git", "github.com/acme/tool"),
-                  ("rebar", "git", "gitlab.acme.example/erl/lib")):
+                  ("rebar", "git", "gitlab.acme.example/erl/lib"), ("mix", "hex", "plug")):
             self.assertIn(k, r)
-        self.assertEqual(len(r), 5)
+        self.assertEqual(len(r), 6)  # git / github deps are not also Hex packages
 
     def test_line_numbers_from_grpc(self):
         """Found live on grpc: a multi-line .package( cited the line without the URL, and ^\\s* in
@@ -1008,6 +1030,129 @@ class Native(unittest.TestCase):
         f, hints = dm.internal_rules(m, {("crates", "acme-core"): {"github.com/acme/a"}, ("crates", "acme-net"): {"github.com/acme/a"}})
         self.assertEqual(hints, [("crates", "acme-", 2)])
         self.assertFalse(f("crates", "acme-other"))  # crates.io has no namespaces: only with --internal
+
+
+class Scripting(unittest.TestCase):
+    def test_npm_local_and_alias_specifiers(self):
+        pkg = ('{"name": "@acme/app", "dependencies": {"@acme/ui": "workspace:*", "shared": "file:../../../acme-shared",'
+               ' "inner": "file:./packages/inner", "real": "npm:@acme/real-name@^2", "lodash": "^4"}}')
+        r, prov = reqs({"apps/web/package.json": pkg, ".npmrc": "@acme:registry=https://npm.acme.example/\n"
+                                                               "//npm.acme.example/:_authToken=${NPM_TOKEN}\n"})
+        self.assertEqual(prov, [("npm", "@acme/app")])
+        for k in (("npm", "npm", "@acme/ui"), ("npm", "git", "github.com/acme/acme-shared"), ("npm", "npm", "@acme/real-name"),
+                  ("npm", "npm", "lodash"), ("registry", "registry", "https://npm.acme.example")):
+            self.assertIn(k, r)
+        self.assertFalse([k for k in r if k[2] in ("shared", "inner", "real")])
+        self.assertEqual(len([k for k in r if k[0] == "registry"]), 1)  # the auth line is never read as a registry
+
+    def test_npm_lockfiles_keep_scoped_names(self):
+        lock = '{"packages": {"": {}, "node_modules/@acme/core": {"version": "1"}, "node_modules/left-pad": {},' \
+               ' "node_modules/@types/node": {}, "node_modules/@acme/ui/node_modules/@acme/tokens": {}}}'
+        yarn = '"@acme/net@^1.0.0", "@acme/net@^1.1.0":\n  version "1.1.0"\nreact@^18:\n  version "18"\n'
+        pnpm = "packages:\n  '@acme/db@2.0.0':\n    resolution: {}\n  /@acme/cache@1.0.0:\n    resolution: {}\n"
+        r, _ = reqs({"package-lock.json": lock, "web/yarn.lock": yarn, "svc/pnpm-lock.yaml": pnpm})
+        self.assertEqual({k[2] for k in r}, {"@acme/core", "@acme/tokens", "@acme/net", "@acme/db", "@acme/cache"})
+        self.assertTrue(all(k[0] == "npm-lock" for k in r))
+
+    def test_python_tools(self):
+        pyproject = ('[project]\nname = "acme-app"\ndependencies = ["requests"]\n\n[dependency-groups]\ndev = ["acme-testkit>=1"]\n\n'
+                     '[tool.poetry.group.lint.dependencies]\nacme-lint = "^1"\nlocal = { path = "../../acme-common" }\n\n'
+                     '[tool.uv.sources]\nacme-core = { git = "https://gitlab.acme.example/py/core.git" }\n'
+                     'acme-sib = { path = "../../acme-sib" }\n\n[[tool.uv.index]]\nname = "acme"\nurl = "https://pypi.acme.example/simple/"\n\n'
+                     '[tool.hatch.envs.test]\ndependencies = ["acme-fixtures"]\n')
+        r, prov = reqs({"svc/pyproject.toml": pyproject,
+                        "Pipfile": '[[source]]\nurl = "https://pypi.org/simple"\n\n[packages]\nacme-pipe = "*"\n'
+                                   'tool = { git = "https://gitlab.acme.example/py/tool.git" }\n',
+                        "setup.py": "from setuptools import setup\nsetup(\n    name='acme-legacy',\n"
+                                    "    install_requires=['acme-old>=1', 'six'],\n    extras_require={'pg': ['psycopg2']},\n)\n",
+                        "constraints.txt": "--index-url https://u:p@pypi.acme.example/simple\nacme-pinned==1.0\n",
+                        "environment.yml": "name: env\ndependencies:\n  - numpy\n  - pip:\n    - acme-conda-pip\n"})
+        self.assertIn(("pypi", "acme-app"), prov)
+        self.assertIn(("pypi", "acme-legacy"), prov)
+        for k in (("python", "pypi", "acme-testkit"), ("python", "pypi", "acme-lint"), ("python", "git", "github.com/acme/acme-common"),
+                  ("python", "git", "gitlab.acme.example/py/core"), ("python", "git", "github.com/acme/acme-sib"),
+                  ("python", "pypi", "acme-fixtures"), ("python", "pypi", "acme-pipe"), ("python", "git", "gitlab.acme.example/py/tool"),
+                  ("python", "pypi", "acme-old"), ("python", "pypi", "six"), ("python", "pypi", "psycopg2"),
+                  ("python", "pypi", "acme-pinned"), ("python", "pypi", "acme-conda-pip"),
+                  ("registry", "registry", "https://pypi.acme.example/simple"), ("registry", "registry", "https://pypi.org/simple")):
+            self.assertIn(k, r)
+        self.assertNotIn(("python", "pypi", "pg"), r)  # an extra's name is not a requirement
+        self.assertNotIn(("python", "pypi", "numpy"), r)  # conda packages are not PyPI requirements
+        self.assertNotIn(("python", "pypi", "local"), r)
+
+    def test_go_replace_and_work(self):
+        gomod = ("module github.com/acme/svc\n\nrequire github.com/acme/lib v1.0.0\n\nreplace (\n"
+                 "\tgithub.com/acme/lib => ../acme-lib\n\tgithub.com/old/x v1.0.0 => github.com/acme/x-fork v1.2.0\n"
+                 "\tgithub.com/acme/inner => ./inner\n)\n")
+        r, _ = reqs({"go.mod": gomod, "go.work": "go 1.22\n\nuse (\n\t.\n\t../acme-tools\n)\n"})
+        self.assertEqual(r[("go", "git", "github.com/acme/acme-lib")][:2], ("go.mod", 6))
+        self.assertIn(("go", "go", "github.com/acme/x-fork"), r)
+        self.assertEqual(r[("go", "git", "github.com/acme/acme-tools")][:2], ("go.work", 5))
+        self.assertFalse([k for k in r if "inner" in k[2]])
+
+    def test_ruby(self):
+        r, prov = reqs({"Gemfile": "source 'https://rubygems.org'\nsource 'https://gems.acme.example' do\n  gem 'acme-auth'\nend\n"
+                                   "gem 'rails', '~> 7.1'\ngem 'acme-core', git: 'https://gitlab.acme.example/rb/core.git'\n"
+                                   "gem 'acme-ui', github: 'acme/ui'\ngem 'acme-local', path: '../acme-local'\ngemspec\n",
+                        "acme.gemspec": "Gem::Specification.new do |spec|\n  spec.name = 'acme-app'\n"
+                                        "  spec.add_dependency 'acme-util', '~> 1'\n  spec.add_development_dependency 'rspec'\nend\n",
+                        "Gemfile.lock": "GIT\n  remote: https://gitlab.acme.example/rb/core.git\n  revision: abc\n\nGEM\n  remote: https://rubygems.org/\n"})
+        self.assertEqual(prov, [("gems", "acme-app")])
+        for k in (("gems", "gems", "acme-auth"), ("gems", "gems", "rails"), ("gems", "gems", "acme-core"),
+                  ("gems", "git", "gitlab.acme.example/rb/core"), ("gems", "git", "github.com/acme/ui"),
+                  ("gems", "git", "github.com/acme/acme-local"), ("gems", "gems", "acme-util"), ("gems", "gems", "rspec"),
+                  ("registry", "registry", "https://gems.acme.example")):
+            self.assertIn(k, r)
+        self.assertNotIn(("gems", "gems", "acme-local"), r)
+
+    def test_php_dart_elixir_r_perl(self):
+        r, prov = reqs({
+            "composer.json": '{"name": "acme/app", "require": {"php": ">=8.2", "ext-json": "*", "acme/billing": "^2",'
+                             ' "laravel/framework": "^11"}, "repositories": [{"type": "vcs", "url": "https://gitlab.acme.example/php/billing.git"},'
+                             ' {"type": "path", "url": "../acme-shared-php"}, {"type": "composer", "url": "https://packagist.acme.example"}]}',
+            "pubspec.yaml": "name: acme_app\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1.2.0\n  acme_ui:\n"
+                            "    git:\n      url: https://gitlab.acme.example/dart/ui.git\n  acme_core:\n    path: ../acme-core\n"
+                            "  acme_net:\n    hosted: https://pub.acme.example\n    version: ^1.0.0\n",
+            "mix.exs": 'def project, do: [app: :acme_app]\ndefp deps do\n  [{:jason, "~> 1.4"}, {:acme_auth, "~> 1.0", organization: "acme"},\n'
+                       '   {:umbrella_child, in_umbrella: true}]\nend\n',
+            "DESCRIPTION": "Package: acmeR\nImports: dplyr\nRemotes: acme/acmeutils,\n    gitlab::acme/rtools\n",
+            "cpanfile": "requires 'Acme::Core', git => 'https://gitlab.acme.example/perl/core.git';\nrequires 'Moose';\n"})
+        self.assertEqual(prov, [("composer", "acme/app"), ("hex", "acme_app"), ("pub", "acme_app")])
+        for k in (("composer", "composer", "acme/billing"), ("composer", "composer", "laravel/framework"),
+                  ("composer", "git", "gitlab.acme.example/php/billing"), ("composer", "git", "github.com/acme/acme-shared-php"),
+                  ("registry", "registry", "https://packagist.acme.example"), ("pub", "pub", "http"), ("pub", "pub", "acme_net"),
+                  ("pub", "git", "gitlab.acme.example/dart/ui"), ("pub", "git", "github.com/acme/acme-core"),
+                  ("registry", "registry", "https://pub.acme.example"), ("mix", "hex", "jason"), ("mix", "hex", "acme_auth"),
+                  ("r-remotes", "git", "github.com/acme/acmeutils"), ("r-remotes", "git", "gitlab.com/acme/rtools"),
+                  ("cpanfile", "git", "gitlab.acme.example/perl/core")):
+            self.assertIn(k, r)
+        for k in (("composer", "composer", "php"), ("composer", "composer", "ext-json"), ("pub", "pub", "flutter"),
+                  ("pub", "pub", "acme_ui"), ("pub", "pub", "acme_core"), ("mix", "hex", "umbrella_child")):
+            self.assertNotIn(k, r)
+
+    def test_deno(self):
+        r, prov = reqs({"deno.json": '{"name": "@acme/tool", "imports": {"std/": "jsr:@std/path@^1",'
+                                     ' "core": "jsr:@acme/core@1", "chalk": "npm:chalk@5"}}'})
+        self.assertEqual(prov, [("jsr", "@acme/tool")])
+        self.assertEqual({k for k in r}, {("deno", "jsr", "@std/path"), ("deno", "jsr", "@acme/core"), ("deno", "npm", "chalk")})
+
+    def test_composer_vendor_is_internal(self):
+        m = dm.Map()
+        m.graphs["github.com/acme"] = {"host": "github.com", "org": "acme"}
+        m.repos["github.com/acme/a"] = {"fork": False}
+        f, _ = dm.internal_rules(m, {("composer", "acme/billing"): {"github.com/acme/a"},
+                                     ("composer", "laravel-zero/laravel-zero"): {"github.com/acme/a"}})
+        self.assertTrue(f("composer", "acme/invoices"))
+        self.assertFalse(f("composer", "acme-labs/invoices"))
+        # found live on laravel: a repository made from the Laravel Zero skeleton kept its name, which
+        # must not make the separate laravel-zero vendor the org's
+        self.assertFalse(f("composer", "laravel-zero/framework"))
+
+    def test_fixture_directories_in_any_case_are_not_read(self):
+        """laravel/vet keeps its test projects under tests/Fixtures/ (acme/framework, acme/ghost...)."""
+        picked = [p for p, _ in dm.select_files([("composer.json", 1), ("tests/Fixtures/a/project/composer.json", 1),
+                                                 ("Examples/demo/composer.json", 1)])]
+        self.assertEqual(picked, ["composer.json"])
 
 class CliTransportErrors(unittest.TestCase):
     """A stand-in `gh` on PATH: errors are classified and the login hint names the right command."""
@@ -1076,6 +1221,23 @@ class CliTransportErrors(unittest.TestCase):
         self.assertEqual(t.json("groups/acme/projects"), [])
         self.assertEqual(len(waits), 2)
         self.assertEqual(t.calls, 3)
+
+    def test_transient_server_error_is_retried(self):
+        """Found live on GitHub: a large tree came back empty once, and succeeded on the next call."""
+        self.flaky("gh", 1, "unexpected end of JSON input")
+        waits = []
+        t = dm.CliTransport("github", "github.com", sleep=waits.append)
+        self.assertEqual(t.json("repos/acme/big/git/trees/main?recursive=1"), [])
+        self.assertEqual((waits, t.calls), ([5], 2))
+
+    def test_transient_error_that_persists_is_an_api_error(self):
+        self.flaky("gh", 99, "gh: HTTP 502 Bad Gateway")
+        waits = []
+        t = dm.CliTransport("github", "github.com", sleep=waits.append)
+        with self.assertRaises(dm.ApiError) as cm:
+            t.json("repos/acme/x")
+        self.assertNotIsInstance(cm.exception, (dm.NotFound, dm.AuthError))
+        self.assertEqual((waits, t.calls), ([5, 15], 3))
 
     def test_rate_limit_that_does_not_clear_is_an_api_error_naming_it(self):
         self.flaky("glab", 99, "glab: HTTP 429")

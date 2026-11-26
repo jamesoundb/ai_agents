@@ -1,0 +1,9 @@
+[project]
+name = "py-uv-app"
+dependencies = ["{ORG}-sdk", "httpx"]
+
+[dependency-groups]
+dev = ["feature-store-client>=0.4"]
+
+[tool.uv.sources]
+"{ORG}-sdk" = { git = "http://{HOST}/{ORG}/py-sdk.git" }

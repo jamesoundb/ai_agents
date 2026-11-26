@@ -1,0 +1,9 @@
+{
+  "name": "@{ORG}/web",
+  "dependencies": {
+    "@{ORG}/design-tokens": "^3.0.0",
+    "@{ORG}/js-util": "workspace:*",
+    "js-shared": "file:../../../js-shared",
+    "lodash": "^4.17.21"
+  }
+}

@@ -233,5 +233,137 @@
   "topics": [
    "tools"
   ]
+ },
+ "js-mono": {
+  "description": "Web front ends in one npm workspace",
+  "topics": [
+   "javascript"
+  ]
+ },
+ "js-shared": {
+  "description": "Shared JavaScript helpers",
+  "topics": [
+   "javascript"
+  ]
+ },
+ "py-sdk": {
+  "description": "Python client SDK",
+  "topics": [
+   "python"
+  ]
+ },
+ "py-uv-app": {
+  "description": "Python service on uv",
+  "topics": [
+   "python"
+  ]
+ },
+ "py-legacy": {
+  "description": "Older Python job",
+  "topics": [
+   "python"
+  ]
+ },
+ "go-log-fork": {
+  "description": "Logging library fork",
+  "topics": [
+   "go"
+  ]
+ },
+ "go-tools": {
+  "description": "Go developer tools",
+  "topics": [
+   "go"
+  ]
+ },
+ "go-workspace": {
+  "description": "Go service in a go.work workspace",
+  "topics": [
+   "go"
+  ]
+ },
+ "rb-auth": {
+  "description": "Ruby authentication gem",
+  "topics": [
+   "ruby"
+  ]
+ },
+ "rb-app": {
+  "description": "Rails admin console",
+  "topics": [
+   "ruby"
+  ]
+ },
+ "php-billing": {
+  "description": "Invoice rendering for PHP",
+  "topics": [
+   "php"
+  ]
+ },
+ "php-app": {
+  "description": "PHP customer site",
+  "topics": [
+   "php"
+  ]
+ },
+ "dart-ui": {
+  "description": "Flutter widgets",
+  "topics": [
+   "dart"
+  ]
+ },
+ "dart-app": {
+  "description": "Flutter mobile app",
+  "topics": [
+   "dart"
+  ]
+ },
+ "ex-auth": {
+  "description": "Elixir authentication library",
+  "topics": [
+   "elixir"
+  ]
+ },
+ "ex-app": {
+  "description": "Elixir Phoenix service",
+  "topics": [
+   "elixir"
+  ]
+ },
+ "deno-core": {
+  "description": "Shared Deno modules",
+  "topics": [
+   "deno"
+  ]
+ },
+ "deno-tool": {
+  "description": "Deno command-line tool",
+  "topics": [
+   "deno"
+  ]
+ },
+ "r-utils": {
+  "description": "R helpers",
+  "topics": [
+   "r"
+  ]
+ },
+ "r-report": {
+  "description": "R monthly reports",
+  "topics": [
+   "r"
+  ]
+ },
+ "perl-lib": {
+  "description": "Perl modules",
+  "topics": [
+   "perl"
+  ]
+ },
+ "perl-app": {
+  "description": "Legacy Perl batch jobs",
+  "topics": [
+   "perl"
+  ]
  }
 }

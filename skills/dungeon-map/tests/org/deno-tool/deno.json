@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "core": "jsr:@{ORG}/deno-core@^1",
+    "path": "jsr:@std/path@^1"
+  }
+}

@@ -1,0 +1,3 @@
+Package: rreport
+Imports: dplyr, rutils
+Remotes: git::http://{HOST}/{ORG}/r-utils.git

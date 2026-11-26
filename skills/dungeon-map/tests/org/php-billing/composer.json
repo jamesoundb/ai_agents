@@ -1,0 +1,6 @@
+{
+  "name": "{ORG}/billing-php",
+  "require": {
+    "php": ">=8.2"
+  }
+}
