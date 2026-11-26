@@ -171,6 +171,33 @@ class Compass(unittest.TestCase):
                                    for n in ("ui-kit", "design-tokens", "ci-actions")])
         self.assertEqual(nxt[4], "  .ai/bin/ai-task start web-env checkout-web ui-kit design-tokens ci-actions")
 
+    def test_deps_follows_a_polyglot_repository_only_in_the_ecosystem_that_reached_it(self):
+        """Found live on temporalio: samples-java uses ai-integrations' Java part, and the closure then
+        took in sdk-go, sdk-python, sdk-dotnet and sdk-rust through its other parts (16 repositories
+        instead of 3)."""
+        m = dm.Map()
+        for k in ("app", "mono", "jvmlib", "golib", "proto"):
+            m.repos[f"h/o/{k}"] = {"path": f"o/{k}", "archived": 0, "fork": 0, "gaps": []}
+
+        def edge(src, dst, via):
+            return {"src": f"h/o/{src}", "dst": f"h/o/{dst}", "via": via, "kind": dm.VIA_KIND[via],
+                    "file": "f", "line": 1, "match": "exact"}
+        m.edges = [edge("app", "mono", "gradle"), edge("mono", "jvmlib", "maven"), edge("mono", "golib", "go"),
+                   edge("mono", "proto", "submodule")]
+        other = {}
+        order, via, _ = compass.closure(m, ["h/o/app"], {"build"}, other=other)
+        self.assertEqual(sorted(order), ["h/o/jvmlib", "h/o/mono", "h/o/proto"])  # neutral submodule kept
+        self.assertEqual(other, {"h/o/mono": {"go"}})
+        order, _, _ = compass.closure(m, ["h/o/app"], {"build"}, all_ecosystems=True)
+        self.assertIn("h/o/golib", order)
+        order, _, _ = compass.closure(m, ["h/o/mono"], {"build"})  # a root is followed in every ecosystem
+        self.assertIn("h/o/golib", order)
+
+    def test_every_via_has_an_ecosystem_or_is_neutral(self):
+        neutral = {"submodule", "image", "terraform", "helm", "ci-include", "ci-trigger", "ci-component", "workflow",
+                   "action", "bazel", "registry"}
+        self.assertEqual(set(dm.VIA_KIND) - set(dm.VIA_FAMILY), neutral)
+
     def test_every_edge_kind_has_compass_text(self):
         self.assertEqual(set(compass.VIA_TEXT), set(dm.VIA_KIND))
         self.assertTrue({e["kind"] for e in dm.load_map(self.cache).edges} <= set(dm.EDGE_KINDS))

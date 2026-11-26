@@ -1,0 +1,5 @@
+.{
+    .dependencies = .{
+        .net = .{ .url = "git+http://{HOST}/{ORG}/cpp-net.git#0000000" },
+    },
+}

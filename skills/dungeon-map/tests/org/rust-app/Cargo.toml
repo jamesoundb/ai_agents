@@ -1,0 +1,12 @@
+[package]
+name = "rust-app"
+version = "0.1.0"
+
+[dependencies]
+{ORG}-types = { git = "http://{HOST}/{ORG}/rust-core.git", branch = "main" }
+{ORG}-macros = { version = "0.2", registry = "{ORG}" }
+serde = { version = "1", features = ["derive"] }
+tokio = "1"
+
+[dependencies.shared]
+path = "../rust-shared"

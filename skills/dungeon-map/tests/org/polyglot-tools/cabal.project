@@ -1,0 +1,6 @@
+packages: .
+
+source-repository-package
+  type: git
+  location: http://{HOST}/{ORG}/rust-shared.git
+  tag: v0.1

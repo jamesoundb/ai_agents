@@ -1,0 +1,2 @@
+[registries.{ORG}]
+index = "sparse+https://crates.{ORG}.example/index/"

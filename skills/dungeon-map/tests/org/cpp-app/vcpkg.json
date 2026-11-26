@@ -1,0 +1,7 @@
+{
+  "name": "cpp-app",
+  "dependencies": [
+    "cppcore",
+    "fmt"
+  ]
+}
