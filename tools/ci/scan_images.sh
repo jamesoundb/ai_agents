@@ -18,7 +18,36 @@ TRIVY_SHA256=bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
 cd "$(dirname "$0")/../.."
 root=$(pwd)
 
+# A registry rate limit is infrastructure, not a finding: GitLab.com's shared runners pull through
+# one Artifact Registry quota ("TOOMANYREQUESTS: Quota exceeded ... per minute"), which failed this
+# job on 2026-11-24 with every image it reached clean. Such a scan is re-run, waiting
+# SCAN_RETRY_SLEEP (30 s) and then twice that; findings and any other failure return at once.
+retry_sleep=${SCAN_RETRY_SLEEP:-30}
+scan() {
+  attempt=1
+  while :; do
+    err=$(mktemp)
+    r=0
+    "$trivy" "$@" 2>"$err" || r=$?
+    cat "$err" >&2
+    if [ "$r" != 0 ] && [ "$attempt" -lt 3 ] && grep -qiE 'toomanyrequests|429 too many requests|quota exceeded' "$err"; then
+      rm -f "$err"
+      wait=$((retry_sleep * attempt))
+      echo "scan_images: registry rate limit, attempt $attempt of 3; retrying in ${wait}s" >&2
+      sleep "$wait"
+      attempt=$((attempt + 1))
+      continue
+    fi
+    rm -f "$err"
+    return "$r"
+  done
+}
+
 # Download and verify Trivy outside the checkout, so the filesystem scan below does not see it twice.
+# SCAN_TRIVY replaces the download with a given binary (tools/ci/test_scan_images.sh).
+if [ -n "${SCAN_TRIVY:-}" ]; then
+  trivy=$SCAN_TRIVY
+else
 bin=$(mktemp -d)
 tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
 url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
@@ -30,6 +59,7 @@ fi
 echo "$TRIVY_SHA256  $bin/$tarball" | sha256sum -c - >/dev/null || { echo "scan_images: $tarball checksum mismatch" >&2; exit 2; }
 tar -xzf "$bin/$tarball" -C "$bin" trivy
 trivy="$bin/trivy"
+fi
 
 images=$(grep -oE '[a-z0-9.-]+(/[a-z0-9._-]+)+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}' .gitlab-ci.yml | sort -u)
 [ -n "$images" ] || { echo "scan_images: no digest-pinned images in .gitlab-ci.yml" >&2; exit 2; }
@@ -40,11 +70,11 @@ ignore="$root/.trivyignore"
 rc=0
 for img in $images; do
   echo "=== image $img"
-  "$trivy" image --image-src remote --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
+  scan image --image-src remote --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
     --ignorefile "$ignore" --exit-code 1 "$img" || rc=1
 done
 echo "=== this job's filesystem (packages installed at job start, Trivy itself)"
-"$trivy" rootfs --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --ignorefile "$ignore" --exit-code 1 \
+scan rootfs --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --ignorefile "$ignore" --exit-code 1 \
   --skip-dirs /proc,/sys,/dev,"$root" / || rc=1
 
 [ "$rc" = 0 ] && echo "scan_images: no fixable HIGH or CRITICAL vulnerabilities"
